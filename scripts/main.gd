@@ -96,6 +96,9 @@ func _ready() -> void:
 			"batch": run_batch(int(args.get("n", "3")))
 			"toast": hud.toast(String(args.get("text", "TURNOVER ON DOWNS\nBlue ball")).replace("|", "\n"), 5.0)
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
+			"roster": hud.open_roster(0)
+			"robot": hud.open_robot(String(Career.roster(0)[String(args.get("slot", "QB"))]["id"]))
+			"bench": hud.open_robot(String(Career.team(0)["bench"][0]["id"]))
 		await get_tree().create_timer(float(args.get("after", "0.6"))).timeout
 		await RenderingServer.frame_post_draw
 		get_viewport().get_texture().get_image().save_png(String(args["shot"]))
@@ -317,12 +320,13 @@ func _build_ui() -> void:
 	announcer = Announcer.new()
 	add_child(announcer)
 	view.moment.connect(_on_moment)
-	view.trash_talk.connect(func(t: int, slot: String, line: String): announcer.trash(t, slot, line))
+	view.trash_talk.connect(func(t: int, slot: String, line: String, who: String): announcer.trash(t, slot, line, who))
 	hud = Hud.new()
 	add_child(hud)
 	hud.setup(self)
 	hud.mark_view(cam.view)
 	announcer.hud = hud
+	Career.ensure()      # the career's robots play in this game
 	new_game()
 
 
@@ -358,6 +362,9 @@ func library_changed() -> void:
 		game.teams[t]["coach"] = nt["coach"]
 		game.teams[t]["brains"] = nt["brains"]
 		game.teams[t]["calling"] = nt["calling"]
+		if nt.has("roster"):
+			game.teams[t]["roster"] = nt["roster"]
+			game.teams[t]["fair"] = nt["fair"]
 
 
 func overlay_changed(open: bool) -> void:
@@ -454,6 +461,35 @@ func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scor
 				break
 	elif big or gain >= 12:
 		sfx.play("roar", -9.0)
+
+
+## Tap a robot on the field (between plays, or paused) to open his page.
+func _unhandled_input(event: InputEvent) -> void:
+	if not (event is InputEventMouseButton) or not (event as InputEventMouseButton).pressed:
+		return
+	if (event as InputEventMouseButton).button_index != MOUSE_BUTTON_LEFT or hud.any_overlay() or sim == null:
+		return
+	if _phase == "live" and not paused:
+		return
+	var at := (event as InputEventMouseButton).position
+	var cam3: Camera3D = get_viewport().get_camera_3d()
+	var best: PlaySim.P = null
+	var best_d := 36.0
+	for p in sim.players:
+		if p.robot.is_empty():
+			continue
+		var w := view.world(p.pos, 1.2)
+		if cam3.is_position_behind(w):
+			continue
+		var d := cam3.unproject_position(w).distance_to(at)
+		if d < best_d:
+			best_d = d
+			best = p
+	if best != null:
+		if not paused:
+			toggle_pause()
+		hud.open_robot(String(best.robot["id"]))
+		get_viewport().set_input_as_handled()
 
 
 ## A moment of the play, heard and called.

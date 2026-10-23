@@ -36,7 +36,7 @@ var _spark_mat: Dictionary = {}
 var talk := true             # robots talk trash
 
 signal moment(a: Dictionary)                              # each action as it is acted out
-signal trash_talk(team: int, slot: String, line: String)  # a robot says something
+signal trash_talk(team: int, slot: String, line: String, who: String)  # a robot says something
 
 
 func _ready() -> void:
@@ -270,22 +270,44 @@ func _place_line(mi: MeshInstance3D, offense_yl: float) -> void:
 func _ensure_player(p: PlaySim.P) -> void:
 	var team := p.team
 	var key := p.idx
+	var rid := String(p.robot.get("id", ""))
 	if _players.has(key):
 		var e: Dictionary = _players[key]
-		if e["team"] == team and e["slot"] == p.slot:
+		if e["team"] == team and e["slot"] == p.slot and e["rid"] == rid:
 			return
 		(e["root"] as Node3D).queue_free()
-	var root := Node3D.new()
+	var r := build_robot(p.group, team, int(p.robot.get("number", -1)))
+	var root: Node3D = r["root"]
 	add_child(root)
+	var lab := Label3D.new()
+	lab.text = p.slot
+	lab.visible = not p.group in ["OL", "DL"]
+	lab.font_size = 52
+	lab.pixel_size = 0.012
+	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lab.position = Vector3(0, 2.85, 0)
+	lab.outline_size = 10
+	lab.no_depth_test = true
+	lab.modulate = NEON[team].lightened(0.4)
+	root.add_child(lab)
+	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "label": lab,
+		"team": team, "slot": p.slot, "rid": rid,
+		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
+
+
+## One robot, not yet placed anywhere: armoured legs on hip pivots, a torso in team colour with
+## big shoulder plates and a chest light, arms on shoulder pivots, and a head with a glowing
+## visor. Linemen are heavier; backs and receivers leaner. {root, body, legs, arms, head}
+func build_robot(group: String, team: int, number := -1) -> Dictionary:
+	var root := Node3D.new()
 	var body := Node3D.new()        # hops and lunges move this; root keeps the spot and facing
 	root.add_child(body)
-	var big := p.group in ["OL", "DL"]
-	var lean := p.group in ["WR", "CB", "RB", "S"]
+	var big := group in ["OL", "DL"]
+	var lean := group in ["WR", "CB", "RB", "S"]
 	var w := 1.25 if big else (0.9 if lean else 1.05)
 	var armour := _metal(COLORS[team].darkened(0.15))
 	var frame := _metal(Color(0.22, 0.24, 0.28))
 	var light := _glow(NEON[team], 2.6)
-	# legs pivot at the hip so they can stride
 	var legs: Array = []
 	for side: float in [-1.0, 1.0]:
 		var hip := Node3D.new()
@@ -295,10 +317,20 @@ func _ensure_player(p: PlaySim.P) -> void:
 		_box(Vector3(0.3 * w, 0.16, 0.42), Vector3(0, -0.9, 0.06), armour, hip)     # foot
 		_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45, 0.15), light, hip)    # knee light
 		legs.append(hip)
-	# torso and plates
 	_box(Vector3(0.62 * w, 0.75, 0.42), Vector3(0, 1.32, 0), armour, body)
 	_box(Vector3(0.95 * w, 0.24, 0.55), Vector3(0, 1.72, 0), armour, body)          # shoulders
 	_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38, 0.22), light, body)             # chest light
+	if number >= 0:
+		for z: float in [0.215, -0.215]:
+			var num := Label3D.new()
+			num.text = str(number)
+			num.font_size = 64
+			num.pixel_size = 0.006
+			num.outline_size = 6
+			num.modulate = Color(1, 1, 1)
+			num.position = Vector3(0, 1.18, z)
+			num.rotation.y = 0.0 if z > 0.0 else PI
+			body.add_child(num)
 	# arms swing from the shoulder: rotation.x below 0 raises them forward, about -3 is overhead
 	var arms: Array = []
 	for side: float in [-1.0, 1.0]:
@@ -308,23 +340,13 @@ func _ensure_player(p: PlaySim.P) -> void:
 		_box(Vector3(0.2, 0.7, 0.22), Vector3(0, -0.34, 0), frame, sh)
 		_box(Vector3(0.24, 0.16, 0.26), Vector3(0, -0.72, 0.02), armour, sh)         # fist
 		arms.append(sh)
-	# head and visor
-	_box(Vector3(0.36, 0.34, 0.4), Vector3(0, 2.02, 0), _metal(Color(0.12, 0.13, 0.16)), body)
-	_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 2.05, 0.2), light, body)
-	_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 2.24, -0.02), light, body)            # crest
-	var lab := Label3D.new()
-	lab.text = p.slot
-	lab.visible = not big
-	lab.font_size = 52
-	lab.pixel_size = 0.012
-	lab.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lab.position = Vector3(0, 2.85, 0)
-	lab.outline_size = 10
-	lab.no_depth_test = true
-	lab.modulate = NEON[team].lightened(0.4)
-	root.add_child(lab)
-	_players[key] = {"root": root, "body": body, "legs": legs, "arms": arms, "label": lab, "team": team, "slot": p.slot,
-		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
+	var head := Node3D.new()
+	head.position = Vector3(0, 1.85, 0)
+	body.add_child(head)
+	_box(Vector3(0.36, 0.34, 0.4), Vector3(0, 0.17, 0), _metal(Color(0.12, 0.13, 0.16)), head)
+	_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 0.2, 0.2), light, head)
+	_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 0.39, -0.02), light, head)            # crest
+	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head}
 
 
 ## Called after each sim step.
@@ -612,7 +634,7 @@ func _say_line(p: PlaySim.P, line: String) -> void:
 	lab.visible = false
 	add_child(lab)
 	_fx_nodes.append({"node": lab, "t0": _t + 0.4, "life": 2.6, "kind": "talk", "y0": 4.6, "who": p.idx})
-	trash_talk.emit(p.team, p.slot, line)
+	trash_talk.emit(p.team, p.slot, line, String(p.robot.get("name", "")))
 
 
 func _sparks(at: Vector3, n: int, c: Color) -> void:

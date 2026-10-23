@@ -142,13 +142,16 @@ func result(text: String, big: bool) -> void:
 
 
 ## A robot mouths off, in a voice of its own.
-func trash(team: int, slot: String, line: String) -> void:
+func trash(team: int, slot: String, line: String, who := "") -> void:
 	if hud != null:
-		hud.caption("%s %s: “%s”" % [Team.NAMES[team], slot, line], false, Color(1, 0.55, 0.85))
+		var name := who if who != "" else "%s %s" % [Team.NAMES[team], slot]
+		hud.caption("%s: “%s”" % [name, line], false, Color(1, 0.55, 0.85))
 	_trash_q = [[_t + 0.5, line, 0.45 if team == 0 else 1.75]]
 
 
 func _name(p: PlaySim.P) -> String:
 	if p == null:
 		return "the defense"
+	if not p.robot.is_empty():
+		return String(p.robot["name"])
 	return "%s %s" % [Team.NAMES[p.team], p.slot]

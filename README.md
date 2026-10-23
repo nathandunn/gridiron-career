@@ -7,6 +7,33 @@ into a career game: robots with ratings, parts that break off on big hits, upgra
 winnings, and a league of rival teams with their own rosters. The plan is in
 `docs/roster-plan.md`; it is built a step at a time.
 
+## Robots (step 2)
+Every robot is a player with a name, a number on his back and ratings from 1 to 100:
+speed, strength, toughness and IQ, plus the skills of his position (QB arm and accuracy; hands,
+elusiveness, routes, blocking, pass rush, tackling, coverage, ball skills). **60 plays exactly
+like the equal bodies of Gridiron Bots** (tests/ratings_test.gd checks it); every 10 points
+either way moves the engine numbers that rating stands for (`scripts/robot.gd`):
+
+| Rating | In the engine |
+|---|---|
+| Speed | top speed ±10% and acceleration ±12% across the range |
+| Strength | power: blocks, sheds, tackles made and broken, the pile, stiff arms |
+| Toughness | time on the ground after a knock-down; fumbles |
+| IQ | scales the brain's vision, patience and discipline (a sharp brain in a dim robot plays dim); reaction lag in coverage |
+| Arm / Accuracy | ball speed / throw error |
+| Hands, Ball skills | catching and interceptions; holding on when hit |
+| Elusiveness, Routes, Coverage | agility: cuts, jukes, getting open, staying with a man |
+| Blocking, Pass rush | power (and agility for the rush) in the trenches |
+| Tackling | wrapping up |
+
+- **Roster** (button): both teams, starters by position and a bench, with overall and every rating.
+  *Fair bodies* makes everyone a 60 so only the brains differ. *Draft a whole new team* rolls new robots.
+- **A robot's page**: tap his row, or tap him on the field between plays (or paused). A turning
+  model with his number, his brain, rating bars with what each does, this game's stats, and for a
+  bench robot, *Put him in* for any slot of his position (from the next snap).
+- The career is saved in the browser (`user://career.json`); the announcer and the trash talk use
+  the robots' names.
+
 What follows is what it inherits from Gridiron Bots.
 
 

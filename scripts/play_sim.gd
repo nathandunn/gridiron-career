@@ -113,8 +113,13 @@ class P:
 	func spd() -> float:
 		return float(body["speed"]) * spd_scale
 
+	var robot := {}        # the rated robot playing this slot (empty: the position's equal body)
+
 	func d(k: String) -> float:
-		return float(dial.get(k, 0.5))
+		var v := float(dial.get(k, 0.5))
+		if k == "vision" or k == "patience" or k == "discipline":
+			v = clampf(v * float(body.get("iq", 1.0)), 0.0, 1.0)   # IQ caps how well the brain thinks
+		return v
 
 
 var rng: RandomNumberGenerator
@@ -209,6 +214,11 @@ func _make(s: String, side: int, team: Dictionary, a: Dictionary, i: int) -> P:
 	p.team = int(team["index"])
 	p.idx = i
 	p.body = BODY[p.group].duplicate()
+	if team.has("roster") and not bool(team.get("fair", false)):
+		var rb: Dictionary = (team["roster"] as Dictionary).get(s, {})
+		if not rb.is_empty():
+			p.robot = rb
+			p.body = Robot.apply(rb, p.body)
 	p.spd_scale = 1.0 + (rng.randf() - 0.5) * 0.06
 	p.brain = (team["brains"] as Dictionary).get(s, null)
 	if p.brain != null:
@@ -891,7 +901,9 @@ func _sep(r: P) -> float:
 
 
 func _ball_speed(dist: float) -> float:
-	return 17.5 + 6.0 * QB_ARM * clampf(dist / 30.0, 0.3, 1.0)
+	var qb: P = by_slot.get("o:QB")
+	var arm := float(qb.body.get("arm", QB_ARM)) if qb != null else QB_ARM
+	return 17.5 + 6.0 * arm * clampf(dist / 30.0, 0.3, 1.0)
 
 
 ## Where the ball would meet the receiver and how long it would fly.
@@ -1052,7 +1064,7 @@ func _throw(qb: P, r: P) -> bool:
 	var c: Vector2 = lc[0]
 	var T: float = lc[1]
 	var dist := qb.pos.distance_to(c)
-	var sigma := (0.25 + 0.012 * dist + 0.0009 * dist * dist) * (1.3 - QB_ACC) * float(K["throw_err"])
+	var sigma := (0.25 + 0.012 * dist + 0.0009 * dist * dist) * (1.3 - float(qb.body.get("acc", QB_ACC))) * float(K["throw_err"])
 	if _rusher_d(qb) < 2.0:
 		sigma *= 1.6
 	if scrambling or qb.vel.length() > 3.0:
@@ -1677,7 +1689,7 @@ func _cover_man(p: P) -> void:
 	if m == null:
 		_cover_zone(p)
 		return
-	var lag := clampf(0.38 - 0.28 * float(p.body["agility"]), 0.05, 0.4)
+	var lag := clampf((0.38 - 0.28 * float(p.body["agility"])) / float(p.body.get("iq", 1.0)), 0.05, 0.45)
 	var n := clampi(int(round(lag / DT)), 0, m.hist.size() - 1)
 	var seen: Vector2 = m.hist[m.hist.size() - 1 - n]
 	var seen_v := m.vel
@@ -2069,6 +2081,8 @@ func _unlock(b: P) -> void:
 
 
 func _knock_down(p: P, secs: float) -> void:
+	if secs < 50.0:
+		secs *= 1.0 - 0.3 * float(p.body.get("tough", 0.0))   # tough robots get up sooner
 	p.down = true
 	p.down_until = t + secs
 	if p.engaged != null:
@@ -2321,6 +2335,7 @@ func _contacts() -> void:
 			var pf := 0.008 + (0.03 if e.manner.get("hit_hard", false) else 0.0) + (0.07 if e.manner.get("strip", false) else 0.0)
 			if c.manner.get("protect", false):
 				pf *= 0.3
+			pf *= clampf(1.0 - 0.5 * float(c.body.get("tough", 0.0)) - 0.6 * (float(c.body["hands"]) - float(BODY[c.group]["hands"])), 0.3, 2.0)
 			var dir := _attack_dir(c)
 			var fall := 0.4 + clampf(float(c.body["power"]) - float(e.body["power"]), -0.3, 0.5)
 			# a pile at the line surges forward behind its blockers

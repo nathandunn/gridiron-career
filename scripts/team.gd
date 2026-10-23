@@ -15,7 +15,12 @@ static func build(index: int, coach_name: String, picks: Dictionary = {}, callin
 	var brains := {}
 	for s in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
 		brains[s] = brain_for(c, s, picks)
-	return {"index": index, "name": NAMES[index], "coach": c, "brains": brains, "picks": picks.duplicate(), "calling": calling}
+	var d := {"index": index, "name": NAMES[index], "coach": c, "brains": brains, "picks": picks.duplicate(), "calling": calling}
+	if Career.loaded:
+		# the career's rated robots play (unless "Fair bodies" is on)
+		d["roster"] = Career.roster(index)
+		d["fair"] = Career.fair()
+	return d
 
 
 static func brain_for(c: Coach, slot: String, picks: Dictionary) -> Brain:

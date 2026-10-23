@@ -201,9 +201,9 @@ func _build_scoreboard() -> void:
 
 func show_state(g: Game) -> void:
 	for t in 2:
-		var ball := " «" if g.poss == t and not g.over else ""
-		var cn: String = (g.teams[t]["coach"] as Coach).name
-		_score[t].text = ("%s %d%s" % [cn, g.score[t], ball]) if t == 0 else ("%s%s %d" % [ball, cn, g.score[t]])
+		var has := g.poss == t and not g.over
+		var cn: String = String(Career.team(t)["name"]) if Career.loaded else (g.teams[t]["coach"] as Coach).name
+		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
 	_clock.text = "Final" if g.over else "Q%d %d:%02d" % [g.quarter, s / 60, s % 60]
 	_sit.text = "" if g.over else "%s ball · %s" % [g.teams[g.poss]["name"], g.situation()]
@@ -350,6 +350,7 @@ func _build_controls() -> void:
 	_sound_btn = _button("Sound: voice", func(): _sound_btn.text = main.next_sound())
 	bar.add_child(_sound_btn)
 	bar.add_child(_button("Teams", func(): open_teams()))
+	bar.add_child(_button("Roster", func(): open_roster()))
 	bar.add_child(_button("Edit AI", func(): open_editor()))
 	bar.add_child(_button("Sim ×10", func(): main.run_batch(10)))
 	bar.add_child(_button("Stats", func(): if main.game != null: show_stats(main.game, "live")))
@@ -1146,3 +1147,194 @@ func show_batch(agg: Dictionary, names: Array) -> void:
 	row.add_child(_button("Sim ×10 again", func(): close_overlay(); main.run_batch(10)))
 	row.add_child(_button("Sim ×50", func(): close_overlay(); main.run_batch(50)))
 	row.add_child(_button("Teams", func(): open_teams()))
+
+
+## ---- the roster and each robot ----------------------------------------------------------------
+
+var _roster_team := 0
+var _draft_armed := false
+const SIDE_GROUPS := [["Offense", ["QB", "RB", "WR", "TE", "OL"]], ["Defense", ["DL", "LB", "CB", "S"]]]
+
+
+func open_roster(t := -1) -> void:
+	if t >= 0:
+		_roster_team = t
+	Career.ensure()
+	var tm := Career.team(_roster_team)
+	var box := _open("Roster · %s" % tm["name"])
+	var tabs := HFlowContainer.new()
+	tabs.add_theme_constant_override("h_separation", 6)
+	box.add_child(tabs)
+	for i in 2:
+		var b := _button(String(Career.team(i)["name"]) + (" (you)" if i == 0 else ""), func(): _draft_armed = false; open_roster(i), true)
+		b.button_pressed = i == _roster_team
+		tabs.add_child(b)
+	var fair := _button("Fair bodies: %s" % ("on" if Career.fair() else "off"), func():
+		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
+	fair.button_pressed = Career.fair()
+	tabs.add_child(fair)
+	box.add_child(_label("Tap a robot for his details. Ratings run 1-100; 60 plays like the equal bodies of Gridiron Bots. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
+	var starters: Dictionary = tm["starters"]
+	for sg in SIDE_GROUPS:
+		_section(box, sg[0])
+		for g in sg[1]:
+			for s in Play.GROUP_SLOTS.get(g, [g]):
+				box.add_child(_robot_row(starters[s], s))
+	_section(box, "Bench")
+	for r in tm["bench"]:
+		box.add_child(_robot_row(r, ""))
+	var row := HFlowContainer.new()
+	box.add_child(row)
+	var draft := _button("Are you sure? Tap again to scrap this team" if _draft_armed else "Draft a whole new team", func():
+		if _draft_armed:
+			_draft_armed = false
+			Career.regenerate(_roster_team)
+			main.library_changed()
+		else:
+			_draft_armed = true
+		open_roster())
+	row.add_child(draft)
+
+
+func _robot_row(r: Dictionary, slot: String) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.clip_text = true
+	var bits: Array = []
+	for k in Robot.keys(r):
+		bits.append("%s %d" % [String(Robot.LABEL[k]).substr(0, 3), int(Robot.rating(r, k))])
+	b.text = "#%d  %s  %s   OVR %d   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r), "  ".join(bits)]
+	var id := String(r["id"])
+	b.pressed.connect(func(): open_robot(id))
+	return b
+
+
+## A robot's page: a turning model, his ratings and what each does, his brain, this game's stats.
+func open_robot(id: String) -> void:
+	var f := Career.find(id)
+	if f.is_empty():
+		return
+	var r: Dictionary = f["robot"]
+	var t: int = f["team"]
+	var slot: String = f["slot"]
+	var box := _open("#%d %s" % [int(r["number"]), r["name"]])
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 12)
+	box.add_child(top)
+	# the model, turning slowly
+	var svc := SubViewportContainer.new()
+	svc.custom_minimum_size = Vector2(170, 220)
+	svc.stretch = true
+	var sv := SubViewport.new()
+	sv.own_world_3d = true
+	sv.transparent_bg = true
+	sv.msaa_3d = Viewport.MSAA_2X
+	svc.add_child(sv)
+	top.add_child(svc)
+	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]))
+	var turn := Node3D.new()
+	sv.add_child(turn)
+	turn.add_child(model["root"])
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 1.4, 4.2)
+	cam.fov = 38
+	sv.add_child(cam)
+	cam.look_at(Vector3(0, 1.15, 0))
+	var key := DirectionalLight3D.new()
+	key.rotation = Vector3(-0.7, 0.6, 0)
+	key.light_energy = 1.6
+	sv.add_child(key)
+	var front := OmniLight3D.new()
+	front.position = Vector3(1.2, 2.4, 3.0)
+	front.light_energy = 2.5
+	front.omni_range = 10.0
+	sv.add_child(front)
+	var rim := OmniLight3D.new()
+	rim.position = Vector3(-1.5, 2.0, -2.5)
+	rim.light_color = FieldView.NEON[t]
+	rim.light_energy = 2.0
+	rim.omni_range = 8.0
+	sv.add_child(rim)
+	var env := WorldEnvironment.new()
+	var e := Environment.new()
+	e.background_mode = Environment.BG_CLEAR_COLOR
+	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	e.ambient_light_color = Color(0.5, 0.55, 0.65)
+	e.ambient_light_energy = 1.8
+	e.glow_enabled = true
+	env.environment = e
+	sv.add_child(env)
+	var tw := turn.create_tween().set_loops()
+	tw.tween_property(turn, "rotation:y", TAU, 8.0).from(0.0)
+	# who he is
+	var who := VBoxContainer.new()
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(who)
+	var tm := Career.team(t)
+	who.add_child(_label(String(tm["name"]), fs, FieldView.NEON[t].lightened(0.3)))
+	var pos_txt := (slot if slot == String(r["group"]) else "%s (%s)" % [slot, r["group"]]) if slot != "" else ("Bench · %s" % r["group"])
+	who.add_child(_label(pos_txt, fs + 2, YELLOW))
+	who.add_child(_label("Overall %d" % Robot.overall(r), fs + 6, CYAN))
+	if slot != "" and main.game != null:
+		var br: Brain = (main.game.teams[t]["brains"] as Dictionary).get(slot, null)
+		if br != null:
+			who.add_child(_label("Brain: %s" % br.name, fs - 1, Color(0.85, 0.9, 0.95)))
+			if br.about != "":
+				who.add_child(_label(br.about, fs - 3, Color(0.7, 0.74, 0.8)))
+	if Career.fair():
+		who.add_child(_label("Fair bodies is on: he plays as a 60 everywhere.", fs - 3, MAGENTA))
+	# the ratings
+	_section(box, "Ratings")
+	for k in Robot.keys(r):
+		var v := int(Robot.rating(r, k))
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		box.add_child(line)
+		var name_l := _label(String(Robot.LABEL[k]), fs - 1)
+		name_l.custom_minimum_size.x = 110
+		line.add_child(name_l)
+		var bar := ProgressBar.new()
+		bar.min_value = 0
+		bar.max_value = 100
+		bar.value = v
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(120, fs + 2)
+		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var fill := StyleBoxFlat.new()
+		fill.bg_color = Color(0.3, 0.9, 0.5) if v >= 70 else (YELLOW if v >= 50 else Color(1.0, 0.4, 0.4))
+		fill.set_corner_radius_all(3)
+		var bg := StyleBoxFlat.new()
+		bg.bg_color = Color(0.12, 0.14, 0.18)
+		bg.set_corner_radius_all(3)
+		bar.add_theme_stylebox_override("fill", fill)
+		bar.add_theme_stylebox_override("background", bg)
+		line.add_child(bar)
+		var num := _label(str(v), fs, Color(1, 1, 1))
+		num.custom_minimum_size.x = 30
+		line.add_child(num)
+		box.add_child(_label("    " + String(Robot.RATING_HELP[k]), fs - 4, Color(0.62, 0.67, 0.72)))
+	# this game
+	if slot != "" and main.game != null:
+		var ps: Dictionary = (main.game.pstats[t] as Dictionary).get(slot, {})
+		_section(box, "This game")
+		var bits: Array = []
+		for k2 in ps:
+			if float(ps[k2]) != 0.0:
+				bits.append("%s %s" % [k2, str(int(ps[k2]))])
+		box.add_child(_label(" · ".join(bits) if not bits.is_empty() else "Nothing yet.", fs - 2, Color(0.85, 0.88, 0.9)))
+	# the bench
+	if slot == "":
+		_section(box, "Put him in")
+		var row := HFlowContainer.new()
+		row.add_theme_constant_override("h_separation", 6)
+		box.add_child(row)
+		for s in Play.GROUP_SLOTS.get(String(r["group"]), [String(r["group"])]):
+			var out: Dictionary = Career.roster(t)[s]
+			row.add_child(_button("For %s (#%d %s, OVR %d)" % [s, int(out["number"]), out["name"], Robot.overall(out)], func():
+				Career.swap(t, s, id); open_robot(id)))
+		box.add_child(_label("He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+	var back := HFlowContainer.new()
+	box.add_child(back)
+	back.add_child(_button("Back to the roster", func(): open_roster(t)))
