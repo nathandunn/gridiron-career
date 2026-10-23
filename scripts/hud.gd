@@ -397,7 +397,7 @@ func _open(title: String) -> VBoxContainer:
 	var w := minf(vp.x - 16.0, 900.0)
 	var pc := PanelContainer.new()
 	pc.position = Vector2((vp.x - w) * 0.5, 40)
-	pc.custom_minimum_size = Vector2(w, vp.y - 60)
+	pc.custom_minimum_size = Vector2(w, 0)
 	pc.size = Vector2(w, vp.y - 60)
 	dim.add_child(pc)
 	var outer := VBoxContainer.new()
@@ -415,8 +415,20 @@ func _open(title: String) -> VBoxContainer:
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 8)
 	sc.add_child(box)
+	# the panel is as tall as what is in it, up to the screen; past that it scrolls
+	var refit := func() -> void: _fit_panel(pc, sc, box, vp.y - 60.0)
+	box.minimum_size_changed.connect(refit)
+	refit.call_deferred()
 	main.overlay_changed(true)
 	return box
+
+
+func _fit_panel(pc: PanelContainer, sc: Control, box: Control, max_h: float) -> void:
+	if not is_instance_valid(pc) or not is_instance_valid(box):
+		return
+	var chrome := pc.get_combined_minimum_size().y - sc.get_combined_minimum_size().y
+	var want := minf(max_h, chrome + box.get_combined_minimum_size().y + 6.0)
+	pc.size = Vector2(pc.size.x, want)
 
 
 func _section(box: Control, text: String) -> void:
