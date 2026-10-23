@@ -1,6 +1,6 @@
 # Gridiron Bots: Robot Roster, Upgrades and Breakage (plan)
 
-Status: step 1 built in Gridiron Bots (no kicking, coach's pick); steps 2 on are built here in Gridiron Career.
+Status: step 1 built and live in Gridiron Bots (2026-10-23). From step 2 the work is a separate app, **Gridiron Career** (repo nathandunn/gridiron-career, https://gridiron-career.apps.precogsoftwareservices.com). Step 2 built and live there 2026-10-23, awaiting Nathan's feedback.
 Nathan wants each step built and then held for his feedback before the next.
 
 **Decided (Nathan, 2026-10-23):**
@@ -24,7 +24,7 @@ Nathan wants each step built and then held for his feedback before the next.
     - Defense: how many rush, how many in man, how many deep, any spy.
   - You still tap whichever card you want.
 
-## 2. Each robot is a player
+## 2. Each robot is a player (BUILT in Gridiron Career)
 - Each team has a roster: 22 starters plus a bench of about 6 robots. Your career is saved in the browser (user://career.json).
 - Each robot has a name, a number, a position and a brain.
 - Ratings run 1 to 100. Each rating feeds the engine directly:
