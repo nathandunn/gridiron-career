@@ -804,6 +804,9 @@ func _tick_fx(delta: float) -> void:
 				node.scale = Vector3.ONE * maxf(1.0 - u, 0.01)
 			"flash":
 				(node as OmniLight3D).light_energy = 3.0 * (1.0 - u)
+			"ring":
+				node.scale = Vector3.ONE * (1.0 + 5.0 * u)
+				node.visible = u < 0.95
 			"debris":
 				var v: Vector3 = n["vel"]
 				if node.position.y > 0.12 or v.y > 0.0:
@@ -1164,6 +1167,12 @@ func _part_off(p: PlaySim.P, part: String, by: PlaySim.P) -> void:
 	add_child(piece)
 	piece.global_transform = xf
 	n.visible = false
+	# the part glows hot, so it shows where it lies for the rest of the game
+	var hot := _glow(Color(1.0, 0.45, 0.1), 1.6)
+	for c in piece.get_children():
+		if c is MeshInstance3D:
+			(c as MeshInstance3D).material_override = hot
+	_ring(world(_cur.get(p.idx, p.pos), 0.06))
 	var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 	if by != null:
 		var away := world(_cur.get(p.idx, p.pos)) - world(_cur.get(by.idx, by.pos))
@@ -1225,3 +1234,17 @@ func clear_debris() -> void:
 		else:
 			keep.append(n)
 	_fx_nodes = keep
+
+
+
+## A red shock ring that spreads across the turf where a part came off.
+func _ring(at: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	var t := TorusMesh.new()
+	t.inner_radius = 0.8
+	t.outer_radius = 1.0
+	mi.mesh = t
+	mi.material_override = _glow(Color(1.0, 0.2, 0.2), 3.0)
+	mi.position = at
+	add_child(mi)
+	_fx_nodes.append({"node": mi, "t0": _t, "life": 1.2, "kind": "ring"})

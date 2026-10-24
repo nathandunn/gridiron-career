@@ -11,7 +11,8 @@ var game: Game
 var sim: PlaySim
 var sfx: Sfx
 var announcer: Announcer
-var sound_mode := 0          # 0 sound and voice, 1 sound only, 2 muted
+var sound_mode := 0
+var _slowmo := 0.0           # real seconds of slow motion left (a part just came off)          # 0 sound and voice, 1 sound only, 2 muted
 var red_coach := "Balanced"
 var blue_coach := "Air Raid"
 var coaches := ["Balanced", "Air Raid"]
@@ -565,6 +566,14 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_moment(a: Dictionary) -> void:
 	if _skip_drive or sim == null:
 		return
+	if String(a["kind"]) == "part_off":
+		# make it unmissable: a big callout and a moment of slow motion
+		var v: PlaySim.P = sim.players[int(a["a"])]
+		var part := String(a.get("part", ""))
+		var who := String(v.robot.get("name", "%s %s" % [Team.NAMES[v.team], v.slot]))
+		var what := "IS POWERED DOWN!" if part == "core" else "LOSES HIS %s!" % String(Robot.PART_LABEL.get(part, part)).to_upper()
+		hud.toast("%s\n%s" % [who.to_upper(), what], 2.2)
+		_slowmo = 1.3
 	sfx.on_action(String(a["kind"]))
 	announcer.on_action(a, sim)
 
@@ -679,6 +688,9 @@ func _process(delta: float) -> void:
 	if paused or hud.any_overlay() and _phase != "over":
 		return
 	var d := delta * speed
+	if _slowmo > 0.0:
+		_slowmo -= delta
+		d *= 0.25
 	if _skip_drive:
 		d = 1e9
 	match _phase:

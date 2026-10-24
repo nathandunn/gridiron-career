@@ -1349,17 +1349,41 @@ func open_robot(id: String) -> void:
 			if float(ps[k2]) != 0.0:
 				bits.append("%s %s" % [k2, str(int(ps[k2]))])
 		box.add_child(_label(" · ".join(bits) if not bits.is_empty() else "Nothing yet.", fs - 2, Color(0.85, 0.88, 0.9)))
-	# the bench
+	# swap him, any time: a bench robot goes in for any slot, a starter comes out for anyone on the bench
+	var grp := String(r["group"])
 	if slot == "":
 		_section(box, "Put him in")
+		box.add_child(_label("For any position - his own first. He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
 		var row := HFlowContainer.new()
 		row.add_theme_constant_override("h_separation", 6)
+		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		for s in Play.GROUP_SLOTS.get(String(r["group"]), [String(r["group"])]):
+		var slots: Array = (Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS).duplicate()
+		slots.sort_custom(func(a1, b1): return int(String(Play.SLOT_GROUP[a1]) == grp) > int(String(Play.SLOT_GROUP[b1]) == grp))
+		for s in slots:
 			var out: Dictionary = Career.roster(t)[s]
-			row.add_child(_button("For %s (#%d %s, OVR %d)" % [s, int(out["number"]), out["name"], Robot.overall(out)], func():
-				Career.swap(t, s, id); open_robot(id)))
-		box.add_child(_label("He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+			var b := _button("%s: for #%d %s (%d)" % [s, int(out["number"]), out["name"], Robot.overall(out)], func():
+				Career.swap_any(Career.roster(t), Career.team(t)["bench"], s, id); Career.save(); open_robot(id))
+			if String(Play.SLOT_GROUP[s]) == grp:
+				b.add_theme_color_override("font_color", YELLOW)
+			row.add_child(b)
+	else:
+		_section(box, "Take him out")
+		box.add_child(_label("Bring in anyone from the bench - his position first. From the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+		var row2 := HFlowContainer.new()
+		row2.add_theme_constant_override("h_separation", 6)
+		row2.add_theme_constant_override("v_separation", 6)
+		box.add_child(row2)
+		var bench: Array = (Career.team(t)["bench"] as Array).duplicate()
+		bench.sort_custom(func(x, y): return int(String(x["group"]) == String(Play.SLOT_GROUP[slot])) * 1000 + Robot.effective_overall(x) > int(String(y["group"]) == String(Play.SLOT_GROUP[slot])) * 1000 + Robot.effective_overall(y))
+		for bb: Dictionary in bench:
+			var bid := String(bb["id"])
+			var lost := Robot.lost_parts(bb)
+			var b2 := _button("#%d %s, %s %d%s" % [int(bb["number"]), bb["name"], bb["group"], Robot.overall(bb), (" (no %s)" % ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))) if not lost.is_empty() else ""], func():
+				Career.swap_any(Career.roster(t), Career.team(t)["bench"], slot, bid); Career.save(); open_robot(bid))
+			if String(bb["group"]) == String(Play.SLOT_GROUP[slot]):
+				b2.add_theme_color_override("font_color", YELLOW)
+			row2.add_child(b2)
 	var back := HFlowContainer.new()
 	box.add_child(back)
 	back.add_child(_button("Back to the roster", func(): open_roster(t)))

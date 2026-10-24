@@ -165,8 +165,8 @@ const HURT := {
 	"dive_tackle": ["b", 32.0, 22.0], "pancake": ["b", 34.0, 0.0], "stiff_arm": ["b", 26.0, 0.0],
 	"miss": ["a", 24.0, 0.0],
 }
-const HURT_CHANCE := {"tackle": 0.075, "big_hit": 0.55, "sack": 0.3, "dive_tackle": 0.12, "pancake": 0.25,
-	"stiff_arm": 0.1, "miss": 0.07}
+const HURT_CHANCE := {"tackle": 0.3, "big_hit": 0.9, "sack": 0.7, "dive_tackle": 0.4, "pancake": 0.5,
+	"stiff_arm": 0.3, "miss": 0.25}
 const PART_ODDS := {"head": 0.18, "core": 0.1, "larm": 0.18, "rarm": 0.18, "lleg": 0.18, "rleg": 0.18}
 var fumble_forced := false
 var parts_lost: Array = []          # {idx, part} this play
@@ -181,7 +181,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
 	var closing := minf((by.vel - v.vel).length(), 14.0)
 	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
-		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * 0.8 * float(K.get("wear", 1.0))
+		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * 1.3 * float(K.get("wear", 1.0))
 	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it

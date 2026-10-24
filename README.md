@@ -41,9 +41,9 @@ Each robot has six parts - head, core, two arms, two legs - each with a conditio
 Stock part). Tackles, big hits, sacks, diving stops, pancakes, stiff arms and bounced-off tackles
 take condition off a part (more for strong hitters, fast collisions, less for tough robots; a big
 hit now and then hits *too* hard). At 0 the part **comes off**: it flies, spins and bounces on the
-turf, with sparks, a crunch, a boing and the announcer's horror. Most hits do no harm; the ones
-that do take a real bite: about a quarter of the robots take some damage in a game and about two
-lose a part (tests/damage_test.gd). A lost part stays where it fell, and the robot sparks from the
+turf, with sparks, a crunch, a boing and the announcer's horror. A part comes off somebody about every 5 plays (tests/damage_test.gd) and
+you can't miss it: the play drops into slow motion, his name and what he lost fill the screen, a
+red shock ring spreads from him, and the part glows hot where it lands. A lost part stays where it fell, and the robot sparks from the
 stump. A quarterback who loses an arm gets a standard one put straight back on.
 
 | Lost | What it does |
@@ -57,6 +57,8 @@ At the next dead ball you choose for each of your broken robots: **put in** any 
 robot - from any position (a receiver on the line is still built like a receiver) - **bolt on a junk spare** (rusty, works badly, breaks sooner), or **play on** without
 it. The rival's coach decides for his. Damage carries over from game to game; a robot's page
 shows each part's condition, and *Repair everything* is free until money arrives in step 4.
+**Swap any time:** on any robot's page, put a bench robot in for any slot, or take a starter out
+for anyone on the bench (from the next snap).
 Simulated games (Sim x10) wear out copies, never your robots.
 
 What follows is what it inherits from Gridiron Bots.
