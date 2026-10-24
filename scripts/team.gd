@@ -19,6 +19,7 @@ static func build(index: int, coach_name: String, picks: Dictionary = {}, callin
 	if Career.loaded:
 		# the career's rated robots play (unless "Fair bodies" is on)
 		d["roster"] = Career.roster(index)
+		d["bench"] = Career.team(index)["bench"]
 		d["fair"] = Career.fair()
 	return d
 

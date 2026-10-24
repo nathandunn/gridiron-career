@@ -27,6 +27,7 @@ func _ready() -> void:
 	_streams["whistle"] = _whistle(0.55)
 	_streams["roar"] = _roar(rng, 2.6)
 	_streams["servo"] = _servo(0.22)
+	_streams["boing"] = _boing(0.5)
 
 
 func play(name: String, vol_db := 0.0, pitch := 1.0) -> void:
@@ -61,6 +62,10 @@ func on_action(kind: String) -> void:
 			play("whoosh", -6.0)
 		"catch", "int", "handoff":
 			play("thump", -4.0)
+		"part_off":
+			play("big_crunch", 1.0, 0.85)
+			play("boing", -4.0)
+			play("clank", -3.0, 1.3)
 		"drop", "pbu", "incomplete":
 			play("clink", -6.0)
 			play("bounce", -5.0)
@@ -181,4 +186,17 @@ func _servo(secs: float) -> AudioStreamWAV:
 		var u := float(i) / n
 		ph += (300.0 + 700.0 * u) / RATE
 		buf[i] = (fmod(ph, 1.0) * 2.0 - 1.0) * sin(u * PI) * 0.25
+	return _wav(buf)
+
+
+## A spring letting go: a falling, wobbling tone.
+func _boing(secs: float) -> AudioStreamWAV:
+	var n := int(secs * RATE)
+	var buf := PackedFloat32Array()
+	buf.resize(n)
+	var ph := 0.0
+	for i in n:
+		var u := float(i) / n
+		ph += (520.0 * (1.0 - 0.75 * u) * (1.0 + 0.12 * sin(u * 60.0))) / RATE
+		buf[i] = sin(TAU * ph) * (1.0 - u) * 0.45
 	return _wav(buf)

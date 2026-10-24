@@ -1216,7 +1216,19 @@ func _robot_row(r: Dictionary, slot: String) -> Button:
 	var bits: Array = []
 	for k in Robot.keys(r):
 		bits.append("%s %d" % [String(Robot.LABEL[k]).substr(0, 3), int(Robot.rating(r, k))])
-	b.text = "#%d  %s  %s   OVR %d   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r), "  ".join(bits)]
+	var lost := Robot.lost_parts(r)
+	var junk := 0
+	for k in Robot.PARTS:
+		if Robot.part_junk(r, k):
+			junk += 1
+	var hurt := ""
+	if not lost.is_empty():
+		hurt = "   NO " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_upper()))
+	if junk > 0:
+		hurt += "   %d junk" % junk
+	b.text = "#%d  %s  %s   OVR %d%s   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r), hurt, "  ".join(bits)]
+	if not lost.is_empty():
+		b.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	var id := String(r["id"])
 	b.pressed.connect(func(): open_robot(id))
 	return b
@@ -1244,7 +1256,7 @@ func open_robot(id: String) -> void:
 	sv.msaa_3d = Viewport.MSAA_2X
 	svc.add_child(sv)
 	top.add_child(svc)
-	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]))
+	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]), Robot.ensure_parts(r))
 	var turn := Node3D.new()
 	sv.add_child(turn)
 	turn.add_child(model["root"])
@@ -1327,6 +1339,7 @@ func open_robot(id: String) -> void:
 		num.custom_minimum_size.x = 30
 		line.add_child(num)
 		box.add_child(_label("    " + String(Robot.RATING_HELP[k]), fs - 4, Color(0.62, 0.67, 0.72)))
+	_parts_section(box, r, id)
 	# this game
 	if slot != "" and main.game != null:
 		var ps: Dictionary = (main.game.pstats[t] as Dictionary).get(slot, {})
@@ -1350,3 +1363,81 @@ func open_robot(id: String) -> void:
 	var back := HFlowContainer.new()
 	box.add_child(back)
 	back.add_child(_button("Back to the roster", func(): open_roster(t)))
+
+
+
+## ---- broken robots -----------------------------------------------------------------------------
+
+## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
+func open_injuries(slots: Array) -> void:
+	var box := _open("Broken robots")
+	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Close this and the coach decides.", fs - 2, Color(0.8, 0.83, 0.88)))
+	var tm: Dictionary = main.game.teams[0]
+	for s in slots:
+		var r: Dictionary = tm["roster"][s]
+		var lost := Robot.lost_parts(r)
+		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
+		_section(box, "%s  #%d %s - no %s" % [s, int(r["number"]), r["name"], " or ".join(names)])
+		var help: Array = []
+		for k in lost:
+			help.append(String(Robot.PART_HELP[k]))
+		box.add_child(_label(" ".join(help), fs - 3, Color(0.7, 0.74, 0.8)))
+		var row := HFlowContainer.new()
+		row.add_theme_constant_override("h_separation", 6)
+		row.add_theme_constant_override("v_separation", 6)
+		box.add_child(row)
+		var sub := Career.best_sub(tm.get("bench", []), s)
+		if not sub.is_empty():
+			row.add_child(_button("Sub in #%d %s (OVR %d)" % [int(sub["number"]), sub["name"], Robot.overall(sub)], func(): main.injury_choice(s, "sub")))
+		row.add_child(_button("Bolt on junk %s" % " and ".join(names), func(): main.injury_choice(s, "junk")))
+		if Robot.can_play(r):
+			row.add_child(_button("Play on without it", func(): main.injury_choice(s, "play_on")))
+		else:
+			row.add_child(_label("He can't play like this.", fs - 2, MAGENTA))
+
+
+func _parts_section(box: Control, r: Dictionary, id: String) -> void:
+	_section(box, "Parts")
+	var parts := Robot.ensure_parts(r)
+	for k in Robot.PARTS:
+		var pt: Dictionary = parts[k]
+		var hp := float(pt["hp"])
+		var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 8)
+		box.add_child(line)
+		var nl := _label(String(Robot.PART_LABEL[k]), fs - 1)
+		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		nl.custom_minimum_size.x = 110
+		line.add_child(nl)
+		if hp <= 0.0:
+			var gl := _label("GONE - came off on the field", fs - 1, Color(1.0, 0.4, 0.4))
+			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			line.add_child(gl)
+			line.add_child(_button("Bolt on junk", func(): Robot.bolt_on_junk(r, k); Career.save(); open_robot(id)))
+		else:
+			var bar := ProgressBar.new()
+			bar.max_value = mx
+			bar.value = hp
+			bar.show_percentage = false
+			bar.custom_minimum_size = Vector2(100, fs)
+			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			var fill := StyleBoxFlat.new()
+			fill.bg_color = Color(0.3, 0.9, 0.5) if hp / mx > 0.6 else (YELLOW if hp / mx > 0.3 else Color(1.0, 0.4, 0.4))
+			var bg := StyleBoxFlat.new()
+			bg.bg_color = Color(0.12, 0.14, 0.18)
+			bar.add_theme_stylebox_override("fill", fill)
+			bar.add_theme_stylebox_override("background", bg)
+			line.add_child(bar)
+			var tl := _label("%s %d/%d" % [pt["tier"], int(hp), int(mx)], fs - 2, Color(0.8, 0.5, 0.3) if pt["tier"] == "Junk" else Color(0.85, 0.9, 0.95))
+			tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			tl.custom_minimum_size.x = 90
+			line.add_child(tl)
+	var row := HFlowContainer.new()
+	box.add_child(row)
+	row.add_child(_button("Repair everything (free until money comes in)", func():
+		for k in Robot.PARTS:
+			Robot.repair(r, k)
+		Career.save(); open_robot(id)))

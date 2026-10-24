@@ -80,6 +80,8 @@ func _ready() -> void:
 			cam.set_view(String(args["view"]))
 		if args.has("speed"):
 			set_speed(float(args["speed"]))
+		if args.has("wear"):
+			PlaySim.K["wear"] = float(args["wear"])   # more breakage, to see it sooner
 		await get_tree().create_timer(at).timeout
 		if args.has("on"):
 			var kinds := String(args["on"]).split(",")
@@ -101,7 +103,20 @@ func _ready() -> void:
 			"toast": hud.toast(String(args.get("text", "TURNOVER ON DOWNS\nBlue ball")).replace("|", "\n"), 5.0)
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
 			"roster": hud.open_roster(0)
+			"injuries":
+				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0
+				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
+				Robot.ensure_parts(Career.roster(0)["RB"])["head"]["hp"] = 0
+				hud.open_injuries(_broken_mine())
 			"robot": hud.open_robot(String(Career.roster(0)[String(args.get("slot", "QB"))]["id"]))
+			"brokenrobot":
+				var qb: Dictionary = Career.roster(0)["QB"]
+				Robot.ensure_parts(qb)["larm"]["hp"] = 0
+				Robot.bolt_on_junk(qb, "rleg")
+				Robot.ensure_parts(qb)["head"]["hp"] = 41
+				library_changed()
+				view.set_play(sim, game.poss, game.yl, game.to_go)
+				hud.open_robot(String(qb["id"]))
 			"bench": hud.open_robot(String(Career.team(0)["bench"][0]["id"]))
 		await get_tree().create_timer(float(args.get("after", "0.6"))).timeout
 		await RenderingServer.frame_post_draw
@@ -472,6 +487,48 @@ func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scor
 		sfx.play("roar", -9.0)
 
 
+## Your robots missing a part that you haven't yet said to leave in: slot list.
+var played_on := {}        # robot id -> parts signature you chose to play on with
+
+
+func _broken_mine() -> Array:
+	var out: Array = []
+	if game == null or not game.teams[0].has("roster") or bool(game.teams[0].get("fair", false)):
+		return out
+	var ros: Dictionary = game.teams[0]["roster"]
+	for s2 in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
+		var r: Dictionary = ros[s2]
+		var lost := Robot.lost_parts(r)
+		if lost.is_empty():
+			continue
+		if String(played_on.get(String(r["id"]), "")) == ",".join(lost) and Robot.can_play(r):
+			continue
+		out.append(s2)
+	return out
+
+
+## From the injury panel.
+func injury_choice(slot: String, what: String) -> void:
+	var tm: Dictionary = game.teams[0]
+	var r: Dictionary = tm["roster"][slot]
+	match what:
+		"sub":
+			var sub := Career.best_sub(tm.get("bench", []), slot)
+			if not sub.is_empty():
+				Career.swap_in(tm["roster"], tm["bench"], slot, String(sub["id"]))
+		"junk":
+			for k in Robot.lost_parts(r):
+				Robot.bolt_on_junk(r, k)
+		"play_on":
+			played_on[String(r["id"])] = ",".join(Robot.lost_parts(r))
+	Career.save()
+	if _broken_mine().is_empty():
+		hud.close_overlay()
+		_next()
+	else:
+		hud.open_injuries(_broken_mine())
+
+
 ## Tap a robot on the field (between plays, or paused) to open his page.
 func _unhandled_input(event: InputEvent) -> void:
 	if not (event is InputEventMouseButton) or not (event as InputEventMouseButton).pressed:
@@ -609,6 +666,13 @@ func _process(delta: float) -> void:
 	if _phase == "qbreak" and not hud.any_overlay():
 		_next()   # the break panel was closed without Continue
 		return
+	if _phase == "injury" and not hud.any_overlay():
+		# closed: whoever wasn't decided on, the coach sees to
+		for s2 in _broken_mine():
+			Career.coach_fix(game.teams[0]["roster"], game.teams[0].get("bench", []), s2)
+		Career.save()
+		_next()
+		return
 	if paused or hud.any_overlay() and _phase != "over":
 		return
 	var d := delta * speed
@@ -636,6 +700,10 @@ func _process(delta: float) -> void:
 				var score_before: Array = game.score.duplicate()
 				Batch._fold_tally(game, sim)
 				var e := game.finish(sim)
+				if not sim.parts_lost.is_empty() or game.teams[1].has("roster"):
+					game.coach_fixes(1)          # the rival's coach sees to his broken robots
+					if Career.loaded:
+						Career.save()
 				hud.show_result(String(e["text"]))
 				hud.show_state(game)
 				sfx.play("whistle", -10.0)
@@ -650,6 +718,10 @@ func _process(delta: float) -> void:
 		"after", "kick":
 			_wait -= d
 			if _wait <= 0.0:
+				if not _broken_mine().is_empty():
+					_phase = "injury"
+					hud.open_injuries(_broken_mine())
+					return
 				_next()
 
 

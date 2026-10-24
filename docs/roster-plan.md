@@ -1,6 +1,6 @@
 # Gridiron Bots: Robot Roster, Upgrades and Breakage (plan)
 
-Status: step 1 built and live in Gridiron Bots (2026-10-23). From step 2 the work is a separate app, **Gridiron Career** (repo nathandunn/gridiron-career, https://gridiron-career.apps.precogsoftwareservices.com). Step 2 built and live there 2026-10-23, awaiting Nathan's feedback.
+Status: step 1 built and live in Gridiron Bots (2026-10-23). From step 2 the work is a separate app, **Gridiron Career** (repo nathandunn/gridiron-career, https://gridiron-career.apps.precogsoftwareservices.com). Steps 2 and 3 built and live there 2026-10-23; step 3 awaiting Nathan's feedback.
 Nathan wants each step built and then held for his feedback before the next.
 
 **Decided (Nathan, 2026-10-23):**
@@ -74,7 +74,7 @@ Each robot has six parts: Head, Core, Left arm, Right arm, Left leg, Right leg.
   - a news ticker ("Blue Mk III legs on their RB", "Iron Hogs lost two heads Sunday")
 - A season ends with a playoff. Then a new season starts with the robots aged a little and a fresh crop on the scrap market.
 
-## 5. Breakage
+## 5. Breakage (BUILT in Gridiron Career, step 3; coach-rule `sub` not yet)
 - Each hit deals damage to a part, depending on the hitter's strength and closing speed against the part's armour and the robot's toughness. Big hits and dive tackles do the most.
 - At 0 HP the part flies off, with sparks, a popup and a crunch, and stays on the field until the play ends.
 - What a missing part does:

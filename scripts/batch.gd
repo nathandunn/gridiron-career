@@ -4,6 +4,11 @@ extends RefCounted
 
 
 static func play_game(red: Dictionary, blue: Dictionary, qlen: float, seed_v: int) -> Game:
+	# a simulated game wears out copies of the robots, never the career's own
+	for tm in [red, blue]:
+		if tm.has("roster"):
+			tm["roster"] = (tm["roster"] as Dictionary).duplicate(true)
+			tm["bench"] = (tm.get("bench", []) as Array).duplicate(true)
 	var g := Game.new()
 	g.setup(red, blue, qlen, seed_v)
 	var guard := 0
@@ -16,6 +21,8 @@ static func play_game(red: Dictionary, blue: Dictionary, qlen: float, seed_v: in
 		sim.run_to_end()
 		g.finish(sim)
 		_fold_tally(g, sim)
+		for t in 2:
+			g.coach_fixes(t)
 	return g
 
 

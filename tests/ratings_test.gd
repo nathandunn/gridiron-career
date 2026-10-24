@@ -28,7 +28,8 @@ func _roster(t: int, val: int) -> Dictionary:
 
 func _init() -> void:
 	Library.ensure()
-	# 1. sixties are the equal bodies
+	# 1. sixties are the equal bodies (with wear and tear off: hits don't break anything)
+	PlaySim.K["wear"] = 0.0
 	var same := true
 	for s in 5:
 		var a := Batch.play_game(Team.build(0, "Balanced"), Team.build(1, "Air Raid"), 300.0, s)
@@ -38,6 +39,7 @@ func _init() -> void:
 		if a.score != b.score:
 			same = false
 	print("SIXTIES = EQUAL BODIES: ", same)
+	PlaySim.K["wear"] = 1.0
 	# 2. fast receivers gain more a catch, and better robots win
 	var base := _avg_rec(Team.build(0, "Air Raid"), Team.build(1, "Balanced"), 30)
 	var fast := Team.build(0, "Air Raid")

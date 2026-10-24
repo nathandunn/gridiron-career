@@ -115,15 +115,50 @@ static func find(id: String) -> Dictionary:
 ## Swap a bench robot in for a starter of the same position group.
 static func swap(t: int, slot: String, bench_id: String) -> bool:
 	var tm := team(t)
-	var bench: Array = tm["bench"]
+	var ok := swap_in(tm["starters"], tm["bench"], slot, bench_id)
+	if ok:
+		save()
+	return ok
+
+
+## Swap a bench robot in for the starter at `slot` (the same position group); the starter sits.
+static func swap_in(starters: Dictionary, bench: Array, slot: String, bench_id: String) -> bool:
 	for i in bench.size():
 		var b: Dictionary = bench[i]
 		if String(b["id"]) == bench_id and String(b["group"]) == String(Play.SLOT_GROUP[slot]):
-			var out: Dictionary = tm["starters"][slot]
+			var out: Dictionary = starters[slot]
 			b["slot"] = slot
 			out["slot"] = ""
-			tm["starters"][slot] = b
+			starters[slot] = b
 			bench[i] = out
-			save()
 			return true
 	return false
+
+
+## The best healthy bench robot for a slot, or {}.
+static func best_sub(bench: Array, slot: String) -> Dictionary:
+	var best := {}
+	for b: Dictionary in bench:
+		if String(b["group"]) == String(Play.SLOT_GROUP[slot]) and Robot.can_play(b):
+			if best.is_empty() or Robot.effective_overall(b) > Robot.effective_overall(best):
+				best = b
+	return best
+
+
+## What a coach does about a broken robot at `slot`: put in a better sub if there is one,
+## else bolt junk on whatever is missing. Returns a line for the log, or "".
+static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> String:
+	var r: Dictionary = starters[slot]
+	var lost := Robot.lost_parts(r)
+	if lost.is_empty():
+		return ""
+	var sub := best_sub(bench, slot)
+	var patched := Robot.effective_overall(r)
+	for k in lost:
+		patched += 4.0 + {"head": 30.0, "core": 60.0, "larm": 14.0, "rarm": 14.0, "lleg": 25.0, "rleg": 25.0}[k] - 8.0
+	if not sub.is_empty() and Robot.effective_overall(sub) > patched:
+		swap_in(starters, bench, slot, String(sub["id"]))
+		return "%s comes in for %s at %s." % [sub["name"], r["name"], slot]
+	for k in lost:
+		Robot.bolt_on_junk(r, k)
+	return "%s gets a junk %s bolted on." % [r["name"], " and junk ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]

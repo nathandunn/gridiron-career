@@ -124,6 +124,13 @@ func on_action(a: Dictionary, sim: PlaySim) -> void:
 			big = true
 		"pancake":
 			line = "%s pancakes %s!" % [na, nb]
+		"part_off":
+			var part := String(a.get("part", ""))
+			if part == "core":
+				line = "OH NO! %s is POWERED DOWN!" % na
+			else:
+				line = "OH NO! %s's %s comes clean off!" % [na, String(Robot.PART_LABEL.get(part, part)).to_lower()]
+			big = true
 	if line == "":
 		return
 	if hud != null:

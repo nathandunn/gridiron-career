@@ -144,6 +144,65 @@ func _fx(kind: String, a: P = null, b: P = null, pos := Vector2.INF) -> void:
 	if at == Vector2.INF:
 		at = b.pos if b != null else (a.pos if a != null else ball_pos)
 	actions.append({"t": t, "kind": kind, "a": a.idx if a != null else -1, "b": b.idx if b != null else -1, "pos": at})
+	if HURT.has(kind) and a != null and b != null:
+		var h: Array = HURT[kind]
+		# [who takes it (a or b), base damage, who takes the lesser knock, lesser damage]
+		var victim: P = a if h[0] == "a" else b
+		var other: P = b if h[0] == "a" else a
+		_hurt(victim, other, float(h[1]), kind)
+		if float(h[2]) > 0.0:
+			_hurt(other, victim, float(h[2]), kind)
+
+
+## ---- wear and tear: hits damage parts, and a part at 0 comes off --------------------------------
+
+## kind -> [who is hurt most, base damage, base damage to the other one]
+const HURT := {
+	"tackle": ["b", 7.0, 2.0], "big_hit": ["b", 24.0, 5.0], "sack": ["b", 16.0, 3.0],
+	"dive_tackle": ["b", 9.0, 4.0], "pancake": ["b", 13.0, 0.0], "stiff_arm": ["b", 7.0, 0.0],
+	"miss": ["a", 5.0, 0.0],
+}
+const PART_ODDS := {"head": 0.18, "core": 0.1, "larm": 0.18, "rarm": 0.18, "lleg": 0.18, "rleg": 0.18}
+var fumble_forced := false
+var parts_lost: Array = []          # {idx, part} this play
+
+
+func _hurt(v: P, by: P, base: float, kind: String) -> void:
+	if v.robot.is_empty() or float(K.get("wear", 1.0)) <= 0.0:
+		return                       # equal bodies (headless, Fair bodies) or wear switched off
+	var parts: Dictionary = Robot.ensure_parts(v.robot)
+	var closing := minf((by.vel - v.vel).length(), 14.0)
+	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
+		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * float(K.get("wear", 1.0))
+	if kind == "big_hit" and rng.randf() < 0.12:
+		dmg *= 4.0                   # hit too hard: something gives
+	# which part takes it
+	var roll := rng.randf()
+	var pick := "core"
+	for k in Robot.PARTS:
+		roll -= float(PART_ODDS[k])
+		if roll <= 0.0:
+			pick = k
+			break
+	var part: Dictionary = parts[pick]
+	if float(part["hp"]) <= 0.0:
+		return                       # already gone
+	if String(part["tier"]) == "Junk":
+		dmg *= 1.3
+	part["hp"] = maxf(float(part["hp"]) - dmg, 0.0)
+	if float(part["hp"]) > 0.0:
+		return
+	# it came off
+	parts_lost.append({"idx": v.idx, "part": pick})
+	actions.append({"t": t, "kind": "part_off", "a": v.idx, "b": by.idx, "pos": v.pos, "part": pick})
+	_say("%s's %s comes off!" % [v.slot, String(Robot.PART_LABEL[pick]).to_lower()])
+	var keep_scale := v.spd_scale
+	v.body = Robot.apply(v.robot, BODY[v.group].duplicate())
+	v.spd_scale = keep_scale
+	if pick == "core":
+		_knock_down(v, 99.0)
+	elif (pick == "larm" or pick == "rarm") and v == carrier and rng.randf() < 0.5:
+		fumble_forced = true         # the ball was in that arm
 
 var off_play: Play
 var def_play: Play
@@ -2353,7 +2412,7 @@ func _contacts() -> void:
 			stat["tackler"] = e.slot
 			var is_sack := c.slot == "QB" and c.side == 0 and not handed and not thrown and c.pos.y < 0.0 and String(c.assign.get("kind", "")) == "pass"
 			_fx("sack" if is_sack else ("dive_tackle" if dive else ("big_hit" if e.manner.get("hit_hard", false) or (e.vel - c.vel).length() > 11.5 else "tackle")), e, c)
-			if rng.randf() < pf:
+			if fumble_forced or rng.randf() < pf:
 				_fumble(c, e)
 				return
 			_knock_down(c, 99.0)

@@ -291,8 +291,29 @@ func _log_play(e: Dictionary) -> void:
 
 
 ## The play is over: move the ball, the downs, the clock and the score.
+## Parts that came off this game: [{team, slot, name, part, q}]
+var broken: Array = []
+
+
+## A team's coach deals with any robot missing a part: a better sub, or junk bolted on.
+func coach_fixes(t: int) -> Array:
+	var tm: Dictionary = teams[t]
+	var out: Array = []
+	if not tm.has("roster"):
+		return out
+	for s in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
+		var line := Career.coach_fix(tm["roster"], tm.get("bench", []), s)
+		if line != "":
+			out.append(line)
+			_say(line)
+	return out
+
+
 func finish(sim: PlaySim) -> Dictionary:
 	var r: Dictionary = sim.result
+	for pl: Dictionary in sim.parts_lost:
+		var p: PlaySim.P = sim.players[int(pl["idx"])]
+		broken.append({"team": p.team, "slot": p.slot, "name": String(p.robot.get("name", p.slot)), "part": pl["part"], "q": quarter, "id": String(p.robot.get("id", ""))})
 	var op: Play = pending["off"]
 	var dp: Play = pending["def"]
 	var team := poss

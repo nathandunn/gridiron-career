@@ -272,13 +272,13 @@ func _place_line(mi: MeshInstance3D, offense_yl: float) -> void:
 func _ensure_player(p: PlaySim.P) -> void:
 	var team := p.team
 	var key := p.idx
-	var rid := String(p.robot.get("id", ""))
+	var rid := String(p.robot.get("id", "")) + _parts_sig(p.robot)
 	if _players.has(key):
 		var e: Dictionary = _players[key]
 		if e["team"] == team and e["slot"] == p.slot and e["rid"] == rid:
 			return
 		(e["root"] as Node3D).queue_free()
-	var r := build_robot(p.group, team, int(p.robot.get("number", -1)))
+	var r := build_robot(p.group, team, int(p.robot.get("number", -1)), p.robot.get("parts", {}))
 	var root: Node3D = r["root"]
 	add_child(root)
 	var lab := Label3D.new()
@@ -292,7 +292,7 @@ func _ensure_player(p: PlaySim.P) -> void:
 	lab.no_depth_test = true
 	lab.modulate = NEON[team].lightened(0.4)
 	root.add_child(lab)
-	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "label": lab,
+	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "nodes": r["nodes"], "label": lab,
 		"team": team, "slot": p.slot, "rid": rid,
 		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
 
@@ -300,7 +300,7 @@ func _ensure_player(p: PlaySim.P) -> void:
 ## One robot, not yet placed anywhere: armoured legs on hip pivots, a torso in team colour with
 ## big shoulder plates and a chest light, arms on shoulder pivots, and a head with a glowing
 ## visor. Linemen are heavier; backs and receivers leaner. {root, body, legs, arms, head}
-func build_robot(group: String, team: int, number := -1) -> Dictionary:
+func build_robot(group: String, team: int, number := -1, parts: Dictionary = {}) -> Dictionary:
 	var root := Node3D.new()
 	var body := Node3D.new()        # hops and lunges move this; root keeps the spot and facing
 	root.add_child(body)
@@ -348,7 +348,28 @@ func build_robot(group: String, team: int, number := -1) -> Dictionary:
 	_box(Vector3(0.36, 0.34, 0.4), Vector3(0, 0.17, 0), _metal(Color(0.12, 0.13, 0.16)), head)
 	_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 0.2, 0.2), light, head)
 	_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 0.39, -0.02), light, head)            # crest
-	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head}
+	# legs[0] and arms[0] are on his right (-x when he faces +z)
+	var nodes := {"head": head, "rarm": arms[0], "larm": arms[1], "rleg": legs[0], "lleg": legs[1]}
+	for k in parts:
+		var pt: Dictionary = parts[k]
+		var n: Node3D = nodes.get(k, null)
+		if float(pt.get("hp", 100)) <= 0.0:
+			if n != null:
+				n.visible = false          # gone: the pivot stays so the poses still work
+		elif String(pt.get("tier", "Stock")) == "Junk" and n != null:
+			for c in n.get_children():
+				if c is MeshInstance3D:
+					(c as MeshInstance3D).material_override = _metal(Color(0.42, 0.27, 0.16))   # rusty spare
+	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head, "nodes": nodes}
+
+
+static func _parts_sig(robot: Dictionary) -> String:
+	var out := ""
+	var parts: Dictionary = robot.get("parts", {})
+	for k in parts:
+		var pt: Dictionary = parts[k]
+		out += "|" + k + ("x" if float(pt["hp"]) <= 0.0 else String(pt["tier"]).substr(0, 1))
+	return out
 
 
 ## Called after each sim step.
@@ -428,6 +449,9 @@ const POPUP := {
 	"drop": ["DROPPED!", Color(1.0, 0.4, 0.8)], "pbu": ["BROKEN UP!", Color(1.0, 0.4, 0.8)],
 	"int": ["PICKED OFF!", Color(1.0, 0.35, 0.3)], "fumble": ["FUMBLE!", Color(1.0, 0.35, 0.3)],
 	"recover": ["RECOVERED!", Color(0.4, 0.95, 1.0)], "pancake": ["PANCAKE!", Color(1.0, 0.85, 0.2)],
+	"head": ["HEAD OFF!", Color(1.0, 0.3, 0.3)], "core": ["POWERED DOWN!", Color(1.0, 0.3, 0.3)],
+	"larm": ["ARM OFF!", Color(1.0, 0.3, 0.3)], "rarm": ["ARM OFF!", Color(1.0, 0.3, 0.3)],
+	"lleg": ["LEG OFF!", Color(1.0, 0.3, 0.3)], "rleg": ["LEG OFF!", Color(1.0, 0.3, 0.3)],
 }
 
 ## What the robots say to each other, by what just happened.
@@ -548,6 +572,9 @@ func _act_out(a: Dictionary) -> void:
 			_anim(pa, "dive")
 			_popup(k, pa)
 			_ball_fx = {}
+		"part_off":
+			if pa != null:
+				_part_off(pa, String(a.get("part", "")), pb)
 		"pancake":
 			if pb != null:
 				_anim(pb, "fall_back", _yaw_to(pb, pa) if pa != null else INF)
@@ -707,6 +734,19 @@ func _tick_fx(delta: float) -> void:
 				node.scale = Vector3.ONE * maxf(1.0 - u, 0.01)
 			"flash":
 				(node as OmniLight3D).light_energy = 3.0 * (1.0 - u)
+			"debris":
+				var v: Vector3 = n["vel"]
+				if node.position.y > 0.12 or v.y > 0.0:
+					v.y -= 20.0 * delta
+					node.position += v * delta
+					node.rotation += (n["spin"] as Vector3) * delta
+					if node.position.y < 0.12 and v.y < 0.0:
+						node.position.y = 0.12
+						v = Vector3(v.x * 0.5, -v.y * 0.35, v.z * 0.5)   # bounce
+						n["spin"] = (n["spin"] as Vector3) * 0.5
+						if v.y < 1.0:
+							v = Vector3.ZERO
+					n["vel"] = v
 	_fx_nodes = keep
 
 
@@ -1025,3 +1065,36 @@ func _tear(at: Vector3, yaw: float) -> void:
 	add_child(mi)
 	var v := Vector3(sin(yaw), 0, cos(yaw)) * 0.8 + Vector3(0, 0.6, 0)
 	_fx_nodes.append({"node": mi, "t0": _t, "life": 0.7, "kind": "spark", "vel": v})
+
+
+
+## ---- parts coming off ----------------------------------------------------------------------------
+
+## The part leaves him: a copy flies off spinning and bounces on the turf (it lies there till
+## the next snap), the real one is hidden, sparks and a popup.
+func _part_off(p: PlaySim.P, part: String, by: PlaySim.P) -> void:
+	var e: Dictionary = _players.get(p.idx, {})
+	if e.is_empty():
+		return
+	var at := world(_cur.get(p.idx, p.pos), 1.6)
+	_sparks(at, 22, Color(1.0, 0.6, 0.2))
+	_popup(part, p)
+	if part == "core":
+		_anim(p, "fall_back", INF)
+		return
+	var n: Node3D = (e["nodes"] as Dictionary).get(part, null)
+	if n == null or not n.visible:
+		return
+	var piece := n.duplicate() as Node3D
+	var xf := n.global_transform
+	add_child(piece)
+	piece.global_transform = xf
+	n.visible = false
+	var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
+	if by != null:
+		var away := world(_cur.get(p.idx, p.pos)) - world(_cur.get(by.idx, by.pos))
+		if away.length() > 0.1:
+			dir = (away.normalized() + dir * 0.5).normalized()
+	var v := dir * randf_range(4.0, 7.0) + Vector3(0, randf_range(5.0, 8.0), 0)
+	var spin := Vector3(randf_range(-12, 12), randf_range(-12, 12), randf_range(-12, 12))
+	_fx_nodes.append({"node": piece, "t0": _t, "life": 999.0, "kind": "debris", "vel": v, "spin": spin})
