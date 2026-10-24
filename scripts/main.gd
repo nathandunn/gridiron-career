@@ -350,7 +350,8 @@ func _build_ui() -> void:
 	hud.mark_view(cam.view)
 	announcer.hud = hud
 	Career.ensure()      # the career's robots play in this game
-	new_game()
+	# a game starts with setting up your side (test runs that play themselves skip it)
+	new_game(OS.get_cmdline_user_args().has("--autopick"))
 
 
 ## A phone's canvas is in device pixels: scale the 2D up so the text is readable.
@@ -373,7 +374,9 @@ func reopen_panel() -> Callable:
 	return Callable()
 
 
-func new_game() -> void:
+## A new game. With start false it waits on the set-up panel (coach, brains, play calling,
+## your robots, the rival) until Kick off.
+func new_game(start := true) -> void:
 	hud.slips = []
 	if view != null:
 		view.clear_debris()
@@ -386,6 +389,13 @@ func new_game() -> void:
 	_choice = {}
 	hud.show_call("")
 	hud.show_result("Kick-off: %s receive" % Team.NAMES[game.poss])
+	if not start:
+		view.set_play(null, game.poss, game.yl, game.to_go)
+		hud.show_state(game)
+		_phase = "pregame"
+		hud.open_teams(true)
+		return
+	hud.show_resume(false, "")
 	_next()
 
 
@@ -648,6 +658,8 @@ func _resume_label() -> String:
 			return "Continue to the next quarter"
 		"injury":
 			return "Fix broken robots"
+		"pregame":
+			return "Set up the game"
 	return ""
 
 
@@ -658,6 +670,8 @@ func resume_panel() -> void:
 			hud.open_picker(game, _pick_team, _picking_side, _hand, _coach_hint)
 		"qbreak":
 			hud.show_stats(game, "quarter", game.quarter_ends[_seen_q - 1])
+		"pregame":
+			hud.open_teams(true)
 		"injury":
 			if _broken_mine().is_empty():
 				_next()
@@ -754,7 +768,7 @@ func _process(delta: float) -> void:
 		_batch_step()
 		return
 	# a panel that is waiting on you was closed: nothing happens until you come back to it
-	if _phase in ["picking", "qbreak", "injury"]:
+	if _phase in ["picking", "qbreak", "injury", "pregame"]:
 		hud.show_resume(not hud.any_overlay(), _resume_label())
 		return
 	if paused or hud.any_overlay() and _phase != "over":

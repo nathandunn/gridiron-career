@@ -375,7 +375,7 @@ func _build_controls() -> void:
 	bar.add_child(_button("Sim ×10", func(): main.run_batch(10)))
 	bar.add_child(_button("Box score", func(): if main.game != null: show_stats(main.game, "live", {}, main.reopen_panel())))
 	bar.add_child(_button("Log", func(): open_log()))
-	bar.add_child(_button("New game", func(): main.new_game()))
+	bar.add_child(_button("New game", func(): main.new_game(false)))
 	mark_speed(1.0)
 
 
@@ -482,20 +482,24 @@ func _chips(box: Control, names: Array, current: String, cb: Callable) -> HFlowC
 var _teams_side := 0
 
 
-func open_teams() -> void:
-	var box := _open("Teams, coaches and brains")
-	box.add_child(_label("Each side has a coach (who calls the plays) and a brain at every position (how each player plays them). \"Coach's pick\" uses the brain in the coach's lineup.", fs - 1, Color(0.8, 0.82, 0.85)))
+func open_teams(pregame := false) -> void:
+	var box := _open("New game: set up the teams" if pregame else "Teams, coaches and brains")
+	box.add_child(_label("Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
+	if pregame:
+		var ko := _button("Kick off", func(): close_overlay(false); main.new_game(true))
+		ko.add_theme_font_size_override("font_size", fs + 4)
+		box.add_child(ko)
 	var sides := HBoxContainer.new()
 	box.add_child(sides)
 	for t in 2:
-		var b := _button("%s side" % Team.NAMES[t], func(): _teams_side = t; open_teams(), true)
+		var b := _button("%s side%s" % [Career.team(t)["name"] if Career.loaded else Team.NAMES[t], " (you)" if t == 0 else ""], func(): _teams_side = t; open_teams(pregame), true)
 		b.button_pressed = _teams_side == t
 		b.add_theme_color_override("font_color", FieldView.COLORS[t].lightened(0.4))
 		sides.add_child(b)
 	var t: int = _teams_side
 	_section(box, "Coach")
 	var cur: String = main.coaches[t]
-	_chips(box, Library.names("coach"), cur, func(n): main.coaches[t] = n; open_teams())
+	_chips(box, Library.names("coach"), cur, func(n): main.coaches[t] = n; open_teams(pregame))
 	var c: Coach = Library.coach(cur)
 	if c != null:
 		box.add_child(_label(c.about, fs - 1, Color(0.8, 0.82, 0.85)))
@@ -505,14 +509,29 @@ func open_teams() -> void:
 	cf.add_theme_constant_override("v_separation", 6)
 	box.add_child(cf)
 	for mode in Game.CALLING:
-		var b := _button(Game.CALLING_LABEL[mode], func(): main.calling[t] = mode; main.library_changed(); open_teams(), true)
+		var b := _button(Game.CALLING_LABEL[mode], func(): main.calling[t] = mode; main.library_changed(); open_teams(pregame), true)
 		b.button_pressed = main.calling[t] == mode
 		cf.add_child(b)
-	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is starred. There is no kicking: fourth down is always a go.",
+	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. There is no kicking: fourth down is always a go.",
 		"coach": "The coach's rules pick every play.",
 		"random": "Any play in the playbook, picked at random every down.",
 		"generated": "A brand-new play made up every down: random formation, routes, gaps, coverages and blitzes. Save the good ones from the Log."}
 	box.add_child(_label(why[main.calling[t]], fs - 1, Color(0.8, 0.82, 0.85)))
+	if Career.loaded:
+		_section(box, "Robots")
+		var tm := Career.team(t)
+		var ovr := 0.0
+		var hurt := 0
+		for s0 in tm["starters"]:
+			ovr += Robot.overall(tm["starters"][s0])
+			if not Robot.lost_parts(tm["starters"][s0]).is_empty():
+				hurt += 1
+		box.add_child(_label("%s: starters average %d overall, %d on the bench%s. Purse $%d." % [tm["name"], int(ovr / 22.0), (tm["bench"] as Array).size(),
+			(", %d missing parts" % hurt) if hurt > 0 else "", Career.money(t)], fs - 1, Color(0.85, 0.9, 0.95)))
+		var rrow := HFlowContainer.new()
+		rrow.add_theme_constant_override("h_separation", 6)
+		box.add_child(rrow)
+		rrow.add_child(_button("Roster, swaps and upgrades", func(): open_roster(t); _back = func(): open_teams(pregame)))
 	_section(box, "Brains by position")
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -552,10 +571,10 @@ func open_teams() -> void:
 	qf.add_theme_constant_override("h_separation", 6)
 	box.add_child(qf)
 	for e in q:
-		var b := _button(e[0], func(): main.qlen = e[1]; open_teams(), true)
+		var b := _button(e[0], func(): main.qlen = e[1]; open_teams(pregame), true)
 		b.button_pressed = is_equal_approx(main.qlen, e[1])
 		qf.add_child(b)
-	var go := _button("Start a game with these teams", func(): close_overlay(); main.new_game())
+	var go := _button("Kick off" if pregame else "Start a new game with these teams", func(): close_overlay(false); main.new_game(true))
 	go.add_theme_font_size_override("font_size", fs + 2)
 	box.add_child(go)
 
@@ -830,7 +849,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	var coach_i := int(coach.get("index", -1))
 	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
 	if coach_i >= 0:
-		var cl := _label("COACH'S PICK: %s would call %s - the marked card is the closest in this hand." % [coach_name, String(coach.get("call", ""))], fs - 1, MAGENTA)
+		var cl := _label("COACH'S PICK: %s would call %s (his rule: %s). The marked card is the closest to it in this hand." % [coach_name, String(coach.get("call", "")), String(coach.get("why", "-"))], fs - 1, MAGENTA)
 		box.add_child(cl)
 		box.move_child(cl, grid.get_index())
 	for ci in hand.size():
