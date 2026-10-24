@@ -1386,14 +1386,31 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		var sub := Career.best_sub(tm.get("bench", []), s)
-		if not sub.is_empty():
-			row.add_child(_button("Sub in #%d %s (OVR %d)" % [int(sub["number"]), sub["name"], Robot.overall(sub)], func(): main.injury_choice(s, "sub")))
 		row.add_child(_button("Bolt on junk %s" % " and ".join(names), func(): main.injury_choice(s, "junk")))
 		if Robot.can_play(r):
 			row.add_child(_button("Play on without it", func(): main.injury_choice(s, "play_on")))
 		else:
 			row.add_child(_label("He can't play like this.", fs - 2, MAGENTA))
+		# or anyone healthy off the bench, from any position - his own kind first
+		var subs: Array = []
+		for b: Dictionary in tm.get("bench", []):
+			if Robot.can_play(b):
+				subs.append(b)
+		var grp := String(Play.SLOT_GROUP[s])
+		subs.sort_custom(func(x, y):
+			var xs := (100.0 if String(x["group"]) == grp else 0.0) + Robot.effective_overall(x)
+			var ys := (100.0 if String(y["group"]) == grp else 0.0) + Robot.effective_overall(y)
+			return xs > ys)
+		if not subs.is_empty():
+			box.add_child(_label("Or put in from the bench:", fs - 2, CYAN))
+			var srow := HFlowContainer.new()
+			srow.add_theme_constant_override("h_separation", 6)
+			srow.add_theme_constant_override("v_separation", 6)
+			box.add_child(srow)
+			for b: Dictionary in subs:
+				var bid := String(b["id"])
+				var tag := "" if String(b["group"]) == grp else "  (plays %s)" % b["group"]
+				srow.add_child(_button("#%d %s, %s OVR %d%s" % [int(b["number"]), b["name"], b["group"], Robot.overall(b), tag], func(): main.injury_choice(s, "sub:" + bid)))
 
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:

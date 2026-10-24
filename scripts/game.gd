@@ -293,6 +293,7 @@ func _log_play(e: Dictionary) -> void:
 ## The play is over: move the ball, the downs, the clock and the score.
 ## Parts that came off this game: [{team, slot, name, part, q}]
 var broken: Array = []
+var hurt := {}                 # robot id -> true: took some damage this game
 
 
 ## A team's coach deals with any robot missing a part: a better sub, or junk bolted on.
@@ -311,6 +312,8 @@ func coach_fixes(t: int) -> Array:
 
 func finish(sim: PlaySim) -> Dictionary:
 	var r: Dictionary = sim.result
+	for id in sim.hurt_ids:
+		hurt[id] = true
 	for pl: Dictionary in sim.parts_lost:
 		var p: PlaySim.P = sim.players[int(pl["idx"])]
 		broken.append({"team": p.team, "slot": p.slot, "name": String(p.robot.get("name", p.slot)), "part": pl["part"], "q": quarter, "id": String(p.robot.get("id", ""))})

@@ -7,6 +7,8 @@ into a career game: robots with ratings, parts that break off on big hits, upgra
 winnings, and a league of rival teams with their own rosters. The plan is in
 `docs/roster-plan.md`; it is built a step at a time.
 
+Skill players (QB, RB, WR, TE, CB, S) skate on rollers with a jet pack whose flames grow with speed.
+
 ## Robots (step 2)
 Every robot is a player with a name, a number on his back and ratings from 1 to 100:
 speed, strength, toughness and IQ, plus the skills of his position (QB arm and accuracy; hands,
@@ -39,8 +41,10 @@ Each robot has six parts - head, core, two arms, two legs - each with a conditio
 Stock part). Tackles, big hits, sacks, diving stops, pancakes, stiff arms and bounced-off tackles
 take condition off a part (more for strong hitters, fast collisions, less for tough robots; a big
 hit now and then hits *too* hard). At 0 the part **comes off**: it flies, spins and bounces on the
-turf, with sparks, a crunch, a boing and the announcer's horror. About 1-2 parts come off a game
-(tests/damage_test.gd).
+turf, with sparks, a crunch, a boing and the announcer's horror. Most hits do no harm; the ones
+that do take a real bite: about a quarter of the robots take some damage in a game and about two
+lose a part (tests/damage_test.gd). A lost part stays where it fell, and the robot sparks from the
+stump. A quarterback who loses an arm gets a standard one put straight back on.
 
 | Lost | What it does |
 |---|---|
@@ -49,8 +53,8 @@ turf, with sparks, a crunch, a boing and the announcer's horror. About 1-2 parts
 | Head | IQ near zero: he only follows his assignment |
 | Core | powered down: he can't play |
 
-At the next dead ball you choose for each of your broken robots: **sub in** the best healthy
-bench robot, **bolt on a junk spare** (rusty, works badly, breaks sooner), or **play on** without
+At the next dead ball you choose for each of your broken robots: **put in** any healthy bench
+robot - from any position (a receiver on the line is still built like a receiver) - **bolt on a junk spare** (rusty, works badly, breaks sooner), or **play on** without
 it. The rival's coach decides for his. Damage carries over from game to game; a robot's page
 shows each part's condition, and *Repair everything* is free until money arrives in step 4.
 Simulated games (Sim x10) wear out copies, never your robots.

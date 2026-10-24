@@ -361,6 +361,8 @@ func _scale_for_phone() -> void:
 
 
 func new_game() -> void:
+	if view != null:
+		view.clear_debris()
 	game = Game.new()
 	var seed_v := randi()
 	game.setup(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, seed_v)
@@ -429,7 +431,7 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	elif r.get("td", false) or scored >= 6:
 		hud.toast("TOUCHDOWN!\n%s" % who, 2.4)
 	elif r.get("safety", false):
-		hud.toast("SAFETY!\n2 points %s" % other, 2.2)
+		hud.toast("SAFETY!\n7 points %s" % other, 2.2)
 	elif r.get("turnover", "") == "int":
 		hud.toast("INTERCEPTED!\nby %s · %s ball" % [String(r.get("carrier", "")), other], 2.2)
 	elif r.get("turnover", "") == "fumble":
@@ -496,6 +498,9 @@ func _broken_mine() -> Array:
 	if game == null or not game.teams[0].has("roster") or bool(game.teams[0].get("fair", false)):
 		return out
 	var ros: Dictionary = game.teams[0]["roster"]
+	var qb_line := Career.qb_arms(ros)       # a QB's lost arm is replaced at once
+	if qb_line != "":
+		hud.caption(qb_line)
 	for s2 in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
 		var r: Dictionary = ros[s2]
 		var lost := Robot.lost_parts(r)
@@ -511,11 +516,9 @@ func _broken_mine() -> Array:
 func injury_choice(slot: String, what: String) -> void:
 	var tm: Dictionary = game.teams[0]
 	var r: Dictionary = tm["roster"][slot]
+	if what.begins_with("sub:"):
+		Career.swap_any(tm["roster"], tm["bench"], slot, what.substr(4))
 	match what:
-		"sub":
-			var sub := Career.best_sub(tm.get("bench", []), slot)
-			if not sub.is_empty():
-				Career.swap_in(tm["roster"], tm["bench"], slot, String(sub["id"]))
 		"junk":
 			for k in Robot.lost_parts(r):
 				Robot.bolt_on_junk(r, k)
@@ -721,6 +724,8 @@ func _process(delta: float) -> void:
 				if not _broken_mine().is_empty():
 					_phase = "injury"
 					hud.open_injuries(_broken_mine())
+					if OS.get_cmdline_user_args().has("--autopick"):
+						hud.close_overlay.call_deferred()   # test hook: let the coach decide
 					return
 				_next()
 

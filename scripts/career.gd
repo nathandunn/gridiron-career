@@ -145,13 +145,44 @@ static func best_sub(bench: Array, slot: String) -> Dictionary:
 	return best
 
 
+## A quarterback who loses an arm gets a standard (Stock) one put straight back on: nobody
+## plays quarterback one-armed. Returns a line for the log, or "".
+static func qb_arms(starters: Dictionary) -> String:
+	var qb: Dictionary = starters.get("QB", {})
+	if qb.is_empty():
+		return ""
+	var fixed: Array = []
+	for k in ["larm", "rarm"]:
+		if Robot.part_lost(qb, k):
+			Robot.repair(qb, k)
+			fixed.append(String(Robot.PART_LABEL[k]).to_lower())
+	if fixed.is_empty():
+		return ""
+	return "%s gets a new standard %s." % [qb["name"], " and ".join(fixed)]
+
+
+## Put any healthy bench robot (any position) in at `slot`; the starter sits.
+static func swap_any(starters: Dictionary, bench: Array, slot: String, bench_id: String) -> bool:
+	for i in bench.size():
+		var b: Dictionary = bench[i]
+		if String(b["id"]) == bench_id:
+			var out: Dictionary = starters[slot]
+			b["slot"] = slot
+			out["slot"] = ""
+			starters[slot] = b
+			bench[i] = out
+			return true
+	return false
+
+
 ## What a coach does about a broken robot at `slot`: put in a better sub if there is one,
 ## else bolt junk on whatever is missing. Returns a line for the log, or "".
 static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> String:
 	var r: Dictionary = starters[slot]
+	var qb_line := qb_arms(starters) if slot == "QB" else ""
 	var lost := Robot.lost_parts(r)
 	if lost.is_empty():
-		return ""
+		return qb_line
 	var sub := best_sub(bench, slot)
 	var patched := Robot.effective_overall(r)
 	for k in lost:

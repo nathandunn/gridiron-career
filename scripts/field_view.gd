@@ -236,9 +236,16 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 	_seen = 0
 	_ball_fx = {}
 	_celeb = {}
+	# parts that came off stay where they fell (the newest 40); everything else goes
+	var keep: Array = []
 	for n in _fx_nodes:
-		(n["node"] as Node3D).queue_free()
-	_fx_nodes.clear()
+		if n["kind"] == "debris":
+			keep.append(n)
+		else:
+			(n["node"] as Node3D).queue_free()
+	while keep.size() > 40:
+		(keep.pop_front()["node"] as Node3D).queue_free()
+	_fx_nodes = keep
 	for k in _players:
 		_players[k]["root"].visible = false
 		_players[k]["anim"] = ""
@@ -278,7 +285,7 @@ func _ensure_player(p: PlaySim.P) -> void:
 		if e["team"] == team and e["slot"] == p.slot and e["rid"] == rid:
 			return
 		(e["root"] as Node3D).queue_free()
-	var r := build_robot(p.group, team, int(p.robot.get("number", -1)), p.robot.get("parts", {}))
+	var r := build_robot(String(p.robot.get("group", p.group)), team, int(p.robot.get("number", -1)), p.robot.get("parts", {}))
 	var root: Node3D = r["root"]
 	add_child(root)
 	var lab := Label3D.new()
@@ -292,7 +299,8 @@ func _ensure_player(p: PlaySim.P) -> void:
 	lab.no_depth_test = true
 	lab.modulate = NEON[team].lightened(0.4)
 	root.add_child(lab)
-	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "nodes": r["nodes"], "label": lab,
+	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "nodes": r["nodes"],
+		"wheels": r["wheels"], "flames": r["flames"], "label": lab,
 		"team": team, "slot": p.slot, "rid": rid,
 		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
 
@@ -310,18 +318,64 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 	var armour := _metal(COLORS[team].darkened(0.15))
 	var frame := _metal(Color(0.22, 0.24, 0.28))
 	var light := _glow(NEON[team], 2.6)
+	var skill := group in ["QB", "RB", "WR", "TE", "CB", "S"]
+	var wheels: Array = []
+	var flames: Array = []
 	var legs: Array = []
 	for side: float in [-1.0, 1.0]:
 		var hip := Node3D.new()
 		hip.position = Vector3(side * 0.2 * w, 0.95, 0)
 		body.add_child(hip)
 		_box(Vector3(0.24 * w, 0.95, 0.28), Vector3(0, -0.48, 0), frame, hip)
-		_box(Vector3(0.3 * w, 0.16, 0.42), Vector3(0, -0.9, 0.06), armour, hip)     # foot
+		if skill:
+			# a roller skate: a glowing wheel on an axle where the foot would be
+			var axle := Node3D.new()
+			axle.position = Vector3(0, -0.8, 0.05)
+			hip.add_child(axle)
+			var wm := MeshInstance3D.new()
+			var cyl := CylinderMesh.new()
+			cyl.top_radius = 0.15
+			cyl.bottom_radius = 0.15
+			cyl.height = 0.14 * w
+			wm.mesh = cyl
+			wm.rotation.z = PI * 0.5
+			wm.material_override = frame
+			axle.add_child(wm)
+			_box(Vector3(0.16 * w, 0.05, 0.32), Vector3(0, 0.0, 0), light, axle)      # hub stripe that shows the spin
+			wheels.append(axle)
+		else:
+			_box(Vector3(0.3 * w, 0.16, 0.42), Vector3(0, -0.9, 0.06), armour, hip)     # foot
 		_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45, 0.15), light, hip)    # knee light
 		legs.append(hip)
 	_box(Vector3(0.62 * w, 0.75, 0.42), Vector3(0, 1.32, 0), armour, body)
 	_box(Vector3(0.95 * w, 0.24, 0.55), Vector3(0, 1.72, 0), armour, body)          # shoulders
 	_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38, 0.22), light, body)             # chest light
+	if skill:
+		# a jet pack: two tanks on the back, each with a flame that grows with his speed
+		for jx: float in [-0.14, 0.14]:
+			var tank := MeshInstance3D.new()
+			var tc := CylinderMesh.new()
+			tc.top_radius = 0.09
+			tc.bottom_radius = 0.11
+			tc.height = 0.5
+			tank.mesh = tc
+			tank.material_override = frame
+			tank.position = Vector3(jx * w, 1.42, -0.3)
+			body.add_child(tank)
+			_box(Vector3(0.16, 0.05, 0.16), Vector3(jx * w, 1.15, -0.3), light, body)     # nozzle ring
+			var fl := MeshInstance3D.new()
+			var cone := CylinderMesh.new()
+			cone.top_radius = 0.08
+			cone.bottom_radius = 0.0
+			cone.height = 0.6
+			fl.mesh = cone
+			fl.material_override = _glow(Color(1.0, 0.6, 0.2) if team == 0 else Color(0.4, 0.8, 1.0), 4.0)
+			var fp := Node3D.new()
+			fp.position = Vector3(jx * w, 1.12, -0.3)
+			body.add_child(fp)
+			fp.add_child(fl)
+			fl.position = Vector3(0, -0.3, 0)
+			flames.append(fp)
 	if number >= 0:
 		for z: float in [0.215, -0.215]:
 			var num := Label3D.new()
@@ -360,7 +414,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			for c in n.get_children():
 				if c is MeshInstance3D:
 					(c as MeshInstance3D).material_override = _metal(Color(0.42, 0.27, 0.16))   # rusty spare
-	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head, "nodes": nodes}
+	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head, "nodes": nodes, "wheels": wheels, "flames": flames}
 
 
 static func _parts_sig(robot: Dictionary) -> String:
@@ -414,6 +468,7 @@ func _process(delta: float) -> void:
 		e["stride"] = float(e["stride"]) + delta * sp * 1.6
 		var swing := sin(float(e["stride"])) * clampf(sp / 6.0, 0.0, 1.0) * 0.7
 		_pose(p, e, swing, delta)
+		_gear(p, e, sp, delta)
 		var lab: Label3D = e["label"]
 		lab.modulate = YELLOW if p == sim.carrier else NEON[p.team].lightened(0.4)
 	# the ball
@@ -697,8 +752,15 @@ func _sparks(at: Vector3, n: int, c: Color) -> void:
 	_fx_nodes.append({"node": fl, "t0": _t, "life": 0.25, "kind": "flash"})
 
 
+var _tears_now := 0
+
+
 func _tick_fx(delta: float) -> void:
 	var keep: Array = []
+	_tears_now = 0
+	for n0 in _fx_nodes:
+		if n0["kind"] == "tear":
+			_tears_now += 1
 	for n: Dictionary in _fx_nodes:
 		var node: Node3D = n["node"]
 		var age := _t - float(n["t0"])
@@ -726,6 +788,14 @@ func _tick_fx(delta: float) -> void:
 					lab.position = Vector3(at.x, float(n["y0"]) + 0.3 * u, at.z)
 				lab.modulate.a = 1.0 if u < 0.8 else 1.0 - (u - 0.8) / 0.2
 				lab.outline_modulate.a = lab.modulate.a
+			"tear":
+				var v: Vector3 = n["vel"]
+				v.y -= 14.0 * delta
+				n["vel"] = v
+				node.position += v * delta
+				if node.position.y < 0.05:
+					node.position.y = 0.05
+					node.scale = Vector3(1.8, 0.2, 1.8)   # a little puddle
 			"spark":
 				var v: Vector3 = n["vel"]
 				v.y -= 18.0 * delta
@@ -1040,9 +1110,11 @@ func _celebrate_one(p: PlaySim.P, e: Dictionary, delta: float) -> void:
 	(e["arms"][1] as Node3D).rotation.x = float(ca[1])
 	(e["legs"][0] as Node3D).rotation.x = float(legs[0])
 	(e["legs"][1] as Node3D).rotation.x = float(legs[1])
-	# tears: blue drops from the visor of every few criers
-	if p.team != int(_celeb["team"]) and p.idx % 2 == 0 and randf() < delta * 5.0:
-		_tear(world(cur, 1.95 + float(e["hop"])), yaw)
+	_gear(p, e, 0.0, delta)
+	# tears: streams of blue drops from both eyes of every crier
+	if p.team != int(_celeb["team"]) and randf() < delta * 9.0:
+		var eye_h := (1.95 + float(e["hop"])) - 0.25 * float(e["tilt"])
+		_tear(world(cur, eye_h), yaw)
 
 
 func _tear(at: Vector3, yaw: float) -> void:
@@ -1055,16 +1127,18 @@ func _tear(at: Vector3, yaw: float) -> void:
 		m.emission = c
 		m.emission_energy_multiplier = 3.0
 		_spark_mat[c] = m
+	if _tears_now > 160:
+		return                       # enough tears on the field already
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(0.07, 0.11, 0.07)
+	bm.size = Vector3(0.13, 0.2, 0.13)
 	mi.mesh = bm
 	mi.material_override = _spark_mat[c]
 	var side := 0.1 if randf() < 0.5 else -0.1
 	mi.position = at + Vector3(sin(yaw) * 0.25 + cos(yaw) * side, 0, cos(yaw) * 0.25 - sin(yaw) * side)
 	add_child(mi)
-	var v := Vector3(sin(yaw), 0, cos(yaw)) * 0.8 + Vector3(0, 0.6, 0)
-	_fx_nodes.append({"node": mi, "t0": _t, "life": 0.7, "kind": "spark", "vel": v})
+	var v := Vector3(sin(yaw), 0, cos(yaw)) * 1.4 + Vector3(cos(yaw) * side * 6.0, 1.8, -sin(yaw) * side * 6.0)
+	_fx_nodes.append({"node": mi, "t0": _t, "life": 0.9, "kind": "tear", "vel": v})
 
 
 
@@ -1098,3 +1172,56 @@ func _part_off(p: PlaySim.P, part: String, by: PlaySim.P) -> void:
 	var v := dir * randf_range(4.0, 7.0) + Vector3(0, randf_range(5.0, 8.0), 0)
 	var spin := Vector3(randf_range(-12, 12), randf_range(-12, 12), randf_range(-12, 12))
 	_fx_nodes.append({"node": piece, "t0": _t, "life": 999.0, "kind": "debris", "vel": v, "spin": spin})
+
+
+
+## Rollers spin and jets flare with speed; a robot missing a part sparks from the stump.
+func _gear(p: PlaySim.P, e: Dictionary, sp: float, delta: float) -> void:
+	for w: Node3D in e.get("wheels", []):
+		w.rotation.x += sp * delta / 0.15
+	for f: Node3D in e.get("flames", []):
+		var k := clampf(sp / 8.0, 0.0, 1.3)
+		f.visible = k > 0.15
+		f.scale = Vector3(0.7 + 0.5 * k, (0.4 + 1.1 * k) * randf_range(0.85, 1.15), 0.7 + 0.5 * k)
+	if p.robot.is_empty() or randf() > delta * 14.0:
+		return
+	var lost := Robot.lost_parts(p.robot)
+	if lost.is_empty():
+		return
+	var k2: String = lost[randi() % lost.size()]
+	var n: Node3D = (e.get("nodes", {}) as Dictionary).get(k2, null)
+	var at := n.global_position if n != null else (e["body"] as Node3D).global_position + Vector3(0, 1.35, 0)
+	_stump_spark(at)
+
+
+func _stump_spark(at: Vector3) -> void:
+	var c := Color(1.0, 0.8, 0.3)
+	if not _spark_mat.has(c):
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = c
+		m.emission_enabled = true
+		m.emission = c
+		m.emission_energy_multiplier = 5.0
+		_spark_mat[c] = m
+	for i in 2:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.06, 0.06, 0.06)
+		mi.mesh = bm
+		mi.material_override = _spark_mat[c]
+		mi.position = at
+		add_child(mi)
+		var v := Vector3(randf_range(-1, 1), randf_range(0.5, 1.5), randf_range(-1, 1)).normalized() * randf_range(2.0, 4.5)
+		_fx_nodes.append({"node": mi, "t0": _t, "life": randf_range(0.2, 0.4), "kind": "spark", "vel": v})
+
+
+## A new game: sweep the field of the parts left lying on it.
+func clear_debris() -> void:
+	var keep: Array = []
+	for n in _fx_nodes:
+		if n["kind"] == "debris":
+			(n["node"] as Node3D).queue_free()
+		else:
+			keep.append(n)
+	_fx_nodes = keep

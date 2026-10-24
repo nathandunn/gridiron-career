@@ -156,25 +156,33 @@ func _fx(kind: String, a: P = null, b: P = null, pos := Vector2.INF) -> void:
 
 ## ---- wear and tear: hits damage parts, and a part at 0 comes off --------------------------------
 
-## kind -> [who is hurt most, base damage, base damage to the other one]
+## kind -> [who is hurt most, base damage, base damage to the other one]. Most hits do no
+## damage at all (HURT_CHANCE); the ones that do take a real bite. Tuned so about a quarter of
+## the robots on the field take some damage in a game and about two have to come off
+## (tests/damage_test.gd).
 const HURT := {
-	"tackle": ["b", 7.0, 2.0], "big_hit": ["b", 24.0, 5.0], "sack": ["b", 16.0, 3.0],
-	"dive_tackle": ["b", 9.0, 4.0], "pancake": ["b", 13.0, 0.0], "stiff_arm": ["b", 7.0, 0.0],
-	"miss": ["a", 5.0, 0.0],
+	"tackle": ["b", 30.0, 22.0], "big_hit": ["b", 46.0, 22.0], "sack": ["b", 38.0, 20.0],
+	"dive_tackle": ["b", 32.0, 22.0], "pancake": ["b", 34.0, 0.0], "stiff_arm": ["b", 26.0, 0.0],
+	"miss": ["a", 24.0, 0.0],
 }
+const HURT_CHANCE := {"tackle": 0.075, "big_hit": 0.55, "sack": 0.3, "dive_tackle": 0.12, "pancake": 0.25,
+	"stiff_arm": 0.1, "miss": 0.07}
 const PART_ODDS := {"head": 0.18, "core": 0.1, "larm": 0.18, "rarm": 0.18, "lleg": 0.18, "rleg": 0.18}
 var fumble_forced := false
 var parts_lost: Array = []          # {idx, part} this play
+var hurt_ids: Array = []            # robots that took damage this play
 
 
 func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	if v.robot.is_empty() or float(K.get("wear", 1.0)) <= 0.0:
 		return                       # equal bodies (headless, Fair bodies) or wear switched off
+	if rng.randf() > float(HURT_CHANCE.get(kind, 0.1)) * (1.0 - 0.3 * float(v.body.get("tough", 0.0))):
+		return                       # shrugged it off
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
 	var closing := minf((by.vel - v.vel).length(), 14.0)
 	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
-		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * float(K.get("wear", 1.0))
-	if kind == "big_hit" and rng.randf() < 0.12:
+		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * 0.8 * float(K.get("wear", 1.0))
+	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it
 	var roll := rng.randf()
@@ -190,6 +198,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	if String(part["tier"]) == "Junk":
 		dmg *= 1.3
 	part["hp"] = maxf(float(part["hp"]) - dmg, 0.0)
+	hurt_ids.append(String(v.robot.get("id", "")))
 	if float(part["hp"]) > 0.0:
 		return
 	# it came off
@@ -197,7 +206,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	actions.append({"t": t, "kind": "part_off", "a": v.idx, "b": by.idx, "pos": v.pos, "part": pick})
 	_say("%s's %s comes off!" % [v.slot, String(Robot.PART_LABEL[pick]).to_lower()])
 	var keep_scale := v.spd_scale
-	v.body = Robot.apply(v.robot, BODY[v.group].duplicate())
+	v.body = Robot.apply(v.robot, BODY[String(v.robot.get("group", v.group))].duplicate())
 	v.spd_scale = keep_scale
 	if pick == "core":
 		_knock_down(v, 99.0)
@@ -277,7 +286,8 @@ func _make(s: String, side: int, team: Dictionary, a: Dictionary, i: int) -> P:
 		var rb: Dictionary = (team["roster"] as Dictionary).get(s, {})
 		if not rb.is_empty():
 			p.robot = rb
-			p.body = Robot.apply(rb, p.body)
+			# his own position's frame: a receiver filling in on the line is still built like a receiver
+			p.body = Robot.apply(rb, BODY[String(rb.get("group", p.group))].duplicate())
 	p.spd_scale = 1.0 + (rng.randf() - 0.5) * 0.06
 	p.brain = (team["brains"] as Dictionary).get(s, null)
 	if p.brain != null:

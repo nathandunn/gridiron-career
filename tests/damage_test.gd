@@ -8,6 +8,7 @@ func _init() -> void:
 	var by_part := {}
 	var by_kind := {}
 	var fixes := 0
+	var hurt_total := 0
 	for s in n:
 		var red := Team.build(0, "Balanced")
 		var blue := Team.build(1, "Air Raid")
@@ -17,6 +18,7 @@ func _init() -> void:
 			pair[0]["bench"] = tm["bench"]
 		var g := Batch.play_game(red, blue, 300.0, 900 + s)
 		total += g.broken.size()
+		hurt_total += g.hurt.size()
 		for b in g.broken:
 			by_part[b["part"]] = int(by_part.get(b["part"], 0)) + 1
 		for e in g.log:
@@ -24,4 +26,5 @@ func _init() -> void:
 			if tx.find("comes in for") >= 0 or tx.find("bolted on") >= 0:
 				fixes += 1
 	print("PARTS OFF a game: %.2f  by part %s  coach fixes %d" % [float(total) / n, by_part, fixes])
+	print("ROBOTS DAMAGED a game: %.1f of 44 (%.0f%%)" % [float(hurt_total) / n, 100.0 * hurt_total / n / 44.0])
 	quit()
