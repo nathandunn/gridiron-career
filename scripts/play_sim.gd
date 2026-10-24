@@ -160,10 +160,12 @@ func _fx(kind: String, a: P = null, b: P = null, pos := Vector2.INF) -> void:
 ## damage at all (HURT_CHANCE); the ones that do take a real bite. Tuned so about a quarter of
 ## the robots on the field take some damage in a game and about two have to come off
 ## (tests/damage_test.gd).
+## A collision hurts both robots: the tackler about as much as the man he hits, so the defense
+## breaks as often as the offense.
 const HURT := {
-	"tackle": ["b", 30.0, 22.0], "big_hit": ["b", 46.0, 22.0], "sack": ["b", 38.0, 20.0],
-	"dive_tackle": ["b", 32.0, 22.0], "pancake": ["b", 34.0, 0.0], "stiff_arm": ["b", 26.0, 0.0],
-	"miss": ["a", 24.0, 0.0],
+	"tackle": ["b", 30.0, 28.0], "big_hit": ["b", 46.0, 34.0], "sack": ["b", 38.0, 30.0],
+	"dive_tackle": ["b", 32.0, 30.0], "pancake": ["b", 34.0, 24.0], "stiff_arm": ["b", 26.0, 18.0],
+	"miss": ["a", 24.0, 18.0],
 }
 const HURT_CHANCE := {"tackle": 0.3, "big_hit": 0.9, "sack": 0.7, "dive_tackle": 0.4, "pancake": 0.5,
 	"stiff_arm": 0.3, "miss": 0.25}
@@ -181,7 +183,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
 	var closing := minf((by.vel - v.vel).length(), 14.0)
 	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
-		* (1.0 - 0.35 * float(v.body.get("tough", 0.0))) * rng.randf_range(0.5, 1.6) * 1.3 * float(K.get("wear", 1.0))
+		* (1.0 - 0.5 * clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)) * rng.randf_range(0.5, 1.6) * 1.2 * float(K.get("wear", 1.0))
 	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it

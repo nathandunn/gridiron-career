@@ -62,8 +62,16 @@ shows each part's condition.
 (Stock) part costs money** (head $200, core $250, arm $120, leg $140) and a worn part costs a share
 of that to repair. The final whistle pays: win $600, tie $350, loss $200, plus $60 a touchdown,
 $25 a sack and $50 a takeaway - shown on the final box score. The rival's coach buys real parts
-when he can comfortably afford them, junk otherwise. (The shop with better-than-Stock parts comes
-in step 4.)
+when he can comfortably afford them, junk otherwise. 
+
+**Upgrades, any time.** On a robot's page each part has an upgrade button: **Mk II** (+6),
+**Mk III** (+12), **Prototype** (+20) to the ratings that part carries - head: IQ; core:
+strength and toughness; arms: hands, tackling, arm, accuracy, ball skills, blocking; legs: speed,
+elusiveness, routes, coverage, rush (an arm or a leg gives half: he has two) - and more condition
+(140 / 180 / 240). Price: 2.5x / 5x / 10x the part. **Armour plating** buys +5 toughness.
+Robots start with toughness anywhere from glass (20s) to tanks (90s); toughness cuts both how
+often a hit damages him and how much. The rival's owner shops after each game too (shown on the
+final box score). A collision hurts both robots, so both sides lose parts.
 
 **Nothing plays without you:** close the play picker, a quarter break or the broken-robots panel
 and the game waits - edit the roster, read the box score, whatever - then tap the button on the

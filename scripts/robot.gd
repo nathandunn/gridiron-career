@@ -51,6 +51,8 @@ static func make(rng: RandomNumberGenerator, slot: String, number: int, id: Stri
 	for k in CORE + (SKILLS[g] as Array):
 		# most robots are about average; a few stand out either way
 		r[k] = int(clampf(roundf(rng.randfn(BASE, 12.0)), 25.0, 97.0))
+	# toughness varies the most: some robots are tanks, some are glass
+	r["toughness"] = int(clampf(roundf(rng.randfn(BASE, 18.0)), 20.0, 99.0))
 	var robot := {"id": id, "name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
 		"number": number, "slot": slot, "group": g, "ratings": r}
 	ensure_parts(robot)
@@ -70,12 +72,42 @@ static func overall(robot: Dictionary) -> int:
 	var ks := keys(robot)
 	var s := 0.0
 	for k in ks:
-		s += rating(robot, k)
+		s += eff(robot, k)
 	return int(roundf(s / ks.size()))
 
 
 static func _f(robot: Dictionary, k: String) -> float:
-	return (rating(robot, k) - BASE) / 40.0      # -0.9 at 25, 0 at 60, +0.9 at 96
+	return (eff(robot, k) - BASE) / 40.0      # -0.9 at 25, 0 at 60, +0.9 at 96
+
+
+## ---- upgraded parts add to the ratings they carry ------------------------------------------------
+const TIERS := ["Junk", "Stock", "Mk II", "Mk III", "Prototype"]
+const TIER_BONUS := {"Junk": 0, "Stock": 0, "Mk II": 6, "Mk III": 12, "Prototype": 20}
+## Which ratings each part carries. An arm or a leg gives half its bonus (he has two).
+const PART_RATINGS := {
+	"head": ["iq"], "core": ["strength", "toughness"],
+	"larm": ["hands", "tackling", "arm", "accuracy", "ball_skills", "blocking"],
+	"rarm": ["hands", "tackling", "arm", "accuracy", "ball_skills", "blocking"],
+	"lleg": ["speed", "elusiveness", "routes", "coverage", "rush"],
+	"rleg": ["speed", "elusiveness", "routes", "coverage", "rush"],
+}
+
+
+## How much his parts add to a rating.
+static func bonus(robot: Dictionary, k: String) -> float:
+	if not robot.has("parts"):
+		return 0.0
+	var b := 0.0
+	for pk in PART_RATINGS:
+		if k in PART_RATINGS[pk] and not part_lost(robot, pk):
+			var tb := float(TIER_BONUS.get(String(robot["parts"][pk]["tier"]), 0))
+			b += tb * (0.5 if pk.ends_with("arm") or pk.ends_with("leg") else 1.0)
+	return b
+
+
+## The rating he plays at: his own, plus what his parts add.
+static func eff(robot: Dictionary, k: String) -> float:
+	return minf(rating(robot, k) + bonus(robot, k), 120.0)
 
 
 ## Turn the ratings into the engine's body numbers (a copy of the position's body) and the
@@ -119,7 +151,7 @@ static func apply(robot: Dictionary, body: Dictionary) -> Dictionary:
 
 const PARTS := ["head", "core", "larm", "rarm", "lleg", "rleg"]
 const PART_LABEL := {"head": "Head", "core": "Core", "larm": "Left arm", "rarm": "Right arm", "lleg": "Left leg", "rleg": "Right leg"}
-const TIER_HP := {"Junk": 50, "Stock": 100}
+const TIER_HP := {"Junk": 50, "Stock": 100, "Mk II": 140, "Mk III": 180, "Prototype": 240}
 const PART_HELP := {
 	"head": "Sensors and CPU. Without it: IQ near zero - he only follows his assignment.",
 	"core": "The power plant. Without it he shuts down and can't play.",

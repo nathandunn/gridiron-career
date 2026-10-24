@@ -981,6 +981,8 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 			for l in sl["lines"]:
 				parts.append("%s $%d" % [l[0], int(l[1])])
 			box.add_child(_label("%s: %s = $%d  (purse now $%d)" % [names[t], ", ".join(parts), int(sl["total"]), Career.money(t)], fs - 1, YELLOW if t == 0 else Color(0.8, 0.85, 0.9)))
+			for nline in sl.get("news", []):
+				box.add_child(_label("   " + String(nline), fs - 2, Color(0.75, 0.8, 0.9)))
 	if mode == "final":
 		row.add_child(_button("Play again", func(): close_overlay(); main.new_game()))
 		row.add_child(_button("Sim ×10 these teams", func(): close_overlay(); main.run_batch(10)))
@@ -1355,7 +1357,8 @@ func open_robot(id: String) -> void:
 	# the ratings
 	_section(box, "Ratings")
 	for k in Robot.keys(r):
-		var v := int(Robot.rating(r, k))
+		var v := int(Robot.eff(r, k))
+		var plus := int(Robot.bonus(r, k))
 		var line := HBoxContainer.new()
 		line.add_theme_constant_override("separation", 8)
 		box.add_child(line)
@@ -1379,10 +1382,19 @@ func open_robot(id: String) -> void:
 		bar.add_theme_stylebox_override("fill", fill)
 		bar.add_theme_stylebox_override("background", bg)
 		line.add_child(bar)
-		var num := _label(str(v), fs, Color(1, 1, 1))
+		var num := _label(str(v) + (" (+%d parts)" % plus if plus > 0 else ""), fs, CYAN if plus > 0 else Color(1, 1, 1))
+		num.autowrap_mode = TextServer.AUTOWRAP_OFF
 		num.custom_minimum_size.x = 30
 		line.add_child(num)
 		box.add_child(_label("    " + String(Robot.RATING_HELP[k]), fs - 4, Color(0.62, 0.67, 0.72)))
+		if k == "toughness" and Robot.rating(r, k) < 99.0:
+			var tt := maxi(Career.team_of(r), 0)
+			var ap := Career.armor_price(r)
+			var ab := _button("Armour plating: +5 toughness ($%d)" % ap, func(): Career.buy_armor(tt, r); open_robot(id))
+			ab.disabled = Career.money(tt) < ap
+			var arow := HFlowContainer.new()
+			arow.add_child(ab)
+			box.add_child(arow)
 	_parts_section(box, r, id)
 	# this game
 	if slot != "" and main.game != null:
@@ -1496,6 +1508,7 @@ func open_injuries(slots: Array) -> void:
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 	_section(box, "Parts")
+	box.add_child(_label("Upgrade any time: Mk II +6, Mk III +12, Prototype +20 to the ratings a part carries (an arm or leg gives half - he has two), and more condition.", fs - 3, Color(0.7, 0.74, 0.8)))
 	var parts := Robot.ensure_parts(r)
 	for k in Robot.PARTS:
 		var pt: Dictionary = parts[k]
@@ -1536,6 +1549,14 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			tl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			tl.custom_minimum_size.x = 90
 			line.add_child(tl)
+			var nt := Career.next_tier(r, k)
+			if nt != "":
+				var up := Career.upgrade_price(k, nt)
+				var tu := maxi(Career.team_of(r), 0)
+				var ub := _button("%s $%d" % [nt, up], func(): Career.buy_upgrade(tu, r, k); open_robot(id))
+				ub.disabled = Career.money(tu) < up
+				ub.tooltip_text = "Upgrade to %s: +%d to %s, %d condition" % [nt, int(Robot.TIER_BONUS[nt]), ", ".join(Robot.PART_RATINGS[k]), int(Robot.TIER_HP[nt])]
+				line.add_child(ub)
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)

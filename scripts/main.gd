@@ -788,7 +788,8 @@ func _process(delta: float) -> void:
 				Batch._fold_tally(game, sim)
 				var e := game.finish(sim)
 				if not sim.parts_lost.is_empty() or game.teams[1].has("roster"):
-					game.coach_fixes(1)          # the rival's coach sees to his broken robots
+					for ln in game.coach_fixes(1):          # the rival's coach sees to his broken robots
+						hud.caption("%s coach: %s" % [Career.team(1)["name"] if Career.loaded else "Blue", ln], false, Color(0.6, 0.8, 1.0))
 					if Career.loaded:
 						Career.save()
 				hud.show_result(String(e["text"]))

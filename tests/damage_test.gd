@@ -23,11 +23,13 @@ func _init() -> void:
 		hurt_total += g.hurt.size()
 		for b in g.broken:
 			by_part[b["part"]] = int(by_part.get(b["part"], 0)) + 1
+			by_kind["team%d" % int(b["team"])] = int(by_kind.get("team%d" % int(b["team"]), 0)) + 1
 		for e in g.log:
 			var tx := String(e.get("text", ""))
 			if tx.find("comes in for") >= 0 or tx.find("bolted on") >= 0:
 				fixes += 1
 	print("PARTS OFF a game: %.2f  by part %s  coach fixes %d" % [float(total) / n, by_part, fixes])
 	print("PLAYS a part comes off: every %.1f plays (%d plays, %d parts)" % [float(plays) / maxf(total, 1), plays, total])
+	print("BY TEAM ", by_kind)
 	print("ROBOTS DAMAGED a game: %.1f of 44 (%.0f%%)" % [float(hurt_total) / n, 100.0 * hurt_total / n / 44.0])
 	quit()

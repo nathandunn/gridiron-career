@@ -284,6 +284,7 @@ static func pay_game(g: Game) -> Array:
 		add_money(t, total)
 		slips.append({"lines": lines, "total": total})
 	save()
+	slips[1]["news"] = rival_shopping(1)     # the rival's owner goes shopping
 	return slips
 
 
@@ -301,3 +302,73 @@ static func team_of(robot: Dictionary) -> int:
 			if is_same(b, robot):
 				return t
 	return -1
+
+
+
+## ---- the shop: better parts and armour, any time --------------------------------------------------
+
+const TIER_PRICE := {"Mk II": 2.5, "Mk III": 5.0, "Prototype": 10.0}
+
+
+static func next_tier(robot: Dictionary, k: String) -> String:
+	var cur := String(Robot.ensure_parts(robot)[k]["tier"])
+	var i := Robot.TIERS.find(cur)
+	if Robot.part_lost(robot, k) or i < 0 or i >= Robot.TIERS.size() - 1:
+		return ""
+	return Robot.TIERS[maxi(i + 1, 2)]   # junk or stock both go to Mk II
+
+
+static func upgrade_price(k: String, tier: String) -> int:
+	return int(roundf(float(PART_PRICE[k]) * float(TIER_PRICE.get(tier, 1.0)) / 10.0) * 10.0)
+
+
+## Buy the next tier for a part (a fresh one, full condition). true if done.
+static func buy_upgrade(t: int, robot: Dictionary, k: String) -> bool:
+	var tier := next_tier(robot, k)
+	if tier == "":
+		return false
+	if not spend(t, upgrade_price(k, tier)):
+		return false
+	Robot.ensure_parts(robot)[k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
+	save()
+	return true
+
+
+## Armour plating: +5 toughness. Dearer the tougher he already is.
+static func armor_price(robot: Dictionary) -> int:
+	return int(100 + maxf(Robot.rating(robot, "toughness") - 50.0, 0.0) * 6.0)
+
+
+static func buy_armor(t: int, robot: Dictionary) -> bool:
+	if Robot.rating(robot, "toughness") >= 99.0 or not spend(t, armor_price(robot)):
+		return false
+	robot["ratings"]["toughness"] = mini(int(Robot.rating(robot, "toughness")) + 5, 99)
+	save()
+	return true
+
+
+## The rival's owner spends after a game: upgrades for his weakest starters, keeping a reserve.
+static func rival_shopping(t: int) -> Array:
+	var news: Array = []
+	var starters: Dictionary = team(t)["starters"]
+	for i in 4:
+		var best := {}
+		var best_k := ""
+		var best_tier := 99
+		for s in starters:
+			var r: Dictionary = starters[s]
+			for k in Robot.PARTS:
+				var nt := next_tier(r, k)
+				if nt == "":
+					continue
+				var ti := Robot.TIERS.find(String(r["parts"][k]["tier"]))
+				if ti < best_tier or (ti == best_tier and randf() < 0.15):
+					best_tier = ti
+					best = r
+					best_k = k
+		if best.is_empty() or money(t) - upgrade_price(best_k, next_tier(best, best_k)) < 400:
+			break
+		var tier := next_tier(best, best_k)
+		if buy_upgrade(t, best, best_k):
+			news.append("%s buys %s a %s %s." % [team(t)["name"], best["name"], tier, String(Robot.PART_LABEL[best_k]).to_lower()])
+	return news
