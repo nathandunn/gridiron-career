@@ -361,7 +361,18 @@ func _scale_for_phone() -> void:
 		get_tree().root.content_scale_factor = dpr
 
 
+## Where a box score opened from the control bar goes back to: the panel that was up, if any.
+func reopen_panel() -> Callable:
+	match _phase:
+		"picking":
+			return func(): _open_picker(_picking_side)
+		"injury":
+			return func(): hud.open_injuries(_broken_mine())
+	return Callable()
+
+
 func new_game() -> void:
+	hud.slips = []
 	if view != null:
 		view.clear_debris()
 	game = Game.new()
@@ -394,7 +405,11 @@ func overlay_changed(open: bool) -> void:
 	cam.input_blocked = open
 
 
+var _picking_side := "offense"
+
+
 func _open_picker(side: String) -> void:
+	_picking_side = side
 	_skip_drive = false
 	_phase = "picking"
 	var hand := PlayGen.hand(game.rng, side, HAND, game.to_go)
@@ -523,6 +538,10 @@ func injury_choice(slot: String, what: String) -> void:
 		"junk":
 			for k in Robot.lost_parts(r):
 				Robot.bolt_on_junk(r, k)
+		"buy":
+			for k in Robot.lost_parts(r):
+				if not Career.buy_repair(0, r, k):
+					Robot.bolt_on_junk(r, k)     # ran out of money part-way: junk for the rest
 		"play_on":
 			played_on[String(r["id"])] = ",".join(Robot.lost_parts(r))
 	Career.save()
@@ -626,6 +645,8 @@ func _next() -> void:
 	if game.over:
 		sim = null
 		view.set_play(null, game.poss, game.yl, game.to_go)
+		if Career.loaded and _phase != "over":
+			hud.slips = Career.pay_game(game)     # the final whistle pays both sides
 		_phase = "over"
 		hud.show_result("Final")
 		hud.show_game_over(game)

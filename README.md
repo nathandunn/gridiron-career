@@ -56,7 +56,17 @@ stump. A quarterback who loses an arm gets a standard one put straight back on.
 At the next dead ball you choose for each of your broken robots: **put in** any healthy bench
 robot - from any position (a receiver on the line is still built like a receiver) - **bolt on a junk spare** (rusty, works badly, breaks sooner), or **play on** without
 it. The rival's coach decides for his. Damage carries over from game to game; a robot's page
-shows each part's condition, and *Repair everything* is free until money arrives in step 4.
+shows each part's condition.
+
+**Money.** Each side has a purse (starting $400). A **junk spare is always free**; a **real
+(Stock) part costs money** (head $200, core $250, arm $120, leg $140) and a worn part costs a share
+of that to repair. The final whistle pays: win $600, tie $350, loss $200, plus $60 a touchdown,
+$25 a sack and $50 a takeaway - shown on the final box score. The rival's coach buys real parts
+when he can comfortably afford them, junk otherwise. (The shop with better-than-Stock parts comes
+in step 4.)
+
+**Box score any time:** from the control bar, the play picker or the broken-robots panel; Back
+returns you to where you were.
 **Swap any time:** on any robot's page, put a bench robot in for any slot, or take a starter out
 for anyone on the bench (from the next snap).
 Simulated games (Sim x10) wear out copies, never your robots.

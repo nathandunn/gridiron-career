@@ -190,6 +190,114 @@ static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> Strin
 	if not sub.is_empty() and Robot.effective_overall(sub) > patched:
 		swap_in(starters, bench, slot, String(sub["id"]))
 		return "%s comes in for %s at %s." % [sub["name"], r["name"], slot]
+	var bought: Array = []
 	for k in lost:
-		Robot.bolt_on_junk(r, k)
+		var t := team_of(r)
+		if t >= 0 and money(t) >= repair_cost(r, k) * 3 and buy_repair(t, r, k):
+			bought.append(k)
+		else:
+			Robot.bolt_on_junk(r, k)
+	if bought.size() == lost.size():
+		return "%s gets a new %s." % [r["name"], " and new ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 	return "%s gets a junk %s bolted on." % [r["name"], " and junk ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
+
+
+## ---- money -------------------------------------------------------------------------------------
+## Each side has a purse. A junk spare is always free; a real (Stock) part costs money, and so
+## does repairing a worn one. Games pay out at the final whistle.
+
+const START_MONEY := 400
+const PART_PRICE := {"head": 200, "core": 250, "larm": 120, "rarm": 120, "lleg": 140, "rleg": 140}
+const PAY := {"win": 600, "tie": 350, "loss": 200, "td": 60, "sack": 25, "takeaway": 50}
+
+
+static func money(t: int) -> int:
+	ensure()
+	if not data.has("money"):
+		data["money"] = [START_MONEY, START_MONEY]
+	return int(data["money"][t])
+
+
+static func add_money(t: int, amount: int) -> void:
+	money(t)
+	data["money"][t] = int(data["money"][t]) + amount
+
+
+static func spend(t: int, amount: int) -> bool:
+	if money(t) < amount:
+		return false
+	add_money(t, -amount)
+	save()
+	return true
+
+
+## What it costs to put a part right: a lost (or junk) part is a new Stock one at full price;
+## a worn one costs a share of the price by how worn it is.
+static func repair_cost(robot: Dictionary, k: String) -> int:
+	var pt: Dictionary = Robot.ensure_parts(robot)[k]
+	var price := int(PART_PRICE[k])
+	if float(pt["hp"]) <= 0.0 or String(pt["tier"]) == "Junk":
+		return price
+	var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
+	return int(ceilf(price * 0.6 * (1.0 - float(pt["hp"]) / mx)))
+
+
+static func repair_all_cost(robot: Dictionary) -> int:
+	var c := 0
+	for k in Robot.PARTS:
+		c += repair_cost(robot, k)
+	return c
+
+
+## Buy a new Stock part (or a repair) if the purse allows. true if done.
+static func buy_repair(t: int, robot: Dictionary, k: String) -> bool:
+	var c := repair_cost(robot, k)
+	if c <= 0:
+		return true
+	if not spend(t, c):
+		return false
+	Robot.repair(robot, k)
+	save()
+	return true
+
+
+## The final whistle: pay each side for the result and what it did. Returns the two pay slips.
+static func pay_game(g: Game) -> Array:
+	var slips: Array = []
+	var w := g.winner()
+	for t in 2:
+		var lines: Array = []
+		var res := "tie" if w < 0 else ("win" if w == t else "loss")
+		lines.append([{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(PAY[res])])
+		var tds := int(g.stats[t].get("td", 0))
+		if tds > 0:
+			lines.append(["Touchdowns x%d" % tds, tds * int(PAY["td"])])
+		var sacks := int(g.stats[1 - t].get("sacks", 0))
+		if sacks > 0:
+			lines.append(["Sacks x%d" % sacks, sacks * int(PAY["sack"])])
+		var take := int(g.stats[1 - t].get("ints", 0)) + int(g.stats[1 - t].get("fumbles", 0))
+		if take > 0:
+			lines.append(["Takeaways x%d" % take, take * int(PAY["takeaway"])])
+		var total := 0
+		for l in lines:
+			total += int(l[1])
+		add_money(t, total)
+		slips.append({"lines": lines, "total": total})
+	save()
+	return slips
+
+
+
+## Which career team a robot is on (-1 if none: a simulated copy).
+static func team_of(robot: Dictionary) -> int:
+	if not loaded:
+		return -1
+	for t in 2:
+		var tm: Dictionary = data["teams"][t]
+		for s in tm["starters"]:
+			if is_same(tm["starters"][s], robot):
+				return t
+		for b in tm["bench"]:
+			if is_same(b, robot):
+				return t
+	return -1

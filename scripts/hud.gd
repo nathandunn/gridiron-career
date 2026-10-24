@@ -353,7 +353,7 @@ func _build_controls() -> void:
 	bar.add_child(_button("Roster", func(): open_roster()))
 	bar.add_child(_button("Edit AI", func(): open_editor()))
 	bar.add_child(_button("Sim ×10", func(): main.run_batch(10)))
-	bar.add_child(_button("Stats", func(): if main.game != null: show_stats(main.game, "live")))
+	bar.add_child(_button("Box score", func(): if main.game != null: show_stats(main.game, "live", {}, main.reopen_panel())))
 	bar.add_child(_button("Log", func(): open_log()))
 	bar.add_child(_button("New game", func(): main.new_game()))
 	mark_speed(1.0)
@@ -378,16 +378,25 @@ func any_overlay() -> bool:
 	return _overlay != null and is_instance_valid(_overlay)
 
 
-func close_overlay() -> void:
+var _back := Callable()      # where Close goes back to (a box score opened from another panel)
+var slips: Array = []        # the last game's pay slips, for the final box score
+
+
+func close_overlay(follow_back := true) -> void:
 	if any_overlay():
 		_overlay.queue_free()
 	_overlay = null
 	main.overlay_changed(false)
+	if follow_back and _back.is_valid():
+		var b := _back
+		_back = Callable()
+		b.call()
 
 
 ## A panel over the field: returns its content box.
 func _open(title: String) -> VBoxContainer:
-	close_overlay()
+	close_overlay(false)
+	_back = Callable()
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -870,6 +879,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
+	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
 	box.add_child(_label("Yellow is the run, the blue line is the line of scrimmage. Defense: shaded zones, dashed lines for man coverage, pink arrows for blitzers.", fs - 3, Color(0.7, 0.74, 0.78)))
 
 
@@ -894,8 +904,10 @@ var _stats_tab := "team"
 
 
 ## mode: "quarter" (a break - Continue goes on), "final", or "live" (just a look).
-func show_stats(g: Game, mode: String, snap: Dictionary = {}) -> void:
+func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()) -> void:
 	var names := [(g.teams[0]["coach"] as Coach).name, (g.teams[1]["coach"] as Coach).name]
+	if Career.loaded:
+		names = [String(Career.team(0)["name"]), String(Career.team(1)["name"])]
 	var score: Array = snap.get("score", g.score)
 	var line: Array = snap.get("line", g.line)
 	var stats: Array = snap.get("stats", g.stats)
@@ -910,6 +922,10 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}) -> void:
 		"live":
 			title = "Box score · Q%d" % mini(g.quarter, 4)
 	var box := _open(title)
+	_back = back
+	if back.is_valid():
+		var bk := _button("Back", func(): close_overlay())
+		box.add_child(bk)
 	if mode == "final":
 		var w := g.winner()
 		box.add_child(_label("Tie game" if w < 0 else "%s win" % names[w], fs + 3, MAGENTA))
@@ -918,7 +934,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}) -> void:
 	tabs.add_theme_constant_override("h_separation", 6)
 	box.add_child(tabs)
 	for tab in [["team", "Team"], ["p0", "%s players" % Team.NAMES[0]], ["p1", "%s players" % Team.NAMES[1]]]:
-		var b := _button(tab[1], func(): _stats_tab = tab[0]; show_stats(g, mode, snap), true)
+		var b := _button(tab[1], func(): _stats_tab = tab[0]; _back = Callable(); show_stats(g, mode, snap, back), true)
 		b.button_pressed = _stats_tab == tab[0]
 		tabs.add_child(b)
 	match _stats_tab:
@@ -937,6 +953,14 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}) -> void:
 		var stop := _button("Stop at quarter breaks", func(): main.stop_at_quarters = not main.stop_at_quarters, true)
 		stop.button_pressed = main.stop_at_quarters
 		row.add_child(stop)
+	if mode == "final" and not slips.is_empty():
+		_section(box, "Pay")
+		for t in 2:
+			var sl: Dictionary = slips[t]
+			var parts: Array = []
+			for l in sl["lines"]:
+				parts.append("%s $%d" % [l[0], int(l[1])])
+			box.add_child(_label("%s: %s = $%d  (purse now $%d)" % [names[t], ", ".join(parts), int(sl["total"]), Career.money(t)], fs - 1, YELLOW if t == 0 else Color(0.8, 0.85, 0.9)))
 	if mode == "final":
 		row.add_child(_button("Play again", func(): close_overlay(); main.new_game()))
 		row.add_child(_button("Sim ×10 these teams", func(): close_overlay(); main.run_batch(10)))
@@ -1173,7 +1197,7 @@ func open_roster(t := -1) -> void:
 		_roster_team = t
 	Career.ensure()
 	var tm := Career.team(_roster_team)
-	var box := _open("Roster · %s" % tm["name"])
+	var box := _open("Roster · %s · $%d" % [tm["name"], Career.money(_roster_team)])
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
 	box.add_child(tabs)
@@ -1395,7 +1419,14 @@ func open_robot(id: String) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots")
-	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Close this and the coach decides.", fs - 2, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Close this and the coach decides. A junk spare is always free.", fs - 2, Color(0.8, 0.83, 0.88)))
+	var top := HFlowContainer.new()
+	top.add_theme_constant_override("h_separation", 6)
+	box.add_child(top)
+	var pl := _label("Purse $%d" % Career.money(0), fs + 1, YELLOW)
+	pl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	top.add_child(pl)
+	top.add_child(_button("Box score", func(): show_stats(main.game, "live", {}, func(): open_injuries(main._broken_mine()))))
 	var tm: Dictionary = main.game.teams[0]
 	for s in slots:
 		var r: Dictionary = tm["roster"][s]
@@ -1410,7 +1441,13 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		row.add_child(_button("Bolt on junk %s" % " and ".join(names), func(): main.injury_choice(s, "junk")))
+		row.add_child(_button("Bolt on junk %s (free)" % " and ".join(names), func(): main.injury_choice(s, "junk")))
+		var cost := 0
+		for k in lost:
+			cost += Career.repair_cost(r, k)
+		var buy := _button("New %s ($%d)" % [" and ".join(names), cost], func(): main.injury_choice(s, "buy"))
+		buy.disabled = Career.money(0) < cost
+		row.add_child(buy)
 		if Robot.can_play(r):
 			row.add_child(_button("Play on without it", func(): main.injury_choice(s, "play_on")))
 		else:
@@ -1456,7 +1493,10 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			line.add_child(gl)
-			line.add_child(_button("Bolt on junk", func(): Robot.bolt_on_junk(r, k); Career.save(); open_robot(id)))
+			line.add_child(_button("Junk (free)", func(): Robot.bolt_on_junk(r, k); Career.save(); open_robot(id)))
+			var nb := _button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id))
+			nb.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.repair_cost(r, k)
+			line.add_child(nb)
 		else:
 			var bar := ProgressBar.new()
 			bar.max_value = mx
@@ -1477,8 +1517,19 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			tl.custom_minimum_size.x = 90
 			line.add_child(tl)
 	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
-	row.add_child(_button("Repair everything (free until money comes in)", func():
-		for k in Robot.PARTS:
-			Robot.repair(r, k)
-		Career.save(); open_robot(id)))
+	var t := maxi(Career.team_of(r), 0)
+	var all_cost := Career.repair_all_cost(r)
+	var pl2 := _label("Purse $%d" % Career.money(t), fs, YELLOW)
+	pl2.autowrap_mode = TextServer.AUTOWRAP_OFF
+	row.add_child(pl2)
+	if all_cost > 0:
+		var rb := _button("Repair everything ($%d)" % all_cost, func():
+			if Career.spend(t, all_cost):
+				for k in Robot.PARTS:
+					Robot.repair(r, k)
+				Career.save()
+			open_robot(id))
+		rb.disabled = Career.money(t) < all_cost
+		row.add_child(rb)
