@@ -105,6 +105,7 @@ func _ready() -> void:
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
 			"roster": hud.open_roster(0)
 			"closepick": hud.close_overlay()
+			"kickoff": new_game(true)
 			"sim2end": sim_to_end()
 			"injuries":
 				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0

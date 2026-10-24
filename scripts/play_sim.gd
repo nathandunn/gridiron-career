@@ -985,6 +985,11 @@ func _lead(qb: P, r: P) -> Array:
 		var dist := qb.pos.distance_to(c)
 		T = 0.18 + dist / _ball_speed(dist) + (0.25 if dist > 28.0 else 0.0)
 		c = _predict(r, T)
+	# never lead him further than he can actually run before the ball gets there (a route that
+	# cuts, or a receiver still speeding up, would otherwise leave the ball landing on nobody)
+	var can := r.spd() * maxf(T - 0.15, 0.1) * 0.85
+	if r.pos.distance_to(c) > can:
+		c = r.pos + (c - r.pos).normalized() * can
 	return [c, T]
 
 
@@ -1144,7 +1149,7 @@ func _throw(qb: P, r: P) -> bool:
 	var to := c + err
 	ball_state = "air"
 	thrown = true
-	air = {"from": qb.pos, "to": to, "t0": t, "T": T, "lob": dist > 28.0, "dist": dist}
+	air = {"from": qb.pos, "to": to, "t0": t, "T": T, "lob": dist > 28.0, "dist": dist, "d0": r.pos.distance_to(to), "spd0": r.spd()}
 	air_target = r
 	stat["target"] = r.slot
 	_fx("throw", qb, r, to)
@@ -1154,7 +1159,12 @@ func _throw(qb: P, r: P) -> bool:
 	return true
 
 
+var miss_info := {}
+var away_pressure := -1.0     # how near the nearest rusher was when he threw it away (-1: he didn't)
+
+
 func _throw_away(qb: P) -> void:
+	away_pressure = _rusher_d(qb)
 	var sx := SIDELINE + 4.0 if qb.pos.x >= 0 else -SIDELINE - 4.0
 	var to := Vector2(sx, qb.pos.y + 6.0)
 	ball_state = "air"
@@ -1185,7 +1195,10 @@ func _drive(p: P) -> void:
 			p.mem["_want"] = Vector2.ZERO
 			return
 	if p.engaged != null:
-		return
+		if ball_state == "air" and p == air_target:
+			_unlock(p)       # the ball is coming to him: he breaks off whatever he was tangled in
+		else:
+			return
 	var want := Vector2.ZERO
 	var frac := 1.0
 	if ball_state == "dead":
@@ -1199,6 +1212,9 @@ func _drive(p: P) -> void:
 		_drive_carrier(p)
 		return
 	if ball_state == "air":
+		if p == air_target and not p.blockers.is_empty():
+			for e: P in p.blockers.duplicate():
+				_unlock(e)   # a jam lets go when the ball is in the air to him
 		_drive_air(p)
 		return
 	var live_pass := carrier != null and carrier.slot == "QB" and carrier.side == 0 and not thrown and not handed and not qb_runner
@@ -2182,6 +2198,8 @@ func _move_all() -> void:
 				want *= 0.3
 			if p == carrier and t < p.juke_until:
 				acc *= 1.6
+			if p == air_target and ball_state == "air":
+				acc *= 1.8   # breaking on the ball
 			p.vel = p.vel.move_toward(want, acc * DT * (2.5 if want.length() < p.vel.length() - 0.5 else 1.0))
 		p.pos += p.vel * DT
 		if p.vel.length() > 0.5:
@@ -2290,6 +2308,8 @@ func _arrive() -> void:
 	if best_o == null:
 		var tr := air_target
 		_say("nobody there (target %s %.1f yd away)" % [tr.slot if tr != null else "-", tr.pos.distance_to(to) if tr != null else -1.0])
+		if tr != null:
+			miss_info = {"slot": tr.slot, "down": tr.down, "intent": tr.intent, "eng": tr.engaged != null, "kind": String(tr.assign.get("kind", "")), "d": tr.pos.distance_to(to), "spd": tr.vel.length(), "d0": float(air.get("d0", -1)), "T": float(air["T"]), "max": float(air.get("spd0", 0)) * float(air["T"])}
 	if best_o != null:
 		var q := 1.0 - od / REACH
 		var pc := (0.86 + 0.12 * float(best_o.body["hands"])) * (0.7 + 0.3 * q) * float(K["catch"])

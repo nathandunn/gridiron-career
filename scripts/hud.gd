@@ -849,7 +849,15 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	var coach_i := int(coach.get("index", -1))
 	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
 	if coach_i >= 0:
-		var cl := _label("COACH'S PICK: %s would call %s (his rule: %s). The marked card is the closest to it in this hand." % [coach_name, String(coach.get("call", "")), String(coach.get("why", "-"))], fs - 1, MAGENTA)
+		var gtxt := ""
+		var gd: Dictionary = coach.get("grade", {})
+		if not gd.is_empty():
+			var need := float(coach.get("need", 10.0))
+			gtxt = "\nBy the numbers: grade %s - %s %d%% (±%d) to %s %d yards (a successful play on this down), #%d of %d in the playbook (best: %s %d%%, average %d%%)." % [
+				gd["grade"], String(coach.get("call", "")), int(round(float(gd["p"]) * 100)), int(round(float(gd["margin"]) * 100)),
+				"hold them under" if side == "defense" else "gain", int(ceil(need)), int(gd["rank"]), int(gd["of"]),
+				gd["best"], int(round(float(gd["best_p"]) * 100)), int(round(float(gd["avg_p"]) * 100))]
+		var cl := _label("COACH'S PICK: %s would call %s (his rule: %s). The marked card is the closest to it in this hand.%s" % [coach_name, String(coach.get("call", "")), String(coach.get("why", "-")), gtxt], fs - 1, MAGENTA)
 		box.add_child(cl)
 		box.move_child(cl, grid.get_index())
 	for ci in hand.size():

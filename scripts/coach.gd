@@ -15,7 +15,9 @@ extends RefCounted
 ##     QB "Gunslinger"
 ##     WR "Burner"
 ##
-## `call "A" or "B"` picks one at random. A coach who never says punt or field goal goes for it.
+## `call "A" or "B"` picks one at random. `call the best play` (or `best pass`, `best run`,
+## `best defense`) goes by the numbers (PlayStats): one of the playbook plays that is not clearly
+## worse than the best at making - or stopping - the yards needed.
 
 const CONDITIONS := [
 	[["always"], "always"],
@@ -64,6 +66,10 @@ const CONDITIONS := [
 ]
 
 const ACTIONS := [
+	[["call", "the", "best", "play"], "call_best"],
+	[["call", "the", "best", "pass"], "call_best_pass"],
+	[["call", "the", "best", "run"], "call_best_run"],
+	[["call", "the", "best", "defense"], "call_best"],
 	[["call", "$R"], "call"],
 	[["punt"], "punt"],
 	[["field", "goal"], "field_goal"],

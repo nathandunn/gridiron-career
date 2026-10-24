@@ -1,0 +1,23 @@
+coach "By the Numbers"
+about "Calls whatever the numbers say makes the yards needed - one of the plays not clearly worse than the best - and on defense whatever stops it most often."
+
+offense:
+  when game ending and leading by over 0 and clock under 100 -> kneel
+  when to go under 3 -> call the best run
+  when third down or fourth down -> call the best play
+  when trailing by over 7 and half ending -> call the best pass
+  otherwise -> call the best play
+
+defense:
+  otherwise -> call the best defense
+
+lineup:
+  QB "Pocket Passer"
+  RB "Patient Runner"
+  WR "Route Runner"
+  TE "Receiving TE"
+  OL "Pass Protector"
+  DL "Bull Rusher"
+  LB "Coverage LB"
+  CB "Shutdown Corner"
+  S "Center Fielder"

@@ -85,6 +85,12 @@ returns you to where you were.
 for anyone on the bench (from the next snap).
 Simulated games (Sim x10) wear out copies, never your robots.
 
+## Play statistics
+Every playbook play has been measured against every defense (`docs/play-stats.md`,
+`data/play_stats.json`). Coaches can `call the best play` (or `best pass`, `best run`, `best
+defense`); the **By the Numbers** coach does nothing else. The play picker grades the coach's
+pick (A-F) with its chance of a successful play.
+
 What follows is what it inherits from Gridiron Bots.
 
 

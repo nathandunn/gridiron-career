@@ -176,6 +176,28 @@ func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictio
 				out["kind"] = "play"
 				out["play"] = opts[rng.randi() % opts.size()]
 				return true
+			"call_best", "call_best_pass", "call_best_run":
+				# by the numbers: a play not clearly worse than the best at this distance
+				var names: Array = []
+				for n in Library.plays_for("offense" if on_offense else "defense"):
+					var p: Play = Library.play(n)
+					if p == null:
+						continue
+					if id == "call_best_run" and p.kind != "run":
+						continue
+					if id == "call_best_pass" and p.kind == "run":
+						continue
+					names.append(n)
+				# lean towards what the other side has actually been calling this game
+				var seen := {}
+				for nm in calls[1 - team]:
+					seen[nm] = int(calls[1 - team][nm][0])
+				var best := PlayStats.best_of(names, need_yards(), not on_offense, seen)
+				if best.is_empty():
+					return false
+				out["kind"] = "play"
+				out["play"] = best[rng.randi() % best.size()][0]
+				return true
 			"punt", "field_goal":
 				return false   # no kicking in this game: the next rule decides
 			"kneel":
@@ -218,7 +240,14 @@ func coach_suggest(on_offense: bool, hand: Array) -> Dictionary:
 		if dist < best_d:
 			best_d = dist
 			best = i
-	return {"index": best, "call": want.name, "why": why}
+	return {"index": best, "call": want.name, "why": why, "grade": PlayStats.grade(want.name, need_yards(), not on_offense), "need": need_yards()}
+
+
+## The yards that make this a successful play - the usual football measure: 40% of the
+## distance on first down, 60% on second, all of it on third and fourth (never past the goal line).
+func need_yards() -> float:
+	var share: float = [1.0, 0.4, 0.6, 1.0, 1.0][clampi(down, 0, 4)]
+	return maxf(1.0, minf(ceilf(to_go * share), 100.0 - yl))
 
 
 func _coach_sense(id: String, a: Array, team: int, on_offense: bool) -> bool:
