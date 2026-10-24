@@ -306,7 +306,7 @@ func _build_ui() -> void:
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = Color(0.02, 0.025, 0.05)
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.45, 0.5, 0.7)
+	e.ambient_light_color = Color(0.6, 0.6, 0.65)
 	e.ambient_light_energy = 0.55
 	e.glow_enabled = true
 	e.glow_intensity = 0.9
@@ -810,7 +810,11 @@ func _process(delta: float) -> void:
 					_phase = "injury"
 					hud.open_injuries(_broken_mine())
 					if OS.get_cmdline_user_args().has("--autopick"):
-						hud.close_overlay.call_deferred()   # test hook: let the coach decide
+						# test hook: the coach decides for you
+						for s3 in _broken_mine():
+							Career.coach_fix(game.teams[0]["roster"], game.teams[0].get("bench", []), s3)
+						hud.close_overlay(false)
+						_next()
 					return
 				_next()
 
