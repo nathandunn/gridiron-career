@@ -65,6 +65,12 @@ $25 a sack and $50 a takeaway - shown on the final box score. The rival's coach 
 when he can comfortably afford them, junk otherwise. (The shop with better-than-Stock parts comes
 in step 4.)
 
+**Nothing plays without you:** close the play picker, a quarter break or the broken-robots panel
+and the game waits - edit the roster, read the box score, whatever - then tap the button on the
+field (*Call the offense play*, *Continue*, *Fix broken robots*) to pick up where you left off.
+**Sim to end** plays the rest of the game at once with the coaches calling everything (wear,
+money and stats count) and shows the final box score.
+
 **Box score any time:** from the control bar, the play picker or the broken-robots panel; Back
 returns you to where you were.
 **Swap any time:** on any robot's page, put a bench robot in for any slot, or take a starter out

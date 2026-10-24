@@ -104,6 +104,8 @@ func _ready() -> void:
 			"toast": hud.toast(String(args.get("text", "TURNOVER ON DOWNS\nBlue ball")).replace("|", "\n"), 5.0)
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
 			"roster": hud.open_roster(0)
+			"closepick": hud.close_overlay()
+			"sim2end": sim_to_end()
 			"injuries":
 				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
@@ -406,6 +408,9 @@ func overlay_changed(open: bool) -> void:
 
 
 var _picking_side := "offense"
+var _hand: Array = []
+var _coach_hint := {}
+var _pick_team := 0
 
 
 func _open_picker(side: String) -> void:
@@ -415,6 +420,9 @@ func _open_picker(side: String) -> void:
 	var hand := PlayGen.hand(game.rng, side, HAND, game.to_go)
 	var team: int = game.poss if side == "offense" else 1 - game.poss
 	var coach := game.coach_suggest(side == "offense", hand)
+	_hand = hand
+	_coach_hint = coach
+	_pick_team = team
 	hud.open_picker(game, team, side, hand, coach)
 	if OS.get_cmdline_user_args().has("--autopick"):
 		# test hook: pick for the person (a random card)
@@ -425,6 +433,7 @@ func _open_picker(side: String) -> void:
 ## From the picker: kind is "off" / "def" (value: a generated {text, play}), "kick" ("punt" /
 ## "field_goal"), or "coach_off" / "coach_def" (let the coach call this one).
 func pick_made(kind: String, value: Variant) -> void:
+	hud.show_resume(false, "")
 	_choice[kind] = value
 	hud.close_overlay()
 	_next()
@@ -608,6 +617,7 @@ func next_sound() -> String:
 
 
 func resume_after_break() -> void:
+	hud.show_resume(false, "")
 	if _phase == "qbreak":
 		_next()
 
@@ -628,6 +638,59 @@ func next_view() -> String:
 
 func skip_drive() -> void:
 	_skip_drive = true
+
+
+func _resume_label() -> String:
+	match _phase:
+		"picking":
+			return "Call the %s play" % _picking_side
+		"qbreak":
+			return "Continue to the next quarter"
+		"injury":
+			return "Fix broken robots"
+	return ""
+
+
+## The waiting panel, back again (from the Resume button).
+func resume_panel() -> void:
+	match _phase:
+		"picking":
+			hud.open_picker(game, _pick_team, _picking_side, _hand, _coach_hint)
+		"qbreak":
+			hud.show_stats(game, "quarter", game.quarter_ends[_seen_q - 1])
+		"injury":
+			if _broken_mine().is_empty():
+				_next()
+			else:
+				hud.open_injuries(_broken_mine())
+
+
+## Play out the rest of the game at once: the coaches call every play and fix every broken
+## robot; wear, money and stats count as in a played game. Ends on the final box score.
+func sim_to_end() -> void:
+	if game == null or game.over:
+		return
+	hud.close_overlay(false)
+	hud.show_resume(false, "")
+	_choice = {}
+	var guard := 0
+	while not game.over and guard < 600:
+		guard += 1
+		var snap := game.next_snap({"coach_off": true, "coach_def": true})
+		if snap["kind"] != "play":
+			continue
+		var s2 := game.make_sim()
+		s2.run_to_end()
+		Batch._fold_tally(game, s2)
+		game.finish(s2)
+		for t in 2:
+			game.coach_fixes(t)
+	_seen_q = game.quarter_ends.size()
+	if Career.loaded:
+		Career.save()
+	_phase = "after"
+	_wait = 0.0
+	_next()
 
 
 ## Ask the coaches for the next snap; kicks resolve at once and are shown as a note.
@@ -690,21 +753,9 @@ func _process(delta: float) -> void:
 	if _batch_left > 0:
 		_batch_step()
 		return
-	if _phase == "picking" and not hud.any_overlay():
-		# the picker was closed: the coach calls this one
-		var side := "coach_off" if game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("kick") or _choice.has("coach_off")) else "coach_def"
-		_choice[side] = true
-		_next()
-		return
-	if _phase == "qbreak" and not hud.any_overlay():
-		_next()   # the break panel was closed without Continue
-		return
-	if _phase == "injury" and not hud.any_overlay():
-		# closed: whoever wasn't decided on, the coach sees to
-		for s2 in _broken_mine():
-			Career.coach_fix(game.teams[0]["roster"], game.teams[0].get("bench", []), s2)
-		Career.save()
-		_next()
+	# a panel that is waiting on you was closed: nothing happens until you come back to it
+	if _phase in ["picking", "qbreak", "injury"]:
+		hud.show_resume(not hud.any_overlay(), _resume_label())
 		return
 	if paused or hud.any_overlay() and _phase != "over":
 		return

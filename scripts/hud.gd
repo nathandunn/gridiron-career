@@ -301,6 +301,25 @@ func clear_caption() -> void:
 	_cap_box.visible = false
 
 
+## A big button over the field when the game is waiting on you and its panel is closed.
+var _resume: Button
+
+
+func show_resume(on: bool, text: String) -> void:
+	if _resume == null:
+		_resume = _button("", func(): main.resume_panel())
+		_resume.add_theme_font_size_override("font_size", fs + 6)
+		_resume.set_anchors_preset(Control.PRESET_CENTER)
+		_root.add_child(_resume)
+	var was := _resume.visible
+	_resume.visible = on
+	if on and (not was or _resume.text != text):
+		_resume.text = text
+		_resume.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_resume.position = Vector2((vp.x - _resume.size.x) * 0.5, vp.y * 0.55)
+
+
 func set_progress(text: String) -> void:
 	_progress.text = text
 	_progress.visible = text != ""
@@ -345,6 +364,7 @@ func _build_controls() -> void:
 		_speed_btns[s] = b
 		bar.add_child(b)
 	bar.add_child(_button("Skip drive", func(): main.skip_drive()))
+	bar.add_child(_button("Sim to end", func(): main.sim_to_end()))
 	_view_btn = _button("Cam: Behind", func(): _view_btn.text = "Cam: " + main.next_view())
 	bar.add_child(_view_btn)
 	_sound_btn = _button("Sound: voice", func(): _sound_btn.text = main.next_sound())
