@@ -399,8 +399,11 @@ func reopen_panel() -> Callable:
 ## your robots, the rival) until Kick off.
 func new_game(start := true) -> void:
 	hud.slips = []
+	hud.season_lines = []
 	if view != null:
 		view.clear_debris()
+	if Career.loaded:
+		coaches[1] = Career.opponent_coach()     # this week's rival club (or the exhibition side)
 	game = Game.new()
 	var seed_v := randi()
 	game.setup(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, seed_v)
@@ -744,7 +747,12 @@ func _next() -> void:
 		sim = null
 		view.set_play(null, game.poss, game.yl, game.to_go)
 		if Career.loaded and _phase != "over":
-			hud.slips = Career.pay_game(game)     # the final whistle pays both sides
+			if Career.exhibition():
+				hud.slips = []                    # an exhibition pays nobody
+				hud.season_lines = ["Exhibition: no pay, nothing carries over."]
+			else:
+				hud.slips = Career.pay_game(game)     # the final whistle pays both sides
+				hud.season_lines = Career.finish_week(game)
 		_phase = "over"
 		hud.show_result("Final")
 		hud.show_game_over(game)

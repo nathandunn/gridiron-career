@@ -210,7 +210,7 @@ func _build_scoreboard() -> void:
 func show_state(g: Game) -> void:
 	for t in 2:
 		var has := g.poss == t and not g.over
-		var cn: String = String(Career.team(t)["name"]) if Career.loaded else (g.teams[t]["coach"] as Coach).name
+		var cn: String = String(g.teams[t].get("club", Career.team(t)["name"])) if Career.loaded else (g.teams[t]["coach"] as Coach).name
 		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
 	_clock.text = "Final" if g.over else "Q%d %d:%02d" % [g.quarter, s / 60, s % 60]
@@ -408,6 +408,7 @@ func any_overlay() -> bool:
 
 var _back := Callable()      # where Close goes back to (a box score opened from another panel)
 var slips: Array = []        # the last game's pay slips, for the final box score
+var season_lines: Array = [] # the week's other results, next opponent, champion
 
 
 func close_overlay(follow_back := true) -> void:
@@ -490,13 +491,54 @@ func _chips(box: Control, names: Array, current: String, cb: Callable) -> HFlowC
 var _teams_side := 0
 
 
+var _confirm_new_season := false
+
+
+## Season or exhibition, at the top of the set-up panel.
+func _mode_section(box: VBoxContainer) -> void:
+	_section(box, "Game type")
+	var mode := "Exhibition" if Career.exhibition() else "Season"
+	_chips(box, ["Season", "Exhibition"], mode, func(n):
+		Career.set_mode(String(n).to_lower())
+		_confirm_new_season = false
+		main.new_game(false))
+	var dim := Color(0.8, 0.82, 0.85)
+	if Career.exhibition():
+		box.add_child(_label("One game. Both sides are drafted fresh with a single $2,000 budget: spend yours below (or let the coach); the rival's coach has spent his. Nobody is paid and nothing carries over to your season.", fs - 1, dim))
+		box.add_child(_button("New exhibition teams", func(): Career.new_exhibition(); main.new_game(false)))
+		return
+	var sn := Career.season()
+	if Career.season_over():
+		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
+	else:
+		var opp := Career.team(1)
+		box.add_child(_label("Week %d of %d. This week: %s (coach %s, %s)." % [int(sn["week"]), Career.WEEKS, opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
+		box.add_child(_label("Your team, its purse and its damage carry from week to week. A win pays $%d, a tie $%d, a loss $%d (plus touchdowns, sacks and takeaways). Each rival plays twice; best record is champion." % [Career.PAY["win"], Career.PAY["tie"], Career.PAY["loss"]], fs - 1, dim))
+	for r in Career.standings():
+		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
+	var ns := _button("Really start over? Tap again" if _confirm_new_season else "Start a new season", func():
+		if _confirm_new_season:
+			_confirm_new_season = false
+			Career.new_season()
+			main.new_game(false)
+		else:
+			_confirm_new_season = true
+			open_teams(true))
+	box.add_child(ns)
+
+
 func open_teams(pregame := false) -> void:
 	var box := _open("New game: set up the teams" if pregame else "Teams, coaches and brains")
 	box.add_child(_label("Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
 	if pregame:
-		var ko := _button("Kick off", func(): close_overlay(false); main.new_game(true))
+		var ko := _button("Kick off", func():
+			if Career.loaded and not Career.exhibition() and Career.season_over():
+				Career.new_season()
+			close_overlay(false); main.new_game(true))
 		ko.add_theme_font_size_override("font_size", fs + 4)
 		box.add_child(ko)
+	if pregame and Career.loaded:
+		_mode_section(box)
 	var sides := HBoxContainer.new()
 	box.add_child(sides)
 	for t in 2:
@@ -507,7 +549,12 @@ func open_teams(pregame := false) -> void:
 	var t: int = _teams_side
 	_section(box, "Coach")
 	var cur: String = main.coaches[t]
-	_chips(box, Library.names("coach"), cur, func(n): main.coaches[t] = n; open_teams(pregame))
+	_chips(box, Library.names("coach"), cur, func(n):
+		main.coaches[t] = n
+		if t == 1 and Career.loaded:
+			Career.team(1)["coach"] = n
+			Career.save()
+		open_teams(pregame))
 	var c: Coach = Library.coach(cur)
 	if c != null:
 		box.add_child(_label(c.about, fs - 1, Color(0.8, 0.82, 0.85)))
@@ -969,7 +1016,7 @@ var _stats_tab := "team"
 func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()) -> void:
 	var names := [(g.teams[0]["coach"] as Coach).name, (g.teams[1]["coach"] as Coach).name]
 	if Career.loaded:
-		names = [String(Career.team(0)["name"]), String(Career.team(1)["name"])]
+		names = [String(g.teams[0].get("club", Career.team(0)["name"])), String(g.teams[1].get("club", Career.team(1)["name"]))]
 	var score: Array = snap.get("score", g.score)
 	var line: Array = snap.get("line", g.line)
 	var stats: Array = snap.get("stats", g.stats)
@@ -1022,11 +1069,20 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 			var parts: Array = []
 			for l in sl["lines"]:
 				parts.append("%s $%d" % [l[0], int(l[1])])
-			box.add_child(_label("%s: %s = $%d  (purse now $%d)" % [names[t], ", ".join(parts), int(sl["total"]), Career.money(t)], fs - 1, YELLOW if t == 0 else Color(0.8, 0.85, 0.9)))
+			box.add_child(_label("%s: %s = $%d  (purse now $%d)" % [names[t], ", ".join(parts), int(sl["total"]), int(sl.get("purse", Career.money(t)))], fs - 1, YELLOW if t == 0 else Color(0.8, 0.85, 0.9)))
 			for nline in sl.get("news", []):
 				box.add_child(_label("   " + String(nline), fs - 2, Color(0.75, 0.8, 0.9)))
+	if mode == "final" and Career.loaded:
+		if not season_lines.is_empty():
+			_section(box, "Season" if not Career.exhibition() else "Exhibition")
+			for ln in season_lines:
+				box.add_child(_label(String(ln), fs - 1, YELLOW if String(ln).begins_with("SEASON") else Color(0.85, 0.9, 0.95)))
+			if not Career.exhibition():
+				for r in Career.standings():
+					box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 2, MAGENTA if r["you"] else Color(0.8, 0.85, 0.9)))
+		_garage(box, func(): show_stats(g, mode, snap, back))
 	if mode == "final":
-		row.add_child(_button("Play again", func(): close_overlay(); main.new_game()))
+		row.add_child(_button("Next game" if Career.loaded else "Play again", func(): close_overlay(); main.new_game(not Career.loaded)))
 		row.add_child(_button("Sim ×10 these teams", func(): close_overlay(); main.run_batch(10)))
 		_final_extras(box, g)
 
@@ -1108,6 +1164,87 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) ->
 
 func show_game_over(g: Game) -> void:
 	show_stats(g, "final")
+
+
+## After the game: who is damaged and what it costs, the coach's buttons, and the robot market.
+func _garage(box: Control, refresh: Callable) -> void:
+	_section(box, "Damage - fix up for the next game")
+	var tm := Career.team(0)
+	var any := false
+	var all_cost := 0
+	for s in tm["starters"]:
+		var r: Dictionary = tm["starters"][s]
+		var c := Career.repair_all_cost(r)
+		if c <= 0:
+			continue
+		any = true
+		all_cost += c
+		var row := HBoxContainer.new()
+		box.add_child(row)
+		var rb := _robot_row(r, s)
+		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rb.custom_minimum_size.x = 120
+		rb.text = "#%d %s %s  %s" % [int(r["number"]), s, r["name"], _damage_text(r)]
+		row.add_child(rb)
+		var rid := String(r["id"])
+		var fix := _button("Fix $%d" % c, func():
+			var rr := Career.find(rid)
+			var ok := true
+			for k in Robot.PARTS:
+				if Career.repair_cost(rr, k) > 0:
+					ok = Career.buy_repair(0, rr, k) and ok
+			if not ok:
+				toast("NOT ENOUGH MONEY", 1.6)
+			refresh.call())
+		fix.disabled = Career.money(0) < c
+		row.add_child(fix)
+	if not any:
+		box.add_child(_label("Nobody is damaged.", fs - 1, Color(0.8, 0.85, 0.9)))
+	else:
+		var fa := _button("Fix everybody $%d (purse $%d)" % [all_cost, Career.money(0)], func():
+			for s in tm["starters"]:
+				for k in Robot.PARTS:
+					if Career.repair_cost(tm["starters"][s], k) > 0:
+						Career.buy_repair(0, tm["starters"][s], k)
+			refresh.call())
+		fa.disabled = Career.money(0) <= 0
+		box.add_child(fa)
+	_section(box, "Upgrades")
+	var ur := HFlowContainer.new()
+	ur.add_theme_constant_override("h_separation", 6)
+	box.add_child(ur)
+	ur.add_child(_button("Roster, swaps and upgrades", func(): open_roster(0); _back = refresh))
+	_spend_row(box, 0, refresh)
+	_section(box, "Robot market (joins your bench)")
+	for r in Career.market():
+		var row := HBoxContainer.new()
+		box.add_child(row)
+		var info := _label("%s  %s  OVR %d  ARMOUR %d  %s" % [r["group"], r["name"], Robot.overall(r), Robot.armour(r), Robot.tiers_text(r, true)], fs - 1, Color(0.85, 0.9, 0.95))
+		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(info)
+		var rid := String(r["id"])
+		var price := int(r["price"])
+		var buy := _button("Buy $%d" % price, func():
+			if Career.buy_robot(0, rid):
+				toast("SIGNED", 1.4)
+			refresh.call())
+		buy.disabled = Career.money(0) < price
+		row.add_child(buy)
+
+
+func _damage_text(r: Dictionary) -> String:
+	var bits: Array = []
+	for k in Robot.PARTS:
+		var pt: Dictionary = r["parts"][k]
+		if Robot.part_lost(r, k):
+			bits.append("NO " + String(Robot.PART_LABEL[k]).to_upper())
+		elif String(pt["tier"]) == "Junk":
+			bits.append("junk " + String(Robot.PART_LABEL[k]).to_lower())
+		else:
+			var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
+			if float(pt["hp"]) < mx * 0.99:
+				bits.append("%s %d%%" % [String(Robot.PART_LABEL[k]).to_lower(), int(100.0 * float(pt["hp"]) / mx)])
+	return ", ".join(bits)
 
 
 func _final_extras(box: Control, g: Game) -> void:

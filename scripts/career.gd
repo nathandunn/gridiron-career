@@ -40,10 +40,13 @@ static func ensure() -> void:
 				add_money(0, STARTER_BUDGET)          # yours goes in the purse, to spend as you like
 				data["starter_upgrades"] = true
 				save()
+			if not data.has("season"):
+				_season_around_current()      # saves from before seasons: this becomes week 1 of one
 			return
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true}
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season"}
 	add_money(0, STARTER_BUDGET)          # your $2,000 for upgrades goes in the purse: spend it, or let the coach
 	add_money(1, int(data["teams"][1].get("leftover", 0)))
+	_season_around_current()
 	save()
 
 
@@ -95,6 +98,10 @@ static func _number(rng: RandomNumberGenerator, slot: String, used: Dictionary) 
 
 static func team(t: int) -> Dictionary:
 	ensure()
+	if exhibition():
+		return data["exhibition"]["teams"][t]
+	if t == 1 and data.has("season"):
+		return data["season"]["clubs"][int(data["season"].get("opp", 0))]
 	return data["teams"][t]
 
 
@@ -116,8 +123,16 @@ static func set_fair(on: bool) -> void:
 static func regenerate(t: int) -> void:
 	ensure()
 	# a redrafted team comes with $2,000 of upgrades already fitted (no money changes hands)
-	data["teams"][t] = new_team(t)
-	add_money(t, int(data["teams"][t].get("leftover", 0)))
+	var nt := new_team(t)
+	if exhibition():
+		data["exhibition"]["teams"][t] = nt
+	elif t == 1 and data.has("season"):
+		var club := team(1)
+		for k in ["starters", "bench"]:
+			club[k] = nt[k]
+	else:
+		data["teams"][t] = nt
+	add_money(t, int(nt.get("leftover", 0)))
 	save()
 
 
@@ -125,7 +140,7 @@ static func regenerate(t: int) -> void:
 static func find(id: String) -> Dictionary:
 	ensure()
 	for t in 2:
-		var tm: Dictionary = data["teams"][t]
+		var tm: Dictionary = team(t)
 		for s in tm["starters"]:
 			if String(tm["starters"][s]["id"]) == id:
 				return {"team": t, "robot": tm["starters"][s], "where": "starter", "slot": s}
@@ -236,6 +251,10 @@ const PAY := {"win": 600, "tie": 350, "loss": 200, "td": 60, "sack": 25, "takeaw
 
 static func money(t: int) -> int:
 	ensure()
+	if exhibition():
+		return int(data["exhibition"]["money"][t])
+	if t == 1 and data.has("season"):
+		return int(team(1).get("money", 0))
 	if not data.has("money"):
 		data["money"] = [START_MONEY, START_MONEY]
 	return int(data["money"][t])
@@ -243,7 +262,12 @@ static func money(t: int) -> int:
 
 static func add_money(t: int, amount: int) -> void:
 	money(t)
-	data["money"][t] = int(data["money"][t]) + amount
+	if exhibition():
+		data["exhibition"]["money"][t] = int(data["exhibition"]["money"][t]) + amount
+	elif t == 1 and data.has("season"):
+		team(1)["money"] = int(team(1).get("money", 0)) + amount
+	else:
+		data["money"][t] = int(data["money"][t]) + amount
 
 
 static func spend(t: int, amount: int) -> bool:
@@ -296,30 +320,105 @@ static func buy_repair(t: int, robot: Dictionary, k: String) -> bool:
 
 
 ## The final whistle: pay each side for the result and what it did. Returns the two pay slips.
+## Pay between games: whatever the damage costs to put right (every lost or worn part back to
+## new), plus a share of the $2,000 budget for the result - 20% for a win, 15% a tie, 10% a loss -
+## to spend on upgrades or new robots. So winning buys you a 20% better team for next week.
+const RESULT_SHARE := {"win": 0.20, "tie": 0.15, "loss": 0.10}
+
+
+static func damage_bill(t: int) -> int:
+	var c := 0
+	var tm := team(t)
+	for s in tm["starters"]:
+		c += repair_all_cost(tm["starters"][s])
+	for r in tm["bench"]:
+		c += repair_all_cost(r)
+	return c
+
+
 static func pay_game(g: Game) -> Array:
 	var slips: Array = []
 	var w := g.winner()
 	for t in 2:
 		var lines: Array = []
 		var res := "tie" if w < 0 else ("win" if w == t else "loss")
-		lines.append([{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(PAY[res])])
-		var tds := int(g.stats[t].get("td", 0))
-		if tds > 0:
-			lines.append(["Touchdowns x%d" % tds, tds * int(PAY["td"])])
-		var sacks := int(g.stats[1 - t].get("sacks", 0))
-		if sacks > 0:
-			lines.append(["Sacks x%d" % sacks, sacks * int(PAY["sack"])])
-		var take := int(g.stats[1 - t].get("ints", 0)) + int(g.stats[1 - t].get("fumbles", 0))
-		if take > 0:
-			lines.append(["Takeaways x%d" % take, take * int(PAY["takeaway"])])
-		var total := 0
-		for l in lines:
-			total += int(l[1])
+		var share := int(STARTER_BUDGET * float(RESULT_SHARE[res]))
+		lines.append(["%s (%d%% of $%d)" % [{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(RESULT_SHARE[res] * 100), STARTER_BUDGET], share])
+		var bill := damage_bill(t)
+		if bill > 0:
+			lines.append(["Damage covered", bill])
+		var total := share + bill
 		add_money(t, total)
-		slips.append({"lines": lines, "total": total})
+		slips.append({"lines": lines, "total": total, "name": String(team(t)["name"]), "purse": money(t)})
 	save()
 	slips[1]["news"] = rival_shopping(1)     # the rival's owner goes shopping
+	slips[1]["news"] = coach_repairs(1) + slips[1]["news"]
+	slips[1]["purse"] = money(1)
 	return slips
+
+
+## The rival coach puts all his damage right before he shops.
+static func coach_repairs(t: int) -> Array:
+	var tm := team(t)
+	var n := 0
+	for r in (tm["starters"].values() + tm["bench"]):
+		for k in Robot.PARTS:
+			if repair_cost(r, k) > 0 and buy_repair(t, r, k):
+				n += 1
+	return ["%s repairs %d parts." % [tm["name"], n]] if n > 0 else []
+
+
+## ---- the robot market ---------------------------------------------------------------------------
+## Three robots for sale each week (new ones after every game). Bought, they join your bench.
+static func _new_id() -> String:
+	data["next_id"] = int(data.get("next_id", 1000)) + 1
+	return "m%d" % int(data["next_id"])
+
+
+static func robot_price(r: Dictionary) -> int:
+	var parts := 0
+	for k in Robot.PARTS:
+		var tier := String(r["parts"][k]["tier"])
+		parts += int(PART_PRICE[k] * {"Junk": 0.2, "Stock": 1.0, "Mk II": 1.6, "Mk III": 2.4, "Prototype": 3.5}.get(tier, 1.0))
+	return int(roundf((Robot.overall(r) * 6 + parts * 0.5) / 10.0)) * 10
+
+
+static func market() -> Array:
+	ensure()
+	if not data.has("market") or (data["market"] as Array).is_empty():
+		restock()
+	return data["market"]
+
+
+static func restock() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.randomize()
+	var groups := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S"]
+	groups.shuffle()
+	var out: Array = []
+	for g in groups.slice(0, 3):
+		var slot: String = (Play.GROUP_SLOTS.get(g, [g]) as Array)[0]
+		var r := Robot.make(rng, slot, rng.randi_range(1, 99), _new_id(), true)
+		r["slot"] = ""
+		r["group"] = g
+		r["price"] = robot_price(r)
+		out.append(r)
+	data["market"] = out
+	save()
+
+
+static func buy_robot(t: int, id: String) -> bool:
+	for r in market():
+		if String(r["id"]) == id:
+			if not spend(t, int(r["price"])):
+				return false
+			market().erase(r)
+			r.erase("price")
+			team(t)["bench"].append(r)
+			save()
+			return true
+	return false
+
 
 
 
@@ -328,7 +427,7 @@ static func team_of(robot: Dictionary) -> int:
 	if not loaded:
 		return -1
 	for t in 2:
-		var tm: Dictionary = data["teams"][t]
+		var tm: Dictionary = team(t)
 		for s in tm["starters"]:
 			if is_same(tm["starters"][s], robot):
 				return t
@@ -367,9 +466,9 @@ static func upgrade_funds(t: int) -> int:
 
 ## The coach spends for you: all your credit, and if `purse` the purse above a $400 reserve.
 ## Returns what he bought, as lines.
-static func coach_spend(t: int, purse: bool) -> Array:
+static func coach_spend(t: int, purse: bool, reserve := 400) -> Array:
 	var news: Array = []
-	var budget := credit(t) + (maxi(money(t) - 400, 0) if purse else 0)
+	var budget := credit(t) + (maxi(money(t) - reserve, 0) if purse else 0)
 	if budget <= 0:
 		return news
 	var before := {}
@@ -519,3 +618,194 @@ static func upgrades_with(tm: Dictionary, budget: int, rng: RandomNumberGenerato
 			Robot.ensure_parts(r2)[k2] = {"tier": nt2, "hp": Robot.TIER_HP[nt2]}
 			left -= upgrade_price(k2, nt2)
 	return budget - left
+
+
+
+## ---- exhibition and season -----------------------------------------------------------------------
+## Two ways to play. EXHIBITION: a one-off game; both sides are drafted fresh with a single $2,000
+## budget to spend before kickoff (you spend yours or let the coach; the rival's coach spends his);
+## nothing carries over and nobody is paid. SEASON: your team, its money and its damage carry
+## from game to game through a schedule against three rival clubs (each twice, six weeks); a win
+## pays more than a loss; the other games are played too; the best record is champion.
+
+const RIVAL_NAMES := ["Iron Hogs", "Chrome Chargers", "Sprocket City Sparks", "Voltage Vikings",
+	"Rust Belt Rollers", "Neon Ninjas", "Gearbox Grizzlies", "Turbo Titans", "Static Stingers"]
+const WEEKS := 6
+## Four clubs (0 is you), each meets each twice.
+const SCHEDULE := [[[0, 1], [2, 3]], [[0, 2], [1, 3]], [[0, 3], [1, 2]], [[1, 0], [3, 2]], [[2, 0], [3, 1]], [[3, 0], [2, 1]]]
+const EXHIBITION_BUDGET := 2000
+
+
+static func exhibition() -> bool:
+	return String(data.get("mode", "season")) == "exhibition" and data.has("exhibition")
+
+
+static func set_mode(mode: String) -> void:
+	ensure()
+	data["mode"] = mode
+	if mode == "exhibition" and not data.has("exhibition"):
+		new_exhibition()
+	save()
+
+
+## Fresh teams for a one-off game, $2,000 each; the rival's coach spends his at once.
+static func new_exhibition() -> void:
+	data["exhibition"] = {"teams": [new_team(0, -1, false), new_team(1, -1, false)], "money": [EXHIBITION_BUDGET, EXHIBITION_BUDGET]}
+	data["exhibition"]["teams"][1]["name"] = RIVAL_NAMES[randi() % RIVAL_NAMES.size()]
+	data["exhibition"]["teams"][1]["coach"] = _random_coach()
+	var was := String(data.get("mode", "season"))
+	data["mode"] = "exhibition"
+	coach_spend(1, true, 0)
+	data["mode"] = was
+	save()
+
+
+static func _random_coach() -> String:
+	var names := Library.names("coach")
+	return names[randi() % names.size()] if not names.is_empty() else "Balanced"
+
+
+static func _new_club(name: String) -> Dictionary:
+	var tm := new_team(1)
+	tm["name"] = name
+	tm["coach"] = _random_coach()
+	tm["money"] = START_MONEY + int(tm.get("leftover", 0))
+	tm["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
+	return tm
+
+
+## A season with your current team (and purse) against the current rival and two new clubs.
+static func _season_around_current() -> void:
+	var names := RIVAL_NAMES.duplicate()
+	names.shuffle()
+	var first: Dictionary = data["teams"][1]
+	first["name"] = names[0]
+	first["coach"] = _random_coach()
+	first["money"] = int(data.get("money", [START_MONEY, START_MONEY])[1])
+	first["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
+	data["season"] = {"week": 1, "clubs": [first, _new_club(names[1]), _new_club(names[2])],
+		"you": {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}, "results": [], "champion": ""}
+	_set_opponent()
+
+
+## A new season: you are drafted fresh with $2,000 to spend; three new rival clubs.
+static func new_season() -> void:
+	ensure()
+	data["teams"][0] = new_team(0, -1, false)
+	data["money"] = [STARTER_BUDGET, START_MONEY]
+	data["teams"][1] = new_team(1)
+	_season_around_current()
+	data["mode"] = "season"
+	save()
+
+
+static func season() -> Dictionary:
+	ensure()
+	return data.get("season", {})
+
+
+static func season_over() -> bool:
+	return int(season().get("week", 1)) > WEEKS
+
+
+## Who you play this week: points team(1) at that club.
+static func _set_opponent() -> void:
+	var sn := season()
+	var wk := clampi(int(sn.get("week", 1)), 1, WEEKS)
+	for pair in SCHEDULE[wk - 1]:
+		if 0 in pair:
+			sn["opp"] = int(pair[0] if pair[1] == 0 else pair[1]) - 1
+			return
+
+
+static func opponent_name() -> String:
+	return String(team(1).get("name", "Rival"))
+
+
+static func opponent_coach() -> String:
+	return String(team(1).get("coach", "Balanced"))
+
+
+static func _record(rec: Dictionary, us: int, them: int) -> void:
+	rec["pf"] = int(rec["pf"]) + us
+	rec["pa"] = int(rec["pa"]) + them
+	var k := "w" if us > them else ("l" if us < them else "t")
+	rec[k] = int(rec[k]) + 1
+
+
+## After your game: record it, play the week's other game, pay the other clubs, let them shop,
+## and move on a week. Returns lines for the final box score.
+static func finish_week(g: Game) -> Array:
+	var sn := season()
+	if sn.is_empty() or season_over():
+		return []
+	var lines: Array = []
+	var opp: Dictionary = team(1)
+	_record(sn["you"], g.score[0], g.score[1])
+	_record(opp["rec"], g.score[1], g.score[0])
+	var wk := int(sn["week"])
+	sn["results"].append("Week %d: %s %d - %d %s" % [wk, data["teams"][0]["name"], g.score[0], g.score[1], opp["name"]])
+	# the other game this week
+	for pair in SCHEDULE[wk - 1]:
+		if 0 in pair:
+			continue
+		var a: Dictionary = sn["clubs"][int(pair[0]) - 1]
+		var b: Dictionary = sn["clubs"][int(pair[1]) - 1]
+		var ta := Team.build(0, String(a["coach"]))
+		ta["roster"] = a["starters"]
+		ta["bench"] = a["bench"]
+		var tb := Team.build(1, String(b["coach"]))
+		tb["roster"] = b["starters"]
+		tb["bench"] = b["bench"]
+		var og := Batch.play_game(ta, tb, 300.0, randi())
+		_record(a["rec"], og.score[0], og.score[1])
+		_record(b["rec"], og.score[1], og.score[0])
+		for pr in [[a, og.score[0], og.score[1]], [b, og.score[1], og.score[0]]]:
+			var club: Dictionary = pr[0]
+			var res := "win" if pr[1] > pr[2] else ("loss" if pr[1] < pr[2] else "tie")
+			club["money"] = int(club.get("money", 0)) + int(PAY[res])
+		var keep := int(sn["opp"])
+		for ci in [int(pair[0]) - 1, int(pair[1]) - 1]:
+			sn["opp"] = ci
+			var club2: Dictionary = team(1)
+			for slot in club2["starters"]:
+				coach_fix(club2["starters"], club2["bench"], slot)
+			rival_shopping(1)
+		sn["opp"] = keep
+		var line := "Week %d: %s %d - %d %s" % [wk, a["name"], og.score[0], og.score[1], b["name"]]
+		sn["results"].append(line)
+		lines.append("Elsewhere: %s %d - %d %s" % [a["name"], og.score[0], og.score[1], b["name"]])
+	sn["week"] = wk + 1
+	restock()
+	if season_over():
+		var table := standings()
+		sn["champion"] = String(table[0]["name"])
+		lines.append("SEASON OVER - champions: %s" % sn["champion"])
+	else:
+		_set_opponent()
+		lines.append("Next week: %s (%s)" % [opponent_name(), _rec_text(team(1)["rec"])])
+	save()
+	return lines
+
+
+static func _rec_text(r: Dictionary) -> String:
+	return "%d-%d%s" % [int(r["w"]), int(r["l"]), ("-%d" % int(r["t"])) if int(r["t"]) > 0 else ""]
+
+
+## The table, best first: [{name, rec, text, you}]
+static func standings() -> Array:
+	var sn := season()
+	if sn.is_empty():
+		return []
+	var rows: Array = [{"name": String(data["teams"][0]["name"]), "rec": sn["you"], "you": true}]
+	for c in sn["clubs"]:
+		rows.append({"name": String(c["name"]), "rec": c["rec"], "you": false})
+	rows.sort_custom(func(a, b):
+		var pa := int(a["rec"]["w"]) * 2 + int(a["rec"]["t"])
+		var pb := int(b["rec"]["w"]) * 2 + int(b["rec"]["t"])
+		if pa != pb:
+			return pa > pb
+		return int(a["rec"]["pf"]) - int(a["rec"]["pa"]) > int(b["rec"]["pf"]) - int(b["rec"]["pa"]))
+	for r in rows:
+		r["text"] = "%s  %s  (%d-%d)" % [r["name"], _rec_text(r["rec"]), int(r["rec"]["pf"]), int(r["rec"]["pa"])]
+	return rows

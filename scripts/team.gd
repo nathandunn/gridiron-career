@@ -21,6 +21,7 @@ static func build(index: int, coach_name: String, picks: Dictionary = {}, callin
 		d["roster"] = Career.roster(index)
 		d["bench"] = Career.team(index)["bench"]
 		d["fair"] = Career.fair()
+		d["club"] = String(Career.team(index)["name"])
 	return d
 
 

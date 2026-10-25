@@ -1152,6 +1152,8 @@ func _throw(qb: P, r: P) -> bool:
 	air = {"from": qb.pos, "to": to, "t0": t, "T": T, "lob": dist > 28.0, "dist": dist, "d0": r.pos.distance_to(to), "spd0": r.spd()}
 	air_target = r
 	stat["target"] = r.slot
+	stat["air_y"] = to.y
+	stat["air_dist"] = dist
 	_fx("throw", qb, r, to)
 	_bump("att", qb)
 	_say("%s throws to %s" % [qb.slot, r.slot])
@@ -2288,6 +2290,7 @@ func _arrive() -> void:
 		elif p.side == 0 and p.group != "OL" and p.slot != "QB" and d < od:
 			od = d
 			best_o = p
+	stat["def_d"] = dd if best_d != null else _nearest_def(to)
 	if best_d != null:
 		var q := 1.0 - dd / REACH
 		var p_int := float(best_d.body["hands"]) * 0.42 * q
@@ -2325,6 +2328,13 @@ func _arrive() -> void:
 		_say("dropped by %s" % best_o.slot)
 		_fx("drop", best_o, null, to)
 	_incomplete("incomplete")
+
+
+func _nearest_def(to: Vector2) -> float:
+	var b := 99.0
+	for e: P in dfn:
+		b = minf(b, e.pos.distance_to(to))
+	return b
 
 
 func _catch(r: P) -> void:

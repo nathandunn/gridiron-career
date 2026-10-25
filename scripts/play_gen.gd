@@ -90,6 +90,42 @@ static func _route(rng: RandomNumberGenerator, start: Vector2, short_drop: bool)
 	return "route path %s%s" % [" ".join(pts), " stop" if stop else ""]
 
 
+## Real route shapes (the route tree), sized a little at random: [name, points as (inside, depth)
+## where "inside" is toward the middle of the field, short?]. Freehand routes wandered sideways,
+## backwards and out of bounds; these go where receivers actually go.
+const TREE := [
+	["go", [[0.0, 8.0], [-1.0, 32.0]], false], ["post", [[0.0, 11.0], [7.0, 26.0]], false],
+	["corner", [[0.0, 11.0], [-7.0, 22.0]], false], ["dig", [[0.0, 13.0], [11.0, 13.0]], false],
+	["seam", [[0.0, 26.0]], false], ["comeback", [[0.0, 16.0], [-2.0, 13.0]], false],
+	["out", [[0.0, 9.0], [-7.0, 9.0]], true], ["slant", [[0.0, 2.0], [7.0, 8.0]], true],
+	["curl", [[0.0, 12.0], [1.5, 9.5]], true], ["hitch", [[0.0, 6.0]], true],
+	["drag", [[0.0, 2.0], [14.0, 4.0]], true], ["flat", [[-6.0, 2.5]], true],
+	["wheel", [[-5.0, 2.0], [-6.0, 24.0]], false], ["sit", [[0.0, 5.0]], true]]
+
+
+static func _tree_route(rng: RandomNumberGenerator, start: Vector2, short_drop: bool, want := "") -> String:
+	var pick: Array = []
+	for rt in TREE:
+		if want == "deep" and bool(rt[2]):
+			continue
+		if want == "short" and not bool(rt[2]):
+			continue
+		if short_drop and not bool(rt[2]) and rng.randf() < 0.7:
+			continue
+		pick.append(rt)
+	if pick.is_empty():
+		pick = TREE
+	var rt: Array = pick[rng.randi() % pick.size()]
+	var inside := -signf(start.x) if absf(start.x) > 1.0 else (1.0 if rng.randf() < 0.5 else -1.0)
+	var k := rng.randf_range(0.85, 1.15)
+	var pts: Array[String] = []
+	for pt in rt[1]:
+		var x := clampf(start.x + inside * float(pt[0]) * k, -FIELD, FIELD) - start.x
+		pts.append("%s %s" % [_f(x), _f(float(pt[1]) * k)])
+	var stop: bool = String(rt[0]) in ["curl", "hitch", "comeback", "sit"]
+	return "route path %s%s" % [" ".join(pts), " stop" if stop else ""]
+
+
 ## A random offensive play: {text, play}.
 static func offense(rng: RandomNumberGenerator) -> Dictionary:
 	var lines: Array[String] = []
@@ -148,26 +184,29 @@ static func offense(rng: RandomNumberGenerator) -> Dictionary:
 				lines.append("%s: block" % s)
 		about = "%sRun at %+.1f%s%s" % ["QB keeper. " if keeper else "", hole, (", %d pulling" % pulls) if pulls > 0 else "", (", %d decoy routes" % decoys) if decoys > 0 else ""]
 	else:
-		var drop := rng.randi_range(1, 9)
+		var drop := rng.randi_range(3, 7)
 		var pa: bool = at["RB"].x > -4.5 and at["RB"].x < 4.5 and rng.randf() < 0.22
-		var short := drop <= 3
+		var short := drop <= 3 and rng.randf() < 0.5
 		var routers: Array = []
 		lines.append("kind pass")
 		lines.append("OL: block pass")
-		for s in ["WR1", "WR2", "WR3"]:
-			lines.append("%s: %s" % [s, _route(rng, at[s], short)])
+		var wants := ["deep", "short", ""]
+		wants.shuffle()
+		for i in 3:
+			var s := ["WR1", "WR2", "WR3"][i]
+			lines.append("%s: %s" % [s, _tree_route(rng, at[s], short and wants[i] != "deep", wants[i])])
 			routers.append(s)
 		var te_roll := rng.randf()
 		if te_roll < 0.3:
 			lines.append("TE: block")
 		else:
-			lines.append("TE: %s%s" % ["block then " if te_roll < 0.5 else "", _route(rng, at["TE"], short)])
+			lines.append("TE: %s%s" % ["block then " if te_roll < 0.5 else "", _tree_route(rng, at["TE"], short)])
 			routers.append("TE")
 		var rb_roll := rng.randf()
 		if rb_roll < 0.4 and at["RB"].y < -2.0:
 			lines.append("RB: block")
 		else:
-			lines.append("RB: %s%s" % ["block then " if rb_roll < 0.55 and at["RB"].y < -2.0 else "", _route(rng, at["RB"], true)])
+			lines.append("RB: %s%s" % ["block then " if rb_roll < 0.55 and at["RB"].y < -2.0 else "", _tree_route(rng, at["RB"], true, "short")])
 			routers.append("RB")
 		lines.append("QB: %s drop %d read %s" % ["play action" if pa else "pass", drop, " ".join(_shuffle(rng, routers))])
 		about = "%d routes, %d-step drop%s" % [routers.size(), drop, ", play action" if pa else ""]
