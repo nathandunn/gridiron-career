@@ -24,17 +24,25 @@ static func ensure() -> void:
 		var parsed: Variant = JSON.parse_string(f.get_as_text())
 		if parsed is Dictionary and (parsed as Dictionary).has("teams"):
 			data = parsed
+			# there is one purse: any upgrade credit left from before goes into it
+			if data.has("credit"):
+				for t in 2:
+					data["money"] = data.get("money", [START_MONEY, START_MONEY])
+					data["money"][t] = int(data["money"][t]) + int(data["credit"][t])
+				data.erase("credit")
+				save()
 			# saves from before every team started with its upgrades get them now
 			if not bool(data.get("starter_upgrades", false)):
 				# the rival's coach fits his; you get yours as credit to spend (or hand to the coach)
 				starter_upgrades(data["teams"][1])
 				add_money(1, int(data["teams"][1].get("leftover", 0)))
-				data["credit"] = [STARTER_BUDGET, 0]
+				money(0)
+				add_money(0, STARTER_BUDGET)          # yours goes in the purse, to spend as you like
 				data["starter_upgrades"] = true
 				save()
 			return
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true,
-		"credit": [STARTER_BUDGET, 0]}
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true}
+	add_money(0, STARTER_BUDGET)          # your $2,000 for upgrades goes in the purse: spend it, or let the coach
 	add_money(1, int(data["teams"][1].get("leftover", 0)))
 	save()
 
@@ -107,10 +115,9 @@ static func set_fair(on: bool) -> void:
 
 static func regenerate(t: int) -> void:
 	ensure()
-	data["teams"][t] = new_team(t, -1, t != 0)
-	if t == 0:
-		credit(0)
-		data["credit"][0] = STARTER_BUDGET     # a new team comes with fresh credit
+	# a redrafted team comes with $2,000 of upgrades already fitted (no money changes hands)
+	data["teams"][t] = new_team(t)
+	add_money(t, int(data["teams"][t].get("leftover", 0)))
 	save()
 
 

@@ -1628,14 +1628,19 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	if cr > 0:
-		row.add_child(_button("Let the coach spend the credit", func():
+		row.add_child(_button("Coach spends the credit", func():
 			var news := Career.coach_spend(t, false)
 			refresh.call()
 			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
 			for n in news.slice(1):
 				caption("Coach bought: " + n, false, YELLOW)))
 	if Career.money(t) > 400:
-		row.add_child(_button("Let the coach spend the purse (keeps $400)", func():
+		if cr <= 0:
+			box.move_child(row, box.get_child_count() - 1)
+			var hint := _label("Spend the purse on upgrades yourself on the robot pages (tap a robot, then a part's upgrade button), or let the coach:", fs - 2, Color(0.8, 0.83, 0.88))
+			box.add_child(hint)
+			box.move_child(hint, row.get_index())
+		row.add_child(_button("Coach buys upgrades (keeps $400)", func():
 			var news := Career.coach_spend(t, true)
 			refresh.call()
 			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
