@@ -58,7 +58,9 @@ robot - from any position (a receiver on the line is still built like a receiver
 it. The rival's coach decides for his. Damage carries over from game to game; a robot's page
 shows each part's condition.
 
-**Money.** Each side has a purse (starting $400). A **junk spare is always free**; a **real
+**Money.** Every team is drafted with **$2,000 of upgrades already fitted** (Mk II parts on key
+starters: the quarterback's arms first, then legs for backs, receivers and corners, cores for
+the lines; what that can't buy goes in the purse). Each side has a purse (starting $400). A **junk spare is always free**; a **real
 (Stock) part costs money** (head $200, core $250, arm $120, leg $140) and a worn part costs a share
 of that to repair. The final whistle pays: win $600, tie $350, loss $200, plus $60 a touchdown,
 $25 a sack and $50 a takeaway - shown on the final box score. The rival's coach buys real parts

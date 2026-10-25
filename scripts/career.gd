@@ -24,8 +24,17 @@ static func ensure() -> void:
 		var parsed: Variant = JSON.parse_string(f.get_as_text())
 		if parsed is Dictionary and (parsed as Dictionary).has("teams"):
 			data = parsed
+			# saves from before every team started with its upgrades get them now
+			if not bool(data.get("starter_upgrades", false)):
+				for t in 2:
+					starter_upgrades(data["teams"][t])
+					add_money(t, int(data["teams"][t].get("leftover", 0)))
+				data["starter_upgrades"] = true
+				save()
 			return
-	data = {"version": 1, "fair": false, "teams": [new_team(0), new_team(1)]}
+	data = {"version": 1, "fair": false, "teams": [new_team(0), new_team(1)], "starter_upgrades": true}
+	for t in 2:
+		add_money(t, int(data["teams"][t].get("leftover", 0)))
 	save()
 
 
@@ -55,7 +64,9 @@ static func new_team(t: int, seed_v := -1) -> Dictionary:
 		r["group"] = g
 		bench.append(r)
 		n += 1
-	return {"name": TEAM_NAMES[t], "starters": starters, "bench": bench}
+	var tm := {"name": TEAM_NAMES[t], "starters": starters, "bench": bench}
+	starter_upgrades(tm, rng)
+	return tm
 
 
 ## Jersey numbers by position, roughly as the real game hands them out.
@@ -372,3 +383,60 @@ static func rival_shopping(t: int) -> Array:
 		if buy_upgrade(t, best, best_k):
 			news.append("%s buys %s a %s %s." % [team(t)["name"], best["name"], tier, String(Robot.PART_LABEL[best_k]).to_lower()])
 	return news
+
+
+
+## ---- every team starts with $2,000 of upgrades ------------------------------------------------------
+
+const STARTER_BUDGET := 2000
+## Where a coach puts upgrade money first: the parts that carry each position's key ratings.
+const UPGRADE_SPOTS := [["QB", "rarm"], ["QB", "larm"], ["QB", "head"], ["RB", "lleg"], ["RB", "rleg"],
+	["WR1", "lleg"], ["WR1", "rleg"], ["WR2", "lleg"], ["WR2", "rleg"], ["LT", "core"], ["RT", "core"],
+	["DE1", "core"], ["DE2", "core"], ["MLB", "core"], ["CB1", "lleg"], ["CB1", "rleg"], ["FS", "head"]]
+
+
+## Fit Mk II parts worth up to $2,000 to a new team's key starters (no money changes hands: it
+## comes with the team). A different spread each draft.
+static func starter_upgrades(tm: Dictionary, rng: RandomNumberGenerator = null) -> int:
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	var spots: Array = UPGRADE_SPOTS.duplicate()
+	# shuffle, but keep the quarterback's arms near the front
+	for i in range(spots.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = spots[i]
+		spots[i] = spots[j]
+		spots[j] = tmp
+	spots.sort_custom(func(a, b): return int(a[0] == "QB" and a[1].ends_with("arm")) > int(b[0] == "QB" and b[1].ends_with("arm")))
+	var left := STARTER_BUDGET
+	for sp in spots:
+		var r: Dictionary = tm["starters"].get(sp[0], {})
+		if r.is_empty():
+			continue
+		var k: String = sp[1]
+		var nt := next_tier(r, k)
+		if nt == "":
+			continue
+		var price := upgrade_price(k, nt)
+		if price > left:
+			continue
+		Robot.ensure_parts(r)[k] = {"tier": nt, "hp": Robot.TIER_HP[nt]}
+		left -= price
+	# whatever is left goes on any starter's arms or legs that it still covers
+	var slots: Array = (Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS).duplicate()
+	for i in range(slots.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var tmp = slots[i]
+		slots[i] = slots[j]
+		slots[j] = tmp
+	for s2 in slots:
+		for k2 in ["larm", "rarm", "lleg", "rleg"]:
+			var r2: Dictionary = tm["starters"][s2]
+			var nt2 := next_tier(r2, k2)
+			if nt2 == "" or Robot.TIERS.find(nt2) > 2 or upgrade_price(k2, nt2) > left:
+				continue
+			Robot.ensure_parts(r2)[k2] = {"tier": nt2, "hp": Robot.TIER_HP[nt2]}
+			left -= upgrade_price(k2, nt2)
+	tm["leftover"] = left        # what $2,000 couldn't buy goes in the purse
+	return STARTER_BUDGET - left
