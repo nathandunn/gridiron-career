@@ -7,7 +7,14 @@ into a career game: robots with ratings, parts that break off on big hits, upgra
 winnings, and a league of rival teams with their own rosters. The plan is in
 `docs/roster-plan.md`; it is built a step at a time.
 
-Skill players (QB, RB, WR, TE, CB, S) skate on rollers with a jet pack whose flames grow with speed.
+**Built for the job.** Each position has its own robot (`FieldView.STYLE`): quarterbacks with an
+antenna and a glowing targeting eye; running backs short, wide and domed with thigh armour and a
+bumper bar; receivers tall and thin with long arms, twin antennas and glowing gloves; tight ends
+big with gloves; linemen huge and squat on flat feet, with block heads and face grilles (the
+defensive line adds horns and shoulder spikes); linebackers stocky with spikes; corners slim and
+domed with fins; safeties with a tall crest. Skill players skate on rollers with a jet pack whose
+flames grow with speed. Upgraded parts wear a glowing band - silver Mk II, gold Mk III, violet
+Prototype - and junk is rusty.
 
 ## Robots (step 2)
 Every robot is a player with a name, a number on his back and ratings from 1 to 100:

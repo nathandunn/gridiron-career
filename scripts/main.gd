@@ -105,6 +105,26 @@ func _ready() -> void:
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
 			"roster": hud.open_roster(0)
 			"closepick": hud.close_overlay()
+			"lineup":
+				# every position side by side, for checking how they look
+				hud.close_overlay(false)
+				hud.visible = false
+				var groups := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S"]
+				for i in groups.size():
+					for t in [int(args.get("team", "0"))]:
+						var parts := {}
+						if i == 2:
+							parts = {"larm": {"tier": "Mk III", "hp": 180}, "rleg": {"tier": "Junk", "hp": 50}, "head": {"tier": "Prototype", "hp": 240}}
+						var rb: Dictionary = view.build_robot(groups[i], t, 10 + i, parts)
+						view.add_child(rb["root"])
+						(rb["root"] as Node3D).position = Vector3((i - 4) * 2.0, 0, 30.0)
+						(rb["root"] as Node3D).rotation.y = PI * 0.82
+				var c3 := Camera3D.new()
+				view.add_child(c3)
+				c3.position = Vector3(0, 3.0, 20.5)
+				c3.fov = 55
+				c3.look_at(Vector3(0, 1.2, 31.0))
+				c3.current = true
 			"kickoff": new_game(true)
 			"sim2end": sim_to_end()
 			"injuries":

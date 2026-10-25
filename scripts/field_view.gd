@@ -309,29 +309,58 @@ func _ensure_player(p: PlaySim.P) -> void:
 ## One robot, not yet placed anywhere: armoured legs on hip pivots, a torso in team colour with
 ## big shoulder plates and a chest light, arms on shoulder pivots, and a head with a glowing
 ## visor. Linemen are heavier; backs and receivers leaner. {root, body, legs, arms, head}
+## How each position is built. w: width, leg: leg length, chest: chest depth, sh: shoulder width,
+## head: block (linemen), dome (backs, corners) or visor; extras pick the trimmings.
+const STYLE := {
+	"QB": {"w": 1.0, "leg": 1.0, "chest": 1.0, "sh": 0.95, "head": "visor", "extras": ["antenna", "monocle"]},
+	"RB": {"w": 1.08, "leg": 0.86, "chest": 1.05, "sh": 1.0, "head": "dome", "extras": ["thigh_pads", "ram_bar"]},
+	"WR": {"w": 0.84, "leg": 1.16, "chest": 0.9, "sh": 0.85, "head": "visor", "extras": ["antennas", "gloves"]},
+	"TE": {"w": 1.12, "leg": 1.06, "chest": 1.1, "sh": 1.1, "head": "visor", "extras": ["gloves", "neck_roll"]},
+	"OL": {"w": 1.38, "leg": 0.84, "chest": 1.25, "sh": 1.3, "head": "block", "extras": ["grille", "big_fists", "plates"]},
+	"DL": {"w": 1.32, "leg": 0.86, "chest": 1.2, "sh": 1.3, "head": "block", "extras": ["horns", "spikes", "big_fists"]},
+	"LB": {"w": 1.14, "leg": 0.96, "chest": 1.1, "sh": 1.15, "head": "visor", "extras": ["spikes", "neck_roll"]},
+	"CB": {"w": 0.86, "leg": 1.1, "chest": 0.9, "sh": 0.88, "head": "dome", "extras": ["fins", "gloves"]},
+	"S": {"w": 0.94, "leg": 1.06, "chest": 0.95, "sh": 0.95, "head": "visor", "extras": ["big_crest", "fins"]},
+}
+
+
+## One robot, not yet placed anywhere, built for his position (STYLE): armoured legs on hip
+## pivots (rollers and a jet pack for skill players), a torso in team colour with shoulder plates
+## and a chest light, arms on shoulder pivots, and a head - a block with a grille for linemen, a
+## dome for backs and corners, a visor for the rest - with the trimmings of his job. Missing
+## parts are hidden, junk is rusty, upgraded parts carry a glowing band. {root, body, legs, arms,
+## head, nodes, wheels, flames}
 func build_robot(group: String, team: int, number := -1, parts: Dictionary = {}) -> Dictionary:
+	var st: Dictionary = STYLE.get(group, STYLE["LB"])
+	var w: float = st["w"]
+	var lg: float = st["leg"]
+	var ch: float = st["chest"]
+	var shw: float = st["sh"]
+	var ex: Array = st["extras"]
 	var root := Node3D.new()
 	var body := Node3D.new()        # hops and lunges move this; root keeps the spot and facing
 	root.add_child(body)
-	var big := group in ["OL", "DL"]
-	var lean := group in ["WR", "CB", "RB", "S"]
-	var w := 1.25 if big else (0.9 if lean else 1.05)
 	var armour := _metal(COLORS[team].darkened(0.15))
+	var dark := _metal(COLORS[team].darkened(0.55))
 	var frame := _metal(Color(0.22, 0.24, 0.28))
 	var light := _glow(NEON[team], 2.6)
 	var skill := group in ["QB", "RB", "WR", "TE", "CB", "S"]
+	var hip_y := 0.95 * lg
+	var up := hip_y - 0.95          # how much higher (or lower) everything above the hips sits
 	var wheels: Array = []
 	var flames: Array = []
 	var legs: Array = []
 	for side: float in [-1.0, 1.0]:
 		var hip := Node3D.new()
-		hip.position = Vector3(side * 0.2 * w, 0.95, 0)
+		hip.position = Vector3(side * 0.2 * w, hip_y, 0)
 		body.add_child(hip)
-		_box(Vector3(0.24 * w, 0.95, 0.28), Vector3(0, -0.48, 0), frame, hip)
+		_box(Vector3(0.24 * w, 0.95 * lg, 0.28), Vector3(0, -0.48 * lg, 0), frame, hip)
+		if "thigh_pads" in ex or "plates" in ex:
+			_box(Vector3(0.3 * w, 0.32 * lg, 0.34), Vector3(0, -0.2 * lg, 0.02), armour, hip)   # thigh armour
 		if skill:
 			# a roller skate: a glowing wheel on an axle where the foot would be
 			var axle := Node3D.new()
-			axle.position = Vector3(0, -0.8, 0.05)
+			axle.position = Vector3(0, -0.8 * lg, 0.05)
 			hip.add_child(axle)
 			var wm := MeshInstance3D.new()
 			var cyl := CylinderMesh.new()
@@ -345,12 +374,25 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			_box(Vector3(0.16 * w, 0.05, 0.32), Vector3(0, 0.0, 0), light, axle)      # hub stripe that shows the spin
 			wheels.append(axle)
 		else:
-			_box(Vector3(0.3 * w, 0.16, 0.42), Vector3(0, -0.9, 0.06), armour, hip)     # foot
-		_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45, 0.15), light, hip)    # knee light
+			# linemen stand on big flat feet - built to plant and push
+			_box(Vector3(0.36 * w, 0.18, 0.5), Vector3(0, -0.9 * lg, 0.08), armour, hip)
+		_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45 * lg, 0.15), light, hip)    # knee light
 		legs.append(hip)
-	_box(Vector3(0.62 * w, 0.75, 0.42), Vector3(0, 1.32, 0), armour, body)
-	_box(Vector3(0.95 * w, 0.24, 0.55), Vector3(0, 1.72, 0), armour, body)          # shoulders
-	_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38, 0.22), light, body)             # chest light
+	# torso and plates
+	_box(Vector3(0.62 * w, 0.75, 0.42 * ch), Vector3(0, 1.32 + up, 0), armour, body)
+	_box(Vector3(0.95 * w * shw, 0.24, 0.55 * ch), Vector3(0, 1.72 + up, 0), armour, body)          # shoulders
+	_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38 + up, 0.21 * ch + 0.01), light, body)            # chest light
+	if "plates" in ex:
+		_box(Vector3(0.7 * w, 0.2, 0.46 * ch), Vector3(0, 1.0 + up, 0), dark, body)                  # belly plate
+	if "spikes" in ex:
+		for sx: float in [-1.0, 1.0]:
+			for k in 2:
+				var sp := _box(Vector3(0.08, 0.28, 0.08), Vector3(sx * (0.3 + 0.14 * k) * w * shw, 1.92 + up, 0.05 - 0.1 * k), light, body)
+				sp.rotation.z = -sx * 0.5
+	if "neck_roll" in ex:
+		_box(Vector3(0.5 * w, 0.12, 0.42 * ch), Vector3(0, 1.86 + up, -0.04), dark, body)
+	if "ram_bar" in ex:
+		_box(Vector3(0.5 * w, 0.1, 0.12), Vector3(0, 1.55 + up, 0.24 * ch), light, body)            # a lowered-shoulder bumper
 	if skill:
 		# a jet pack: two tanks on the back, each with a flame that grows with his speed
 		for jx: float in [-0.14, 0.14]:
@@ -361,9 +403,9 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			tc.height = 0.5
 			tank.mesh = tc
 			tank.material_override = frame
-			tank.position = Vector3(jx * w, 1.42, -0.3)
+			tank.position = Vector3(jx * w, 1.42 + up, -0.21 * ch - 0.09)
 			body.add_child(tank)
-			_box(Vector3(0.16, 0.05, 0.16), Vector3(jx * w, 1.15, -0.3), light, body)     # nozzle ring
+			_box(Vector3(0.16, 0.05, 0.16), Vector3(jx * w, 1.15 + up, -0.21 * ch - 0.09), light, body)     # nozzle ring
 			var fl := MeshInstance3D.new()
 			var cone := CylinderMesh.new()
 			cone.top_radius = 0.08
@@ -372,49 +414,101 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			fl.mesh = cone
 			fl.material_override = _glow(Color(1.0, 0.6, 0.2) if team == 0 else Color(0.4, 0.8, 1.0), 4.0)
 			var fp := Node3D.new()
-			fp.position = Vector3(jx * w, 1.12, -0.3)
+			fp.position = Vector3(jx * w, 1.12 + up, -0.21 * ch - 0.09)
 			body.add_child(fp)
 			fp.add_child(fl)
 			fl.position = Vector3(0, -0.3, 0)
 			flames.append(fp)
+	if "fins" in ex:
+		for fx: float in [-1.0, 1.0]:
+			var fin := _box(Vector3(0.04, 0.34, 0.26), Vector3(fx * 0.26 * w, 1.55 + up, -0.3 * ch), light, body)
+			fin.rotation.z = fx * 0.35
 	if number >= 0:
-		for z: float in [0.215, -0.215]:
+		for z: float in [0.21 * ch + 0.005, -0.21 * ch - 0.005]:
 			var num := Label3D.new()
 			num.text = str(number)
 			num.font_size = 64
-			num.pixel_size = 0.006
+			num.pixel_size = 0.006 * (1.15 if w > 1.2 else 1.0)
 			num.outline_size = 6
 			num.modulate = Color(1, 1, 1)
-			num.position = Vector3(0, 1.18, z)
+			num.position = Vector3(0, 1.18 + up, z)
 			num.rotation.y = 0.0 if z > 0.0 else PI
 			body.add_child(num)
 	# arms swing from the shoulder: rotation.x below 0 raises them forward, about -3 is overhead
 	var arms: Array = []
+	var fist := 1.45 if "big_fists" in ex else 1.0
+	var arm_len := 1.12 if group == "WR" else 1.0
 	for side: float in [-1.0, 1.0]:
 		var sh := Node3D.new()
-		sh.position = Vector3(side * 0.52 * w, 1.64, 0)
+		sh.position = Vector3(side * 0.52 * w * shw, 1.64 + up, 0)
 		body.add_child(sh)
-		_box(Vector3(0.2, 0.7, 0.22), Vector3(0, -0.34, 0), frame, sh)
-		_box(Vector3(0.24, 0.16, 0.26), Vector3(0, -0.72, 0.02), armour, sh)         # fist
+		_box(Vector3(0.2 * (1.2 if w > 1.2 else 1.0), 0.7 * arm_len, 0.22), Vector3(0, -0.34 * arm_len, 0), frame, sh)
+		_box(Vector3(0.24 * fist, 0.16 * fist, 0.26 * fist), Vector3(0, -0.72 * arm_len, 0.02), _glow(NEON[team], 1.6) if "gloves" in ex else armour, sh)   # fist (receivers' gloves glow)
 		arms.append(sh)
 	var head := Node3D.new()
-	head.position = Vector3(0, 1.85, 0)
+	head.position = Vector3(0, 1.85 + up, 0)
 	body.add_child(head)
-	_box(Vector3(0.36, 0.34, 0.4), Vector3(0, 0.17, 0), _metal(Color(0.12, 0.13, 0.16)), head)
-	_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 0.2, 0.2), light, head)
-	_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 0.39, -0.02), light, head)            # crest
+	var helm := _metal(Color(0.12, 0.13, 0.16))
+	match String(st["head"]):
+		"block":
+			# a wide square head sunk into the shoulders, with a grille for a face
+			head.position.y -= 0.06
+			_box(Vector3(0.5, 0.3, 0.44), Vector3(0, 0.15, 0), helm, head)
+			for gx in 4:
+				_box(Vector3(0.05, 0.2, 0.04), Vector3(-0.15 + gx * 0.1, 0.13, 0.23), light, head)
+		"dome":
+			var dm := MeshInstance3D.new()
+			var sph := SphereMesh.new()
+			sph.radius = 0.22
+			sph.height = 0.4
+			dm.mesh = sph
+			dm.material_override = helm
+			dm.position = Vector3(0, 0.18, 0)
+			head.add_child(dm)
+			_box(Vector3(0.36, 0.07, 0.06), Vector3(0, 0.18, 0.2), light, head)                       # eye slit
+		_:
+			_box(Vector3(0.36, 0.34, 0.4), Vector3(0, 0.17, 0), helm, head)
+			_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 0.2, 0.2), light, head)                         # visor
+	if "big_crest" in ex:
+		_box(Vector3(0.08, 0.26, 0.44), Vector3(0, 0.44, -0.02), light, head)
+	elif String(st["head"]) != "block":
+		_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 0.39, -0.02), light, head)                      # crest
+	if "horns" in ex:
+		for hx: float in [-1.0, 1.0]:
+			var hn := _box(Vector3(0.08, 0.3, 0.08), Vector3(hx * 0.27, 0.35, 0.02), light, head)
+			hn.rotation.z = -hx * 0.6
+	if "antenna" in ex or "antennas" in ex:
+		for ax: float in ([0.12] if "antenna" in ex else [-0.12, 0.12]):
+			_box(Vector3(0.025, 0.36, 0.025), Vector3(ax, 0.52, -0.08), frame, head)
+			_box(Vector3(0.07, 0.07, 0.07), Vector3(ax, 0.72, -0.08), _glow(YELLOW, 3.0), head)       # sensor tip
+	if "monocle" in ex:
+		_box(Vector3(0.12, 0.12, 0.05), Vector3(0.1, 0.22, 0.23), _glow(YELLOW, 3.0), head)            # the passer's targeting eye
 	# legs[0] and arms[0] are on his right (-x when he faces +z)
 	var nodes := {"head": head, "rarm": arms[0], "larm": arms[1], "rleg": legs[0], "lleg": legs[1]}
+	var band_col := {"Mk II": Color(0.75, 0.82, 0.9), "Mk III": Color(1.0, 0.8, 0.25), "Prototype": Color(0.75, 0.4, 1.0)}
 	for k in parts:
 		var pt: Dictionary = parts[k]
 		var n: Node3D = nodes.get(k, null)
+		var tier := String(pt.get("tier", "Stock"))
 		if float(pt.get("hp", 100)) <= 0.0:
 			if n != null:
 				n.visible = false          # gone: the pivot stays so the poses still work
-		elif String(pt.get("tier", "Stock")) == "Junk" and n != null:
+		elif tier == "Junk" and n != null:
 			for c in n.get_children():
 				if c is MeshInstance3D:
 					(c as MeshInstance3D).material_override = _metal(Color(0.42, 0.27, 0.16))   # rusty spare
+		elif band_col.has(tier):
+			# an upgraded part wears a glowing band: silver Mk II, gold Mk III, violet Prototype
+			var bm := _glow(band_col[tier], 2.2)
+			match k:
+				"head":
+					_box(Vector3(0.42, 0.05, 0.46), Vector3(0, 0.04, 0), bm, head)
+				"core":
+					_box(Vector3(0.66 * w, 0.06, 0.44 * ch + 0.02), Vector3(0, 1.12 + up, 0), bm, body)
+				"larm", "rarm":
+					_box(Vector3(0.24, 0.06, 0.26), Vector3(0, -0.3 * arm_len, 0), bm, n)
+				"lleg", "rleg":
+					_box(Vector3(0.28 * w, 0.06, 0.32), Vector3(0, -0.6 * lg, 0), bm, n)
 	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head, "nodes": nodes, "wheels": wheels, "flames": flames}
 
 
