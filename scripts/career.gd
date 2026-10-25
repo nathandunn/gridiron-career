@@ -26,15 +26,16 @@ static func ensure() -> void:
 			data = parsed
 			# saves from before every team started with its upgrades get them now
 			if not bool(data.get("starter_upgrades", false)):
-				for t in 2:
-					starter_upgrades(data["teams"][t])
-					add_money(t, int(data["teams"][t].get("leftover", 0)))
+				# the rival's coach fits his; you get yours as credit to spend (or hand to the coach)
+				starter_upgrades(data["teams"][1])
+				add_money(1, int(data["teams"][1].get("leftover", 0)))
+				data["credit"] = [STARTER_BUDGET, 0]
 				data["starter_upgrades"] = true
 				save()
 			return
-	data = {"version": 1, "fair": false, "teams": [new_team(0), new_team(1)], "starter_upgrades": true}
-	for t in 2:
-		add_money(t, int(data["teams"][t].get("leftover", 0)))
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true,
+		"credit": [STARTER_BUDGET, 0]}
+	add_money(1, int(data["teams"][1].get("leftover", 0)))
 	save()
 
 
@@ -44,7 +45,7 @@ static func save() -> void:
 		f.store_string(JSON.stringify(data))
 
 
-static func new_team(t: int, seed_v := -1) -> Dictionary:
+static func new_team(t: int, seed_v := -1, fit := true) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	if seed_v >= 0:
 		rng.seed = seed_v
@@ -65,7 +66,8 @@ static func new_team(t: int, seed_v := -1) -> Dictionary:
 		bench.append(r)
 		n += 1
 	var tm := {"name": TEAM_NAMES[t], "starters": starters, "bench": bench}
-	starter_upgrades(tm, rng)
+	if fit:
+		starter_upgrades(tm, rng)
 	return tm
 
 
@@ -105,7 +107,10 @@ static func set_fair(on: bool) -> void:
 
 static func regenerate(t: int) -> void:
 	ensure()
-	data["teams"][t] = new_team(t)
+	data["teams"][t] = new_team(t, -1, t != 0)
+	if t == 0:
+		credit(0)
+		data["credit"][0] = STARTER_BUDGET     # a new team comes with fresh credit
 	save()
 
 
@@ -207,7 +212,7 @@ static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> Strin
 		if t >= 0 and money(t) >= repair_cost(r, k) * 3 and buy_repair(t, r, k):
 			bought.append(k)
 		else:
-			Robot.bolt_on_junk(r, k)
+			buy_junk(t, r, k)
 	if bought.size() == lost.size():
 		return "%s gets a new %s." % [r["name"], " and new ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 	return "%s gets a junk %s bolted on." % [r["name"], " and junk ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
@@ -258,6 +263,17 @@ static func repair_all_cost(robot: Dictionary) -> int:
 	for k in Robot.PARTS:
 		c += repair_cost(robot, k)
 	return c
+
+
+## A junk spare costs $25 - or whatever is left in the purse, so a side can always field a robot.
+const JUNK_PRICE := 25
+
+
+static func buy_junk(t: int, robot: Dictionary, k: String) -> void:
+	if t >= 0:
+		add_money(t, -mini(JUNK_PRICE, maxi(money(t), 0)))
+		save()
+	Robot.bolt_on_junk(robot, k)
 
 
 ## Buy a new Stock part (or a repair) if the purse allows. true if done.
@@ -329,6 +345,44 @@ static func next_tier(robot: Dictionary, k: String) -> String:
 	return Robot.TIERS[maxi(i + 1, 2)]   # junk or stock both go to Mk II
 
 
+## Upgrade credit: money that comes with a new team and buys upgrades only.
+static func credit(t: int) -> int:
+	ensure()
+	if not data.has("credit"):
+		data["credit"] = [0, 0]
+	return int(data["credit"][t])
+
+
+## What can be spent on an upgrade right now: credit plus purse.
+static func upgrade_funds(t: int) -> int:
+	return credit(t) + money(t)
+
+
+## The coach spends for you: all your credit, and if `purse` the purse above a $400 reserve.
+## Returns what he bought, as lines.
+static func coach_spend(t: int, purse: bool) -> Array:
+	var news: Array = []
+	var budget := credit(t) + (maxi(money(t) - 400, 0) if purse else 0)
+	if budget <= 0:
+		return news
+	var before := {}
+	var st: Dictionary = team(t)["starters"]
+	for s in st:
+		for k in Robot.PARTS:
+			before[s + k] = String(Robot.ensure_parts(st[s])[k]["tier"])
+	var spent := upgrades_with(team(t), budget)
+	var from_credit := mini(credit(t), spent)
+	data["credit"][t] = credit(t) - from_credit
+	add_money(t, -(spent - from_credit))
+	for s in st:
+		for k in Robot.PARTS:
+			var now := String(st[s]["parts"][k]["tier"])
+			if now != before[s + k]:
+				news.append("%s %s: %s %s" % [s, st[s]["name"], now, String(Robot.PART_LABEL[k]).to_lower()])
+	save()
+	return news
+
+
 static func upgrade_price(k: String, tier: String) -> int:
 	return int(roundf(float(PART_PRICE[k]) * float(TIER_PRICE.get(tier, 1.0)) / 10.0) * 10.0)
 
@@ -338,7 +392,13 @@ static func buy_upgrade(t: int, robot: Dictionary, k: String) -> bool:
 	var tier := next_tier(robot, k)
 	if tier == "":
 		return false
-	if not spend(t, upgrade_price(k, tier)):
+	var price := upgrade_price(k, tier)
+	if credit(t) + money(t) < price:
+		return false
+	var from_credit := mini(credit(t), price)
+	data["credit"][t] = credit(t) - from_credit
+	if price - from_credit > 0 and not spend(t, price - from_credit):
+		data["credit"][t] = credit(t) + from_credit
 		return false
 	Robot.ensure_parts(robot)[k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
 	save()
@@ -398,6 +458,14 @@ const UPGRADE_SPOTS := [["QB", "rarm"], ["QB", "larm"], ["QB", "head"], ["RB", "
 ## Fit Mk II parts worth up to $2,000 to a new team's key starters (no money changes hands: it
 ## comes with the team). A different spread each draft.
 static func starter_upgrades(tm: Dictionary, rng: RandomNumberGenerator = null) -> int:
+	var spent := upgrades_with(tm, STARTER_BUDGET, rng)
+	tm["leftover"] = STARTER_BUDGET - spent      # what $2,000 couldn't buy goes in the purse
+	return spent
+
+
+## A coach's shopping with `budget`: key starters' parts first (the quarterback's arms leading),
+## then any starter's arms and legs. Fits the parts; returns what it cost.
+static func upgrades_with(tm: Dictionary, budget: int, rng: RandomNumberGenerator = null) -> int:
 	if rng == null:
 		rng = RandomNumberGenerator.new()
 		rng.randomize()
@@ -409,7 +477,7 @@ static func starter_upgrades(tm: Dictionary, rng: RandomNumberGenerator = null) 
 		spots[i] = spots[j]
 		spots[j] = tmp
 	spots.sort_custom(func(a, b): return int(a[0] == "QB" and a[1].ends_with("arm")) > int(b[0] == "QB" and b[1].ends_with("arm")))
-	var left := STARTER_BUDGET
+	var left := budget
 	for sp in spots:
 		var r: Dictionary = tm["starters"].get(sp[0], {})
 		if r.is_empty():
@@ -438,5 +506,4 @@ static func starter_upgrades(tm: Dictionary, rng: RandomNumberGenerator = null) 
 				continue
 			Robot.ensure_parts(r2)[k2] = {"tier": nt2, "hp": Robot.TIER_HP[nt2]}
 			left -= upgrade_price(k2, nt2)
-	tm["leftover"] = left        # what $2,000 couldn't buy goes in the purse
-	return STARTER_BUDGET - left
+	return budget - left

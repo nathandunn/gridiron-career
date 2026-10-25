@@ -38,9 +38,13 @@ var _ed_names_box: HFlowContainer
 var _ed_words_box: HFlowContainer
 var _ed_example: Label
 
-const CYAN := Color(0.35, 0.95, 1.0)
-const MAGENTA := Color(1.0, 0.38, 0.8)
-const YELLOW := Color(1.0, 0.88, 0.3)
+## The interface palette: a stadium broadcast look - dark slate panels, stadium-light amber for
+## what matters (titles, the selected choice), sky blue for headings, gold for highlights. (The
+## names are kept from the first neon palette so nothing else has to change.)
+const CYAN := Color(0.5, 0.8, 1.0)          # headings, information
+const MAGENTA := Color(1.0, 0.64, 0.16)     # the accent: titles, selected, the coach's pick
+const YELLOW := Color(1.0, 0.86, 0.36)      # highlights
+const INK := Color(0.08, 0.07, 0.06)        # text on the accent
 const KIND_LABEL := {"coach": "Coaches", "play": "Plays", "ai": "Position brains"}
 const PLAY_HELP := """Assignments, one line per position (OL, WR, DL, LB, CB, S set the whole group):
 QB: pass drop 3|5|7 read WR1 WR2 ... · play action drop 7 read ... · handoff · run sneak
@@ -73,7 +77,7 @@ func setup(m: Node) -> void:
 	_toast.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_toast.add_theme_font_size_override("font_size", fs + 22)
 	_toast.add_theme_color_override("font_color", YELLOW)
-	_toast.add_theme_color_override("font_outline_color", MAGENTA)
+	_toast.add_theme_color_override("font_outline_color", Color(0.12, 0.06, 0.0))
 	_toast.add_theme_constant_override("outline_size", 12)
 	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_toast.visible = false
@@ -98,29 +102,32 @@ func _make_theme() -> Theme:
 			sb.shadow_color = Color(border, 0.45)
 			sb.shadow_size = glow
 		return sb
-	th.set_stylebox("normal", "Button", mk.call(Color(0.03, 0.05, 0.09, 0.92), Color(0.2, 0.75, 0.9, 0.85)))
-	th.set_stylebox("hover", "Button", mk.call(Color(0.05, 0.1, 0.16, 0.95), CYAN, 4))
-	th.set_stylebox("pressed", "Button", mk.call(Color(0.85, 0.2, 0.62), MAGENTA, 6))
-	th.set_stylebox("hover_pressed", "Button", mk.call(Color(0.95, 0.28, 0.7), MAGENTA, 6))
-	th.set_stylebox("disabled", "Button", mk.call(Color(0.04, 0.05, 0.07, 0.8), Color(0.25, 0.28, 0.32)))
+	th.set_stylebox("normal", "Button", mk.call(Color(0.15, 0.18, 0.24, 0.96), Color(0.3, 0.35, 0.44)))
+	th.set_stylebox("hover", "Button", mk.call(Color(0.2, 0.24, 0.32, 0.98), CYAN, 3))
+	th.set_stylebox("pressed", "Button", mk.call(MAGENTA, Color(1.0, 0.8, 0.45), 4))
+	th.set_stylebox("hover_pressed", "Button", mk.call(MAGENTA.lightened(0.1), Color(1.0, 0.85, 0.55), 4))
+	th.set_stylebox("disabled", "Button", mk.call(Color(0.1, 0.11, 0.14, 0.85), Color(0.2, 0.22, 0.26)))
 	th.set_stylebox("focus", "Button", StyleBoxEmpty.new())
-	th.set_color("font_color", "Button", Color(0.85, 0.97, 1.0))
+	th.set_color("font_color", "Button", Color(0.94, 0.95, 0.97))
 	th.set_color("font_hover_color", "Button", Color.WHITE)
-	th.set_color("font_pressed_color", "Button", Color.WHITE)
-	th.set_color("font_hover_pressed_color", "Button", Color.WHITE)
+	th.set_color("font_pressed_color", "Button", INK)
+	th.set_color("font_hover_pressed_color", "Button", INK)
+	th.set_color("font_disabled_color", "Button", Color(0.48, 0.5, 0.55))
 	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color(0.02, 0.03, 0.06, 0.96)
-	panel.border_color = MAGENTA
-	panel.set_border_width_all(2)
-	panel.set_corner_radius_all(6)
+	panel.bg_color = Color(0.07, 0.09, 0.13, 0.97)
+	panel.border_color = Color(0.26, 0.31, 0.4)
+	panel.set_border_width_all(1)
+	panel.border_width_top = 4
+	panel.border_color = MAGENTA          # an amber bar across the top of every panel
+	panel.set_corner_radius_all(8)
 	panel.set_content_margin_all(12)
-	panel.shadow_color = Color(1.0, 0.3, 0.75, 0.35)
-	panel.shadow_size = 10
+	panel.shadow_color = Color(0, 0, 0, 0.55)
+	panel.shadow_size = 12
 	th.set_stylebox("panel", "PanelContainer", panel)
 	for cls in ["OptionButton"]:
-		th.set_stylebox("normal", cls, mk.call(Color(0.03, 0.05, 0.09, 0.92), Color(0.2, 0.75, 0.9, 0.85)))
-		th.set_stylebox("hover", cls, mk.call(Color(0.05, 0.1, 0.16, 0.95), CYAN, 4))
-		th.set_stylebox("pressed", cls, mk.call(Color(0.05, 0.1, 0.16, 0.95), MAGENTA, 4))
+		th.set_stylebox("normal", cls, mk.call(Color(0.15, 0.18, 0.24, 0.96), Color(0.3, 0.35, 0.44)))
+		th.set_stylebox("hover", cls, mk.call(Color(0.2, 0.24, 0.32, 0.98), CYAN, 3))
+		th.set_stylebox("pressed", cls, mk.call(Color(0.2, 0.24, 0.32, 0.98), MAGENTA, 3))
 	return th
 
 
@@ -153,12 +160,13 @@ func _build_scoreboard() -> void:
 	top.offset_right = -8
 	top.offset_top = 46
 	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.01, 0.02, 0.04, 0.82)
-	sb.border_color = CYAN
-	sb.set_border_width_all(2)
-	sb.set_corner_radius_all(4)
+	sb.bg_color = Color(0.07, 0.09, 0.13, 0.9)
+	sb.border_color = MAGENTA
+	sb.set_border_width_all(0)
+	sb.border_width_bottom = 3
+	sb.set_corner_radius_all(6)
 	sb.set_content_margin_all(8)
-	sb.shadow_color = Color(0.3, 0.9, 1.0, 0.3)
+	sb.shadow_color = Color(0, 0, 0, 0.5)
 	sb.shadow_size = 8
 	top.add_theme_stylebox_override("panel", sb)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -532,6 +540,7 @@ func open_teams(pregame := false) -> void:
 		rrow.add_theme_constant_override("h_separation", 6)
 		box.add_child(rrow)
 		rrow.add_child(_button("Roster, swaps and upgrades", func(): open_roster(t); _back = func(): open_teams(pregame)))
+		_spend_row(box, t, func(): open_teams(pregame))
 	_section(box, "Brains by position")
 	var grid := GridContainer.new()
 	grid.columns = 2
@@ -1247,6 +1256,7 @@ func open_roster(t := -1) -> void:
 	Career.ensure()
 	var tm := Career.team(_roster_team)
 	var box := _open("Roster · %s · $%d" % [tm["name"], Career.money(_roster_team)])
+	_spend_row(box, _roster_team, func(): open_roster())
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
 	box.add_child(tabs)
@@ -1478,7 +1488,7 @@ func open_robot(id: String) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots")
-	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Close this and the coach decides. A junk spare is always free.", fs - 2, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. A junk spare costs $25 (or whatever is left in the purse - you can always field a robot).", fs - 2, Color(0.8, 0.83, 0.88)))
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
 	box.add_child(top)
@@ -1500,7 +1510,7 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		row.add_child(_button("Bolt on junk %s (free)" % " and ".join(names), func(): main.injury_choice(s, "junk")))
+		row.add_child(_button("Bolt on junk %s ($%d)" % [" and ".join(names), Career.JUNK_PRICE * lost.size()], func(): main.injury_choice(s, "junk")))
 		var cost := 0
 		for k in lost:
 			cost += Career.repair_cost(r, k)
@@ -1553,7 +1563,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			line.add_child(gl)
-			line.add_child(_button("Junk (free)", func(): Robot.bolt_on_junk(r, k); Career.save(); open_robot(id)))
+			line.add_child(_button("Junk $%d" % Career.JUNK_PRICE, func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id)))
 			var nb := _button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id))
 			nb.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.repair_cost(r, k)
 			line.add_child(nb)
@@ -1581,7 +1591,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 				var up := Career.upgrade_price(k, nt)
 				var tu := maxi(Career.team_of(r), 0)
 				var ub := _button("%s $%d" % [nt, up], func(): Career.buy_upgrade(tu, r, k); open_robot(id))
-				ub.disabled = Career.money(tu) < up
+				ub.disabled = Career.upgrade_funds(tu) < up
 				ub.tooltip_text = "Upgrade to %s: +%d to %s, %d condition" % [nt, int(Robot.TIER_BONUS[nt]), ", ".join(Robot.PART_RATINGS[k]), int(Robot.TIER_HP[nt])]
 				line.add_child(ub)
 	var row := HFlowContainer.new()
@@ -1589,7 +1599,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 	box.add_child(row)
 	var t := maxi(Career.team_of(r), 0)
 	var all_cost := Career.repair_all_cost(r)
-	var pl2 := _label("Purse $%d" % Career.money(t), fs, YELLOW)
+	var pl2 := _label("Purse $%d" % Career.money(t) + ("  ·  upgrade credit $%d" % Career.credit(t) if Career.credit(t) > 0 else ""), fs, YELLOW)
 	pl2.autowrap_mode = TextServer.AUTOWRAP_OFF
 	row.add_child(pl2)
 	if all_cost > 0:
@@ -1601,3 +1611,27 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			open_robot(id))
 		rb.disabled = Career.money(t) < all_cost
 		row.add_child(rb)
+
+
+
+## Upgrade money: spend it yourself on the robot pages, or let the coach spend it.
+func _spend_row(box: Control, t: int, refresh: Callable) -> void:
+	var cr := Career.credit(t)
+	if cr > 0:
+		box.add_child(_label("Upgrade credit $%d - spend it yourself on the robot pages (tap a robot, then a part's upgrade button), or let the coach:" % cr, fs - 1, YELLOW))
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 6)
+	box.add_child(row)
+	if cr > 0:
+		row.add_child(_button("Let the coach spend the credit", func():
+			var news := Career.coach_spend(t, false)
+			refresh.call()
+			for n in news:
+				caption("Coach bought: " + n, false, YELLOW)))
+	if Career.money(t) > 400:
+		row.add_child(_button("Let the coach spend the purse (keeps $400)", func():
+			var news := Career.coach_spend(t, true)
+			refresh.call()
+			for n in news:
+				caption("Coach bought: " + n, false, YELLOW)))

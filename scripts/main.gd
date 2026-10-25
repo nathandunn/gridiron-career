@@ -557,11 +557,11 @@ func injury_choice(slot: String, what: String) -> void:
 	match what:
 		"junk":
 			for k in Robot.lost_parts(r):
-				Robot.bolt_on_junk(r, k)
+				Career.buy_junk(0, r, k)
 		"buy":
 			for k in Robot.lost_parts(r):
 				if not Career.buy_repair(0, r, k):
-					Robot.bolt_on_junk(r, k)     # ran out of money part-way: junk for the rest
+					Career.buy_junk(0, r, k)     # ran out of money part-way: junk for the rest
 		"play_on":
 			played_on[String(r["id"])] = ",".join(Robot.lost_parts(r))
 	Career.save()
