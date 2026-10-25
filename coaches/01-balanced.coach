@@ -3,6 +3,7 @@ about "By the book: run to set up the pass, short stuff on fourth, shots when it
 
 offense:
   when game ending and leading by over 0 and to go over 0 and clock under 100 -> kneel
+  when fourth down and to go over 3 and not past midfield -> punt
   when fourth down and to go under 2 and past midfield -> call "QB Sneak" or "Inside Zone"
   when fourth down and to go over 6 -> call "Four Verticals" or "Smash" or "Mesh"
   when fourth down -> call "Slants" or "Inside Zone" or "Curl Flat"

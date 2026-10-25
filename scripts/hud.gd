@@ -520,7 +520,7 @@ func open_teams(pregame := false) -> void:
 		var b := _button(Game.CALLING_LABEL[mode], func(): main.calling[t] = mode; main.library_changed(); open_teams(pregame), true)
 		b.button_pressed = main.calling[t] == mode
 		cf.add_child(b)
-	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. There is no kicking: fourth down is always a go.",
+	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. On 4th down you can punt.",
 		"coach": "The coach's rules pick every play.",
 		"random": "Any play in the playbook, picked at random every down.",
 		"generated": "A brand-new play made up every down: random formation, routes, gaps, coverages and blitzes. Save the good ones from the Log."}
@@ -856,6 +856,8 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
 	var coach_i := int(coach.get("index", -1))
+	if String(coach.get("call", "")) == "punt":
+		box.add_child(_label("COACH'S PICK: punt it away (his rule: %s)." % String(coach.get("why", "")), fs - 1, MAGENTA))
 	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
 	if coach_i >= 0:
 		var gtxt := ""
@@ -935,6 +937,10 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
+	if side == "offense" and g.down == 4:
+		var pb := _button("Punt it away", func(): main.pick_made("kick", "punt"))
+		pb.add_theme_color_override("font_color", YELLOW)
+		row.add_child(pb)
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
 	box.add_child(_label("Yellow is the run, the blue line is the line of scrimmage. Defense: shaded zones, dashed lines for man coverage, pink arrows for blitzers.", fs - 3, Color(0.7, 0.74, 0.78)))
 
@@ -1142,6 +1148,7 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 	rows.append(["Turnovers", "%.1f" % f.call(0, "turnovers"), "%.1f" % f.call(1, "turnovers")])
 	rows.append(["3rd down", _rate(stats[0], "third_conv", "third_att"), _rate(stats[1], "third_conv", "third_att")])
 	rows.append(["Big plays (20+)", "%.1f" % f.call(0, "explosive"), "%.1f" % f.call(1, "explosive")])
+	rows.append(["Punts", "%.1f" % f.call(0, "punts"), "%.1f" % f.call(1, "punts")])
 	rows.remove_at(1)
 	for r in rows:
 		for i in 3:

@@ -157,9 +157,12 @@ A neon robot-football arena: dark steel field with glowing lines and lit rails, 
 light panels, light towers, and armoured robots with visor lights in team colours (hot red vs
 electric blue) that stride as they run. The default **Arcade** camera looks down steeply from
 behind the offense and scrolls with the ball; Behind / Sideline / Overhead are still a tap away.
-Football rules, 11 a side, with no kicking: a touchdown is 7, a safety is 7 to the defense,
-every drive (after a score, a turnover or a turnover on downs) starts at the 25, and fourth
-down is always a go.
+Football rules, 11 a side. A touchdown is 7 and a safety 7 to the defense; no field goals.
+Kickoffs (each half and after every score) and punts are rolled, not played out: most kickoffs
+are touchbacks at the 25, the rest returned to around the 15-40 and now and then much further;
+punts go about 43 yards with a short return (into the end zone: the 20). A turnover - on downs,
+an interception, a fumble - changes hands right where the ball is. The coaches punt on long
+fourth downs in their own half; in the play picker you get a Punt button on 4th down.
 
 ## In the app
 - **Teams** — a coach per side and a brain per position (or the coach's pick), game length.

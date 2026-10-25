@@ -3,6 +3,7 @@ about "Calls whatever the numbers say makes the yards needed - one of the plays 
 
 offense:
   when game ending and leading by over 0 and clock under 100 -> kneel
+  when fourth down and to go over 4 and not past midfield -> punt
   when to go under 3 -> call the best run
   when third down or fourth down -> call the best play
   when trailing by over 7 and half ending -> call the best pass

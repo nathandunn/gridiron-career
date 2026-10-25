@@ -750,7 +750,7 @@ func _next() -> void:
 		hud.show_game_over(game)
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
-	if game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off")):
+	if game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off") or _choice.has("kick")):
 		_open_picker("offense")
 		return
 	if game.calling_for(false) == "pick" and not (_choice.has("def") or _choice.has("coach_def") or _choice.has("kick")):
