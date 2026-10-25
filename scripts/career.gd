@@ -55,12 +55,12 @@ static func new_team(t: int, seed_v := -1, fit := true) -> Dictionary:
 	var used := {}
 	var n := 0
 	for s in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
-		starters[s] = Robot.make(rng, s, _number(rng, s, used), "t%d-%d" % [t, n])
+		starters[s] = Robot.make(rng, s, _number(rng, s, used), "t%d-%d" % [t, n], true)
 		n += 1
 	var bench: Array = []
 	for g in BENCH:
 		var slot: String = (Play.GROUP_SLOTS.get(g, [g]) as Array)[0]
-		var r := Robot.make(rng, slot, _number(rng, slot, used), "t%d-%d" % [t, n])
+		var r := Robot.make(rng, slot, _number(rng, slot, used), "t%d-%d" % [t, n], true)
 		r["slot"] = ""          # on the bench: no slot until he goes in
 		r["group"] = g
 		bench.append(r)

@@ -45,7 +45,7 @@ const LAST := ["McGrease", "Steelhead", "Ironside", "Boltman", "Wrenchley", "O'R
 	"Framewell", "Weldmore", "Hydro", "Magnetti", "Circuitson"]
 
 
-static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String) -> Dictionary:
+static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String, mixed_parts := false) -> Dictionary:
 	var g: String = Play.SLOT_GROUP.get(slot, slot)
 	var r := {}
 	for k in CORE + (SKILLS[g] as Array):
@@ -56,6 +56,12 @@ static func make(rng: RandomNumberGenerator, slot: String, number: int, id: Stri
 	var robot := {"id": id, "name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
 		"number": number, "slot": slot, "group": g, "ratings": r}
 	ensure_parts(robot)
+	if mixed_parts:
+		# a drafted robot comes as he is: mostly Stock, some Junk, now and then something better
+		for k in PARTS:
+			var roll := rng.randf()
+			var tier := "Junk" if roll < 0.15 else ("Stock" if roll < 0.85 else ("Mk II" if roll < 0.97 else "Mk III"))
+			robot["parts"][k] = {"tier": tier, "hp": TIER_HP[tier]}
 	return robot
 
 
@@ -243,3 +249,34 @@ static func apply_parts(robot: Dictionary, b: Dictionary) -> Dictionary:
 		b["power"] = maxf(float(b["power"]) - 0.08, 0.05)
 		b["tough"] = float(b.get("tough", 0.0)) - 0.3
 	return b
+
+
+
+## His armour: how well he stands up to hits - his toughness, with what his core adds.
+static func armour(robot: Dictionary) -> int:
+	return int(roundf(eff(robot, "toughness")))
+
+
+## Condition of all his parts together: [now, most].
+static func condition(robot: Dictionary) -> Array:
+	var now := 0.0
+	var most := 0.0
+	for k in PARTS:
+		var pt: Dictionary = ensure_parts(robot)[k]
+		now += maxf(float(pt["hp"]), 0.0)
+		most += float(TIER_HP.get(String(pt["tier"]), 100))
+	return [int(now), int(most)]
+
+
+## His parts by tier, short: "1 Junk, 4 Stock, 1 Mk II".
+static func tiers_text(robot: Dictionary, short := false) -> String:
+	var counts := {}
+	for k in PARTS:
+		var tier := "lost" if part_lost(robot, k) else String(ensure_parts(robot)[k]["tier"])
+		counts[tier] = int(counts.get(tier, 0)) + 1
+	var out: Array = []
+	for tier in ["lost"] + TIERS:
+		if counts.has(tier):
+			var nm: String = {"lost": "GONE", "Junk": "J", "Stock": "S", "Mk II": "M2", "Mk III": "M3", "Prototype": "P"}[tier] if short else tier
+			out.append(("%s%d" % [nm, counts[tier]]) if short else ("%d %s" % [counts[tier], nm]))
+	return (" " if short else ", ").join(out)

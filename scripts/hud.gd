@@ -1269,7 +1269,7 @@ func open_roster(t := -1) -> void:
 		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
 	fair.button_pressed = Career.fair()
 	tabs.add_child(fair)
-	box.add_child(_label("Tap a robot for his details. Ratings run 1-100; 60 plays like the equal bodies of Gridiron Bots. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Tap a robot for his details. Ratings run 1-100; 60 plays like the equal bodies of Gridiron Bots. ARMOUR is his toughness (with what his core adds): how well he stands up to hits; then his parts by tier. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
 	var starters: Dictionary = tm["starters"]
 	for sg in SIDE_GROUPS:
 		_section(box, sg[0])
@@ -1308,9 +1308,8 @@ func _robot_row(r: Dictionary, slot: String) -> Button:
 	var hurt := ""
 	if not lost.is_empty():
 		hurt = "   NO " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_upper()))
-	if junk > 0:
-		hurt += "   %d junk" % junk
-	b.text = "#%d  %s  %s   OVR %d%s   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r), hurt, "  ".join(bits)]
+	b.text = "#%d  %s  %s   OVR %d   ARMOUR %d   %s%s   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r),
+		Robot.armour(r), Robot.tiers_text(r), hurt, "  ".join(bits)]
 	if not lost.is_empty():
 		b.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	var id := String(r["id"])
@@ -1384,6 +1383,10 @@ func open_robot(id: String) -> void:
 	var pos_txt := (slot if slot == String(r["group"]) else "%s (%s)" % [slot, r["group"]]) if slot != "" else ("Bench · %s" % r["group"])
 	who.add_child(_label(pos_txt, fs + 2, YELLOW))
 	who.add_child(_label("Overall %d" % Robot.overall(r), fs + 6, CYAN))
+	var cond := Robot.condition(r)
+	who.add_child(_label("Armour %d" % Robot.armour(r), fs + 1, YELLOW))
+	who.add_child(_label("Condition %d/%d" % [cond[0], cond[1]], fs - 1, Color(0.85, 0.9, 0.95)))
+	who.add_child(_label("Parts: " + Robot.tiers_text(r), fs - 1, Color(0.85, 0.9, 0.95)))
 	if slot != "" and main.game != null:
 		var br: Brain = (main.game.teams[t]["brains"] as Dictionary).get(slot, null)
 		if br != null:
@@ -1420,7 +1423,7 @@ func open_robot(id: String) -> void:
 		bar.add_theme_stylebox_override("fill", fill)
 		bar.add_theme_stylebox_override("background", bg)
 		line.add_child(bar)
-		var num := _label(str(v) + (" (+%d parts)" % plus if plus > 0 else ""), fs, CYAN if plus > 0 else Color(1, 1, 1))
+		var num := _label(str(v) + (" +%d" % plus if plus > 0 else ""), fs, CYAN if plus > 0 else Color(1, 1, 1))
 		num.autowrap_mode = TextServer.AUTOWRAP_OFF
 		num.custom_minimum_size.x = 30
 		line.add_child(num)
@@ -1557,7 +1560,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 		box.add_child(line)
 		var nl := _label(String(Robot.PART_LABEL[k]), fs - 1)
 		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		nl.custom_minimum_size.x = 110
+		nl.custom_minimum_size.x = 78
 		line.add_child(nl)
 		if hp <= 0.0:
 			var gl := _label("GONE - came off on the field", fs - 1, Color(1.0, 0.4, 0.4))
@@ -1573,7 +1576,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			bar.max_value = mx
 			bar.value = hp
 			bar.show_percentage = false
-			bar.custom_minimum_size = Vector2(100, fs)
+			bar.custom_minimum_size = Vector2(36, fs)
 			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			var fill := StyleBoxFlat.new()
@@ -1585,7 +1588,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			line.add_child(bar)
 			var tl := _label("%s %d/%d" % [pt["tier"], int(hp), int(mx)], fs - 2, Color(0.8, 0.5, 0.3) if pt["tier"] == "Junk" else Color(0.85, 0.9, 0.95))
 			tl.autowrap_mode = TextServer.AUTOWRAP_OFF
-			tl.custom_minimum_size.x = 90
+			tl.custom_minimum_size.x = 0
 			line.add_child(tl)
 			var nt := Career.next_tier(r, k)
 			if nt != "":

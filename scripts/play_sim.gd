@@ -183,7 +183,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
 	var closing := minf((by.vel - v.vel).length(), 14.0)
 	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
-		* (1.0 - 0.5 * clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)) * rng.randf_range(0.5, 1.6) * 1.2 * float(K.get("wear", 1.0))
+		* (1.0 - 0.5 * clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)) * rng.randf_range(0.5, 1.6) * 0.95 * float(K.get("wear", 1.0))
 	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it

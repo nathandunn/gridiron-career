@@ -37,8 +37,10 @@ either way moves the engine numbers that rating stands for (`scripts/robot.gd`):
   the robots' names.
 
 ## Parts that come off (step 3)
-Each robot has six parts - head, core, two arms, two legs - each with a condition (100 for a
-Stock part). Tackles, big hits, sacks, diving stops, pancakes, stiff arms and bounced-off tackles
+Each robot has six parts - head, core, two arms, two legs - each with a tier (Junk, Stock,
+Mk II, Mk III, Prototype) and a condition (50 / 100 / 140 / 180 / 240 when new). A drafted robot
+comes as he is: mostly Stock, some Junk, now and then a Mk II or Mk III. **Armour** (shown on
+the roster and his page) is his toughness with what his core adds. Tackles, big hits, sacks, diving stops, pancakes, stiff arms and bounced-off tackles
 take condition off a part (more for strong hitters, fast collisions, less for tough robots; a big
 hit now and then hits *too* hard). At 0 the part **comes off**: it flies, spins and bounces on the
 turf, with sparks, a crunch, a boing and the announcer's horror. A part comes off somebody about every 5 plays (tests/damage_test.gd) and
