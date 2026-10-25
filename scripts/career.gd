@@ -374,6 +374,11 @@ static func coach_spend(t: int, purse: bool) -> Array:
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))
+	# credit too small to buy any upgrade is no use as credit: it goes in the purse
+	if credit(t) < 300:
+		add_money(t, credit(t))
+		data["credit"][t] = 0
+	news.push_front("spent $%d; purse now $%d" % [spent, money(t)])
 	for s in st:
 		for k in Robot.PARTS:
 			var now := String(st[s]["parts"][k]["tier"])

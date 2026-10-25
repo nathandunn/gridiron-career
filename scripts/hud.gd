@@ -1255,7 +1255,8 @@ func open_roster(t := -1) -> void:
 		_roster_team = t
 	Career.ensure()
 	var tm := Career.team(_roster_team)
-	var box := _open("Roster · %s · $%d" % [tm["name"], Career.money(_roster_team)])
+	var box := _open("Roster · %s · purse $%d%s" % [tm["name"], Career.money(_roster_team),
+		("  ·  credit $%d" % Career.credit(_roster_team)) if Career.credit(_roster_team) > 0 else ""])
 	_spend_row(box, _roster_team, func(): open_roster())
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
@@ -1627,11 +1628,13 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 		row.add_child(_button("Let the coach spend the credit", func():
 			var news := Career.coach_spend(t, false)
 			refresh.call()
-			for n in news:
+			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
+			for n in news.slice(1):
 				caption("Coach bought: " + n, false, YELLOW)))
 	if Career.money(t) > 400:
 		row.add_child(_button("Let the coach spend the purse (keeps $400)", func():
 			var news := Career.coach_spend(t, true)
 			refresh.call()
-			for n in news:
+			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
+			for n in news.slice(1):
 				caption("Coach bought: " + n, false, YELLOW)))
