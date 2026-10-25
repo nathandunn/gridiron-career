@@ -16,6 +16,7 @@ const SIDELINE := 26.67
 const BRAIN_EVERY := 0.1
 const PLAY_CAP := 14.0
 const REACH := 1.3          # catch radius around where the ball comes down
+const CONTEST := 2.6        # a defender this close to where it comes down contests the catch
 const TACKLE_R := 1.35
 const ENGAGE_R := 1.1
 const BODY_R := 0.42
@@ -2316,8 +2317,18 @@ func _arrive() -> void:
 	if best_o != null:
 		var q := 1.0 - od / REACH
 		var pc := (0.86 + 0.12 * float(best_o.body["hands"])) * (0.7 + 0.3 * q) * float(K["catch"])
-		if best_d != null:
-			pc *= 0.85
+		# a covered ball is a fight: a defender close to where it comes down (even a step outside
+		# his reach) gets a hand in or rattles him; and a long ball is harder to bring in
+		var cd := float(stat.get("def_d", 99.0))
+		if cd < CONTEST:
+			var cq := 1.0 - cd / CONTEST
+			pc *= 1.0 - 0.5 * cq
+			if best_d == null and rng.randf() < 0.3 * cq:
+				_say("knocked away")
+				_fx("pbu", best_o, null, to)
+				_incomplete("broken up")
+				return
+		pc *= 1.0 - clampf((float(air.get("dist", 0.0)) - 18.0) * 0.008, 0.0, 0.25)
 		if best_o.manner.get("secure", false):
 			pc *= 1.06
 		if best_o.manner.get("high_point", false) and best_d != null:
