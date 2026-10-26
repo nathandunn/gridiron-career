@@ -67,14 +67,24 @@ robot - from any position (a receiver on the line is still built like a receiver
 it. The rival's coach decides for his. Damage carries over from game to game; a robot's page
 shows each part's condition.
 
-**Money.** There is one purse per side. Your career starts with **$2,000 extra in it for
-upgrades** - spend it yourself on the robot pages, or *Coach buys upgrades*
-(he keeps $400 back). The rival's coach spends his at the draft, and a redrafted team comes with
-its $2,000 of upgrades already fitted. Each side has a purse (starting $400). A **junk spare costs $25** (or whatever is left: you can always field a robot); a **real
-(Stock) part costs money** (head $200, core $250, arm $120, leg $140) and a worn part costs a share
-of that to repair. The final whistle pays: win $600, tie $350, loss $200, plus $60 a touchdown,
-$25 a sack and $50 a takeaway - shown on the final box score. The rival's coach buys real parts
-when he can comfortably afford them, junk otherwise. 
+**Season or exhibition** (chosen at the top of the set-up panel).
+- *Exhibition*: a one-off game. Both sides are drafted fresh with a single **$2,000** budget -
+  spend yours on the robot pages or let the coach; the rival's coach has spent his. Nobody is
+  paid and nothing carries over.
+- *Season*: you against three rival clubs (each with its own coach, robots and purse), each met
+  twice over six weeks; the other clubs' games are played too, and the best record (win 2, tie 1,
+  then points difference) is champion. You start with **$2,000** to spend. Your team, purse and
+  damage carry from week to week.
+
+**Money.** One purse per side. A **junk spare costs $25** (or whatever is left: you can always
+field a robot); a **real (Stock) part costs money** (head $200, core $250, arm $120, leg $140) and
+a worn part costs a share of that to repair. After a season game each side is paid **what that
+game's damage costs to put right, plus a share of $2,000 for the result: 20% ($400) for a win,
+15% a tie, 10% a loss** - so a win is worth a 20% upgrade once the repairs are done. Junk a robot
+started with is not damage (replace it on his page if you like); a junk spare bolted on in a game
+is. The final box score lists every damaged robot with a *Fix* button (and *Fix everybody*), the
+upgrade buttons, and a **robot market** of three robots for sale (new ones after every game) that
+join your bench. The rival's coach repairs his damage, then shops for upgrades.
 
 **Upgrades, any time.** On a robot's page each part has an upgrade button: **Mk II** (+6),
 **Mk III** (+12), **Prototype** (+20) to the ratings that part carries - head: IQ; core:
