@@ -1453,7 +1453,7 @@ func _robot_row(r: Dictionary, slot: String) -> Button:
 	b.clip_text = true
 	var bits: Array = []
 	for k in Robot.keys(r):
-		bits.append("%s %d" % [String(Robot.LABEL[k]).substr(0, 3), int(Robot.rating(r, k))])
+		bits.append("%s %d" % [String(Robot.LABEL[k]).substr(0, 3), int(Robot.eff(r, k))])   # with what his parts add
 	var lost := Robot.lost_parts(r)
 	var junk := 0
 	for k in Robot.PARTS:

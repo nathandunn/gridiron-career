@@ -132,7 +132,14 @@ func _ready() -> void:
 				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["head"]["hp"] = 0
 				hud.open_injuries(_broken_mine())
-			"robot": hud.open_robot(String(Career.roster(0)[String(args.get("slot", "QB"))]["id"]))
+			"robot":
+				var rr: Dictionary = Career.roster(0)[String(args.get("slot", "QB"))]
+				if args.has("upall"):        # check: upgrades show in his overall and ratings
+					Career.add_money(0, 50000)
+					for _i in 4:
+						for k in Robot.PARTS:
+							Career.buy_upgrade(0, rr, k)
+				hud.open_robot(String(rr["id"]))
 			"brokenrobot":
 				var qb: Dictionary = Career.roster(0)["QB"]
 				Robot.ensure_parts(qb)["larm"]["hp"] = 0
