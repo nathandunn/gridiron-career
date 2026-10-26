@@ -402,6 +402,8 @@ func new_game(start := true) -> void:
 	hud.season_lines = []
 	if view != null:
 		view.clear_debris()
+	if Career.loaded and not start and not Career.exhibition() and Career.season_over():
+		Career.new_season()     # the season is done: the next one starts now, with $2,000 to spend before kickoff
 	if Career.loaded:
 		coaches[1] = Career.opponent_coach()     # this week's rival club (or the exhibition side)
 		if start:

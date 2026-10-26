@@ -508,6 +508,8 @@ func _mode_section(box: VBoxContainer) -> void:
 		box.add_child(_button("New exhibition teams", func(): Career.new_exhibition(); main.new_game(false)))
 		return
 	var sn := Career.season()
+	if String(Career.data.get("last_champion", "")) != "" and int(sn.get("week", 1)) == 1:
+		box.add_child(_label("Last season's champions: %s. A new season: $2,000 in your purse to spend before kickoff." % Career.data["last_champion"], fs, YELLOW))
 	if Career.season_over():
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
@@ -523,6 +525,7 @@ func _mode_section(box: VBoxContainer) -> void:
 			main.new_game(false)
 		else:
 			_confirm_new_season = true
+			toast("TAP AGAIN TO START OVER\n(new draft, $2,000)", 2.0)
 			open_teams(true))
 	box.add_child(ns)
 

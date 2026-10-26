@@ -42,6 +42,8 @@ static func ensure() -> void:
 				save()
 			if not data.has("season"):
 				_season_around_current()      # saves from before seasons: this becomes week 1 of one
+				data["money"][0] = maxi(int(data["money"][0]), STARTER_BUDGET)   # and a season starts with $2,000
+				save()
 			return
 	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season"}
 	data["money"] = [STARTER_BUDGET, START_MONEY + int(data["teams"][1].get("leftover", 0))]   # you start with $2,000 to spend
@@ -714,6 +716,8 @@ static func _season_around_current() -> void:
 ## A new season: you are drafted fresh with $2,000 to spend; three new rival clubs.
 static func new_season() -> void:
 	ensure()
+	if season_over():
+		data["last_champion"] = String(season().get("champion", ""))
 	data["teams"][0] = new_team(0, -1, false)
 	data["money"] = [STARTER_BUDGET, START_MONEY]
 	data["teams"][1] = new_team(1)
