@@ -475,6 +475,10 @@ func finish(sim: PlaySim) -> Dictionary:
 	if pending.get("def_text", "") != "":
 		e["def_text"] = pending["def_text"]
 	var elapsed := float(r["t"])
+	# the ball carried to (or over) the goal line is a touchdown, whatever the sim called it
+	if not r["td"] and not r["incomplete"] and r["turnover"] == "" and not r.get("safety", false) and yl + gain >= 100.0:
+		r["td"] = true
+		e["text"] += " Over the line!"
 	# the outcome
 	if r.get("def_td", false):
 		st["turnovers"] = int(st["turnovers"]) + 1
@@ -520,8 +524,9 @@ func finish(sim: PlaySim) -> Dictionary:
 		drive["yards"] = float(drive["yards"]) + gain
 		if not r["incomplete"]:
 			ball_x = clampf(float(r["x"]), -HASH, HASH)
+		var goal_to_go := yl + to_go >= 99.9
 		yl = clampf(yl + gain, 0.5, 99.5)
-		_advance_down(gain)
+		_advance_down(gain, goal_to_go)
 		var stops: bool = r["clock_stops"]
 		_tick(elapsed + (0.0 if stops else _runoff(team)), stops)
 	last_gain[team] = gain
@@ -540,8 +545,18 @@ func _runoff(team: int) -> float:
 	return 27.0
 
 
-func _advance_down(gain: float) -> void:
+func _advance_down(gain: float, goal_to_go := false) -> void:
 	var st: Dictionary = stats[poss]
+	if goal_to_go:
+		# first and goal: there is no first down to be had, only the end zone. Stopped short
+		# (however close), it is the next down with the goal still to go.
+		to_go = maxf(100.0 - yl, 0.5)
+		down += 1
+		if down > 4:
+			down_event = "downs"
+			drive["result"] = "downs"
+			_take_over(yl)
+		return
 	if gain >= to_go:
 		if down == 3:
 			st["third_conv"] = int(st["third_conv"]) + 1
