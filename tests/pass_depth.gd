@@ -15,6 +15,8 @@ func _init() -> void:
 		var sacks := 0
 		var snaps := 0
 		var passes := 0
+		var pp := 0
+		var pyds := 0.0
 		for i in 1500:
 			var op: Play
 			if src == "playbook":
@@ -27,6 +29,9 @@ func _init() -> void:
 			s.setup(red, blue, op, Library.play(defs[rng.randi() % defs.size()]), {"yl": 35.0, "down": 1, "to_go": 10.0, "ball_x": 0.0, "quarter": 1, "clock": 600, "score_diff": 0}, r)
 			var res := s.run_to_end()
 			snaps += 1
+			if op.kind != "run":
+				pp += 1
+				pyds += (0.0 if res["incomplete"] else float(res["y"])) if res["turnover"] == "" else -20.0
 			if s.away_pressure >= 0.0:
 				away += 1
 			if s.stat.has("air_y"):
@@ -48,7 +53,7 @@ func _init() -> void:
 				b[k] = e
 			elif String(res.get("why", "")) == "sack":
 				sacks += 1
-		print("== %s: %d snaps, %d passes, %d throwaways, %d sacks" % [src, snaps, passes, away, sacks])
+		print("== %s: %d snaps, %d passes, %d throwaways, %d sacks, %.1f yds per pass play (turnover = -20)" % [src, snaps, passes, away, sacks, pyds / maxf(pp, 1)])
 		for k in ["behind", "0-5", "5-15", "15-25", "25+"]:
 			if b.has(k):
 				var e: Dictionary = b[k]

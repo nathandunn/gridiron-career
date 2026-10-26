@@ -44,8 +44,7 @@ static func ensure() -> void:
 				_season_around_current()      # saves from before seasons: this becomes week 1 of one
 			return
 	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season"}
-	add_money(0, STARTER_BUDGET)          # your $2,000 for upgrades goes in the purse: spend it, or let the coach
-	add_money(1, int(data["teams"][1].get("leftover", 0)))
+	data["money"] = [STARTER_BUDGET, START_MONEY + int(data["teams"][1].get("leftover", 0))]   # you start with $2,000 to spend
 	_season_around_current()
 	save()
 
@@ -289,6 +288,22 @@ static func repair_cost(robot: Dictionary, k: String) -> int:
 	return int(ceilf(price * 0.6 * (1.0 - float(pt["hp"]) / mx)))
 
 
+## What putting right the damage costs (a lost part, a junk spare bolted on in a game, a worn
+## part); junk he started with is not damage - replace it on his page if you like.
+static func fix_cost(robot: Dictionary, k: String) -> int:
+	var pt: Dictionary = Robot.ensure_parts(robot)[k]
+	if String(pt["tier"]) == "Junk" and float(pt["hp"]) > 0.0 and not bool(pt.get("spare", false)):
+		return 0
+	return repair_cost(robot, k)
+
+
+static func fix_all_cost(robot: Dictionary) -> int:
+	var c := 0
+	for k in Robot.PARTS:
+		c += fix_cost(robot, k)
+	return c
+
+
 static func repair_all_cost(robot: Dictionary) -> int:
 	var c := 0
 	for k in Robot.PARTS:
@@ -330,10 +345,17 @@ static func damage_bill(t: int) -> int:
 	var c := 0
 	var tm := team(t)
 	for s in tm["starters"]:
-		c += repair_all_cost(tm["starters"][s])
+		c += fix_all_cost(tm["starters"][s])
 	for r in tm["bench"]:
-		c += repair_all_cost(r)
+		c += fix_all_cost(r)
 	return c
+
+
+## Called at kickoff, so the pay covers only the damage done in this game.
+static func note_kickoff() -> void:
+	ensure()
+	data["bill_before"] = [damage_bill(0), damage_bill(1)]
+	save()
 
 
 static func pay_game(g: Game) -> Array:
@@ -344,7 +366,8 @@ static func pay_game(g: Game) -> Array:
 		var res := "tie" if w < 0 else ("win" if w == t else "loss")
 		var share := int(STARTER_BUDGET * float(RESULT_SHARE[res]))
 		lines.append(["%s (%d%% of $%d)" % [{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(RESULT_SHARE[res] * 100), STARTER_BUDGET], share])
-		var bill := damage_bill(t)
+		# only this game's damage: what was already broken before kickoff was yours to fix
+		var bill := maxi(damage_bill(t) - int(data.get("bill_before", [0, 0])[t]), 0)
 		if bill > 0:
 			lines.append(["Damage covered", bill])
 		var total := share + bill
@@ -363,7 +386,7 @@ static func coach_repairs(t: int) -> Array:
 	var n := 0
 	for r in (tm["starters"].values() + tm["bench"]):
 		for k in Robot.PARTS:
-			if repair_cost(r, k) > 0 and buy_repair(t, r, k):
+			if fix_cost(r, k) > 0 and buy_repair(t, r, k):
 				n += 1
 	return ["%s repairs %d parts." % [tm["name"], n]] if n > 0 else []
 
@@ -694,6 +717,7 @@ static func new_season() -> void:
 	data["teams"][0] = new_team(0, -1, false)
 	data["money"] = [STARTER_BUDGET, START_MONEY]
 	data["teams"][1] = new_team(1)
+	data["bill_before"] = [0, 0]
 	_season_around_current()
 	data["mode"] = "season"
 	save()
@@ -757,7 +781,7 @@ static func finish_week(g: Game) -> Array:
 		var tb := Team.build(1, String(b["coach"]))
 		tb["roster"] = b["starters"]
 		tb["bench"] = b["bench"]
-		var og := Batch.play_game(ta, tb, 300.0, randi())
+		var og := Batch.play_game(ta, tb, g.qlen, randi())
 		_record(a["rec"], og.score[0], og.score[1])
 		_record(b["rec"], og.score[1], og.score[0])
 		for pr in [[a, og.score[0], og.score[1]], [b, og.score[1], og.score[0]]]:

@@ -199,13 +199,14 @@ static func can_play(robot: Dictionary) -> bool:
 
 
 static func bolt_on_junk(robot: Dictionary, k: String) -> void:
-	ensure_parts(robot)[k] = {"tier": "Junk", "hp": TIER_HP["Junk"]}
+	ensure_parts(robot)[k] = {"tier": "Junk", "hp": TIER_HP["Junk"], "spare": true}   # a stop-gap: a fix replaces it
 
 
 static func repair(robot: Dictionary, k: String) -> void:
 	var p: Dictionary = ensure_parts(robot)[k]
 	if float(p["hp"]) <= 0.0 or String(p["tier"]) == "Junk":
 		p["tier"] = "Stock"           # a lost or junk part is replaced with a proper one
+		p.erase("spare")
 	p["hp"] = TIER_HP.get(String(p["tier"]), 100)
 
 

@@ -120,7 +120,7 @@ static func _tree_route(rng: RandomNumberGenerator, start: Vector2, short_drop: 
 	var k := rng.randf_range(0.85, 1.15)
 	var pts: Array[String] = []
 	for pt in rt[1]:
-		var x := clampf(start.x + inside * float(pt[0]) * k, -FIELD, FIELD) - start.x
+		var x := clampf(start.x + inside * float(pt[0]) * k, -FIELD + 3.5, FIELD - 3.5) - start.x
 		pts.append("%s %s" % [_f(x), _f(float(pt[1]) * k)])
 	var stop: bool = String(rt[0]) in ["curl", "hitch", "comeback", "sit"]
 	return "route path %s%s" % [" ".join(pts), " stop" if stop else ""]
@@ -184,7 +184,7 @@ static func offense(rng: RandomNumberGenerator) -> Dictionary:
 				lines.append("%s: block" % s)
 		about = "%sRun at %+.1f%s%s" % ["QB keeper. " if keeper else "", hole, (", %d pulling" % pulls) if pulls > 0 else "", (", %d decoy routes" % decoys) if decoys > 0 else ""]
 	else:
-		var drop := rng.randi_range(3, 7)
+		var drop: int = [3, 3, 5, 5, 5, 7][rng.randi() % 6]
 		var pa: bool = at["RB"].x > -4.5 and at["RB"].x < 4.5 and rng.randf() < 0.22
 		var short := drop <= 3 and rng.randf() < 0.5
 		var routers: Array = []
@@ -193,22 +193,29 @@ static func offense(rng: RandomNumberGenerator) -> Dictionary:
 		var wants := ["deep", "short", ""]
 		wants.shuffle()
 		for i in 3:
-			var s := ["WR1", "WR2", "WR3"][i]
+			var s: String = ["WR1", "WR2", "WR3"][i]
 			lines.append("%s: %s" % [s, _tree_route(rng, at[s], short and wants[i] != "deep", wants[i])])
-			routers.append(s)
+			routers.append([s, {"short": 0, "": 1, "deep": 2}[wants[i]]])
 		var te_roll := rng.randf()
 		if te_roll < 0.3:
 			lines.append("TE: block")
 		else:
 			lines.append("TE: %s%s" % ["block then " if te_roll < 0.5 else "", _tree_route(rng, at["TE"], short)])
-			routers.append("TE")
+			routers.append(["TE", 1.5])
 		var rb_roll := rng.randf()
 		if rb_roll < 0.4 and at["RB"].y < -2.0:
 			lines.append("RB: block")
 		else:
 			lines.append("RB: %s%s" % ["block then " if rb_roll < 0.55 and at["RB"].y < -2.0 else "", _tree_route(rng, at["RB"], true, "short")])
-			routers.append("RB")
-		lines.append("QB: %s drop %d read %s" % ["play action" if pa else "pass", drop, " ".join(_shuffle(rng, routers))])
+			routers.append(["RB", 3])
+		# a real progression: the quick throw first (or the shot first on a long drop), the back last
+		var deep_first := drop >= 6 and rng.randf() < 0.6
+		routers.sort_custom(func(a, b):
+			if a[0] == "RB" or b[0] == "RB":
+				return b[0] == "RB" and a[0] != "RB"
+			return (a[1] > b[1]) if deep_first else (a[1] < b[1]))
+		var order: Array = routers.map(func(x): return x[0])
+		lines.append("QB: %s drop %d read %s" % ["play action" if pa else "pass", drop, " ".join(order)])
 		about = "%d routes, %d-step drop%s" % [routers.size(), drop, ", play action" if pa else ""]
 	return _finish(name, "offense", about, lines)
 

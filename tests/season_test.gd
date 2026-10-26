@@ -3,13 +3,14 @@ extends SceneTree
 func _init() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(Career.PATH))
 	Career.data = {}
-	Career.loaded = true
+	Career.loaded = false
 	Career.ensure()
 	assert(not Career.exhibition())
 	print("start purse ", Career.money(0), " week ", Career.season()["week"], " opp ", Career.opponent_name(), " (", Career.opponent_coach(), ")")
 	var opps := {}
 	while not Career.season_over():
-		var g := Batch.play_game(Team.build(0, "Balanced"), Team.build(1, Career.opponent_coach()), 300.0, randi())
+		Career.note_kickoff()
+		var g := Batch.play_game(Team.build(0, "Balanced"), Team.build(1, Career.opponent_coach()), 120.0, randi())
 		var bill := Career.damage_bill(0)
 		var before := Career.money(0)
 		var slips := Career.pay_game(g)

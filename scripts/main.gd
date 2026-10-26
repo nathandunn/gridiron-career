@@ -404,6 +404,8 @@ func new_game(start := true) -> void:
 		view.clear_debris()
 	if Career.loaded:
 		coaches[1] = Career.opponent_coach()     # this week's rival club (or the exhibition side)
+		if start:
+			Career.note_kickoff()
 	game = Game.new()
 	var seed_v := randi()
 	game.setup(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, seed_v)

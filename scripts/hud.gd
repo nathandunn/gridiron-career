@@ -513,7 +513,7 @@ func _mode_section(box: VBoxContainer) -> void:
 	else:
 		var opp := Career.team(1)
 		box.add_child(_label("Week %d of %d. This week: %s (coach %s, %s)." % [int(sn["week"]), Career.WEEKS, opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
-		box.add_child(_label("Your team, its purse and its damage carry from week to week. A win pays $%d, a tie $%d, a loss $%d (plus touchdowns, sacks and takeaways). Each rival plays twice; best record is champion." % [Career.PAY["win"], Career.PAY["tie"], Career.PAY["loss"]], fs - 1, dim))
+		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid what that game's damage costs to put right, plus 20% of $2,000 for a win ($400), 15% for a tie, 10% for a loss. Each rival plays twice; best record is champion.", fs - 1, dim))
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
 	var ns := _button("Really start over? Tap again" if _confirm_new_season else "Start a new season", func():
@@ -1172,9 +1172,15 @@ func _garage(box: Control, refresh: Callable) -> void:
 	var tm := Career.team(0)
 	var any := false
 	var all_cost := 0
+	var who: Array = []
 	for s in tm["starters"]:
-		var r: Dictionary = tm["starters"][s]
-		var c := Career.repair_all_cost(r)
+		who.append([tm["starters"][s], s])
+	for r0 in tm["bench"]:
+		who.append([r0, "bench " + String(r0["group"])])
+	for w in who:
+		var r: Dictionary = w[0]
+		var s: String = w[1]
+		var c := Career.fix_all_cost(r)
 		if c <= 0:
 			continue
 		any = true
@@ -1191,7 +1197,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 			var rr := Career.find(rid)
 			var ok := true
 			for k in Robot.PARTS:
-				if Career.repair_cost(rr, k) > 0:
+				if Career.fix_cost(rr, k) > 0:
 					ok = Career.buy_repair(0, rr, k) and ok
 			if not ok:
 				toast("NOT ENOUGH MONEY", 1.6)
@@ -1202,10 +1208,10 @@ func _garage(box: Control, refresh: Callable) -> void:
 		box.add_child(_label("Nobody is damaged.", fs - 1, Color(0.8, 0.85, 0.9)))
 	else:
 		var fa := _button("Fix everybody $%d (purse $%d)" % [all_cost, Career.money(0)], func():
-			for s in tm["starters"]:
+			for w in who:
 				for k in Robot.PARTS:
-					if Career.repair_cost(tm["starters"][s], k) > 0:
-						Career.buy_repair(0, tm["starters"][s], k)
+					if Career.fix_cost(w[0], k) > 0:
+						Career.buy_repair(0, w[0], k)
 			refresh.call())
 		fa.disabled = Career.money(0) <= 0
 		box.add_child(fa)
@@ -1239,7 +1245,8 @@ func _damage_text(r: Dictionary) -> String:
 		if Robot.part_lost(r, k):
 			bits.append("NO " + String(Robot.PART_LABEL[k]).to_upper())
 		elif String(pt["tier"]) == "Junk":
-			bits.append("junk " + String(Robot.PART_LABEL[k]).to_lower())
+			if bool(pt.get("spare", false)):
+				bits.append("junk spare " + String(Robot.PART_LABEL[k]).to_lower())
 		else:
 			var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
 			if float(pt["hp"]) < mx * 0.99:
