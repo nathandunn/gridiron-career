@@ -817,10 +817,11 @@ func _next() -> void:
 		if String(game.teams[kt].get("calling", "coach")) == "pick" and not _choice.has("kickoff"):
 			_open_special("kickoff", kt)
 			return
-	var returning := not game.return_due.is_empty()
-	if returning and String(game.teams[game.poss].get("calling", "coach")) == "pick" and not _choice.has("return"):
+	if not game.return_due.is_empty() and String(game.teams[game.poss].get("calling", "coach")) == "pick" and not _choice.has("return"):
 		_open_special("return", game.poss)
 		return
+	# a kickoff or a return comes next: no play to call from scrimmage yet
+	var returning := not game.return_due.is_empty() or not game.kick_due.is_empty()
 	if not returning and game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off") or _choice.has("kick")):
 		_open_picker("offense")
 		return

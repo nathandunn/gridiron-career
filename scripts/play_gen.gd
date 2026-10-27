@@ -293,12 +293,13 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 ## the line) has the ball, his ten form a wall in front of him, and the kicking team's eleven
 ## come down on him from `gap` yards upfield. {off, def} Plays.
 static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0, call := "middle") -> Dictionary:
-	var lines: Array[String] = ["formation shotgun", "QB at 0 %s" % _f(-depth)]
-	# a wedge: the big men 5-6 yards in front of him, the quick ones closer and wider
-	var wall := {"LT": Vector2(-5, -depth + 5.5), "LG": Vector2(-2.5, -depth + 6.2), "C": Vector2(0, -depth + 6.6),
-		"RG": Vector2(2.5, -depth + 6.2), "RT": Vector2(5, -depth + 5.5),
-		"WR1": Vector2(-11, -depth + 4.5), "WR2": Vector2(11, -depth + 4.5), "WR3": Vector2(0, -depth + 3.0),
-		"TE": Vector2(-7, -depth + 3.5), "RB": Vector2(7, -depth + 3.5)}
+	# the returner is a back (the RB's spot; a career team sends in its best returner)
+	var lines: Array[String] = ["formation shotgun", "RB at 0 %s" % _f(-depth)]
+	# a wedge: the big men 6-7 yards in front of him, the quick ones closer and wider
+	var wall := {"LT": Vector2(-5, -depth + 6.5), "LG": Vector2(-2.5, -depth + 7.2), "C": Vector2(0, -depth + 7.6),
+		"RG": Vector2(2.5, -depth + 7.2), "RT": Vector2(5, -depth + 6.5),
+		"WR1": Vector2(-11, -depth + 5.5), "WR2": Vector2(11, -depth + 5.5), "WR3": Vector2(0, -depth + 4.0),
+		"TE": Vector2(-7, -depth + 4.5), "QB": Vector2(7, -depth + 4.5)}
 	var lane := 0.0
 	match call:
 		"left":
@@ -314,7 +315,7 @@ static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0, c
 	lines.append("kind run")
 	for s in wall:
 		lines.append("%s: block" % s)
-	lines.append("QB: run at %s" % _f(lane))
+	lines.append("RB: run at %s" % _f(lane))
 	var off := _finish("Return", "offense", "Kick return up the %s" % ("middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")), lines)
 	var dl: Array[String] = ["kind blitz", "front off"]
 	var n := Play.DEFENSE_SLOTS.size()

@@ -268,11 +268,12 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 	for p in s.players:
 		_ensure_player(p)
 		_players[p.idx]["root"].visible = true
+		(_players[p.idx]["label"] as Label3D).text = "RET" if kick and p == s.air_target else p.slot
 		_prev[p.idx] = p.pos
 		_cur[p.idx] = p.pos
 	_place_line(_los, yard_line)
 	_place_line(_sticks, minf(yard_line + to_go, 100.0))
-	_sticks.visible = yard_line + to_go < 100.0
+	_sticks.visible = yard_line + to_go < 100.0 and not kick
 
 
 func _place_line(mi: MeshInstance3D, offense_yl: float) -> void:

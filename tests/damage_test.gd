@@ -3,6 +3,9 @@ extends SceneTree
 ## coaches' fixes keep a full side on the field.
 func _init() -> void:
 	Library.ensure()
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--cal="):
+			PlaySim.K["dmg_cal"] = float(a.substr(6))
 	var n := 20
 	var total := 0
 	var by_part := {}

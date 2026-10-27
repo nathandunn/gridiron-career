@@ -34,7 +34,7 @@ const BODY := {
 	"S": {"speed": 8.8, "accel": 8.5, "power": 0.55, "hands": 0.56, "agility": 0.7, "tackle": 0.7},
 }
 ## Global tuning knobs (set from the command line with --k=name:value,name:value).
-static var K := {"tackle": 0.85, "evade": 0.5, "carry_speed": 0.97, "sight": 1.0, "shed": 1.0, "throw_err": 1.8, "catch": 1.0, "pursuit": 1.05}
+static var K := {"dmg_cal": 0.7, "tackle": 0.85, "evade": 0.5, "carry_speed": 0.97, "sight": 1.0, "shed": 1.0, "throw_err": 1.8, "catch": 1.0, "pursuit": 1.05}
 const QB_ARM := 0.9
 const QB_ACC := 0.8
 
@@ -168,6 +168,8 @@ const HURT := {
 	"dive_tackle": ["b", 32.0, 30.0], "pancake": ["b", 34.0, 24.0], "stiff_arm": ["b", 26.0, 18.0],
 	"miss": ["a", 24.0, 18.0],
 }
+## How heavy each position is, for how hard a hit lands (and how well he soaks one up).
+const MASS := {"QB": 1.0, "RB": 1.0, "WR": 0.88, "TE": 1.15, "OL": 1.4, "DL": 1.35, "LB": 1.15, "CB": 0.88, "S": 1.0, "K": 0.85, "P": 0.85}
 const HURT_CHANCE := {"tackle": 0.3, "big_hit": 0.9, "sack": 0.7, "dive_tackle": 0.4, "pancake": 0.5,
 	"stiff_arm": 0.3, "miss": 0.25}
 const PART_ODDS := {"head": 0.18, "core": 0.1, "larm": 0.18, "rarm": 0.18, "lleg": 0.18, "rleg": 0.18}
@@ -179,12 +181,18 @@ var hurt_ids: Array = []            # robots that took damage this play
 func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	if v.robot.is_empty() or float(K.get("wear", 1.0)) <= 0.0:
 		return                       # equal bodies (headless, Fair bodies) or wear switched off
-	if rng.randf() > float(HURT_CHANCE.get(kind, 0.1)) * (1.0 - 0.3 * float(v.body.get("tough", 0.0))):
+	# how hard it is: the hitter's weight and strength times how fast they came together, against
+	# the victim's weight and his armour (toughness, with what his core adds). Both whether he
+	# takes damage at all and how much come from it.
+	var closing := minf((by.vel - v.vel).length(), 14.0)
+	var tough := clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)
+	var impact := float(MASS.get(by.group, 1.0)) * (0.7 + 0.6 * float(by.body["power"])) * (2.0 + closing) \
+		/ (7.0 * sqrt(float(MASS.get(v.group, 1.0))))
+	if rng.randf() > float(HURT_CHANCE.get(kind, 0.1)) * clampf(impact, 0.35, 2.2) * (1.0 - 0.35 * tough):
 		return                       # shrugged it off
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
-	var closing := minf((by.vel - v.vel).length(), 14.0)
-	var dmg := base * (0.7 + 0.6 * float(by.body["power"])) * (0.8 + closing / 10.0) \
-		* (1.0 - 0.5 * clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)) * rng.randf_range(0.5, 1.6) * 0.95 * float(K.get("wear", 1.0))
+	var dmg := base * clampf(impact, 0.4, 2.5) * (1.0 - 0.5 * tough) * rng.randf_range(0.5, 1.6) \
+		* float(K.get("dmg_cal", 1.0)) * float(K.get("wear", 1.0))
 	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it
@@ -508,9 +516,9 @@ func step() -> void:
 ## quarterback's spot) after `hang` seconds while the coverage runs down and his wall waits; then
 ## he runs it back - or, on a fair catch, the play ends where he catches it.
 func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void:
-	var qb: P = by_slot["o:QB"]
+	var qb: P = by_slot["o:RB"]        # the returner
 	snapped = true
-	carry_slot = "QB"
+	carry_slot = "RB"
 	carrier = null
 	ball_state = "air"
 	air = {"from": from, "to": qb.pos, "t0": t, "T": hang, "lob": not low, "dist": from.distance_to(qb.pos), "kick": true, "fair": fair}
@@ -1869,8 +1877,14 @@ func _drive_air(p: P) -> void:
 	var to: Vector2 = air["to"]
 	var left := float(air["t0"]) + float(air["T"]) - t
 	if air.get("kick", false) and p.side == 0:
-		# the returner waits under it; his wall holds its ground until he has it
-		_set_want(p, Vector2.ZERO)
+		# the returner waits under it; his wall drifts upfield to meet the coverage, so it is
+		# well out in front of him when he catches it
+		if p == air_target:
+			_set_want(p, Vector2.ZERO)
+		elif left > 0.6:
+			_set_want(p, Vector2(0, 1) * p.spd() * 0.4)
+		else:
+			_set_want(p, Vector2.ZERO)
 		return
 	if p == air_target:
 		# get there as the ball does, not before and past it
@@ -2299,6 +2313,8 @@ func _arrive() -> void:
 		var rr: P = air_target
 		carrier = rr
 		ball_state = "held"
+		handed = true                  # he runs it like a handoff: his hole first, then daylight
+		handoff_t = t
 		_say("fielded by the returner")
 		_fx("catch", rr, null, rr.pos)
 		if air.get("fair", false):

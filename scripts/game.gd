@@ -198,7 +198,7 @@ func _do_kickoff(kind: String) -> Dictionary:
 			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
 			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
 			yl = maxf(c, 1.0)
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 66.0, "hang": 3.4, "kick_dist": 62.0}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 58.0, "hang": 3.4, "kick_dist": 62.0}
 			text = "%s kicks it deep." % k
 			_new_drive()
 	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
@@ -311,7 +311,7 @@ func make_sim() -> PlaySim:
 		if off.has("roster") and not ret.is_empty():
 			off = off.duplicate()
 			var ro: Dictionary = (off["roster"] as Dictionary).duplicate()
-			ro["QB"] = ret
+			ro["RB"] = ret
 			off["roster"] = ro
 	sim.setup(off, defense(), pending["off"], pending["def"], ctx, r)
 	if pending.has("return"):
@@ -603,7 +603,7 @@ func _punt(kind := "punt") -> Dictionary:
 			text = "%s angles it out of bounds: a %d-yard coffin corner, out at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
 		elif land < 95.0:
 			# he fields it: the punt and the return are played out as the next snap
-			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 40.0,
+			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 25.0,
 				"hang": 4.6 if kind == "pooch" else 3.9, "kick_dist": gross + 12.0, "pooch": kind == "pooch"}
 			text = "%s punts it away." % _who(pr, who)
 		else:
