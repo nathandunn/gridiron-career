@@ -214,7 +214,8 @@ func show_state(g: Game) -> void:
 		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
 	_clock.text = "Final" if g.over else "Q%d %d:%02d" % [g.quarter, s / 60, s % 60]
-	_sit.text = "" if g.over else "%s ball · %s" % [g.teams[g.poss]["name"], g.situation()]
+	var badge := (Career.mode_badge().to_upper() + "  ·  ") if Career.loaded else ""
+	_sit.text = badge + ("Final" if g.over else "%s ball · %s" % [g.teams[g.poss].get("club", g.teams[g.poss]["name"]), g.situation()])
 
 
 ## Fade the scoreboard out for the play and back in after the whistle.
@@ -380,10 +381,9 @@ func _build_controls() -> void:
 	bar.add_child(_button("Teams", func(): open_teams()))
 	bar.add_child(_button("Roster", func(): open_roster()))
 	bar.add_child(_button("Edit AI", func(): open_editor()))
-	bar.add_child(_button("Sim ×10", func(): main.run_batch(10)))
 	bar.add_child(_button("Box score", func(): if main.game != null: show_stats(main.game, "live", {}, main.reopen_panel())))
 	bar.add_child(_button("Log", func(): open_log()))
-	bar.add_child(_button("New game", func(): main.new_game(false)))
+	bar.add_child(_button("Menu", func(): main.show_menu()))
 	mark_speed(1.0)
 
 
@@ -496,13 +496,22 @@ var _confirm_new_season := false
 
 ## Season or exhibition, at the top of the set-up panel.
 func _mode_section(box: VBoxContainer) -> void:
-	_section(box, "Game type")
-	var mode := "Exhibition" if Career.exhibition() else "Season"
-	_chips(box, ["Season", "Exhibition"], mode, func(n):
-		Career.set_mode(String(n).to_lower())
-		_confirm_new_season = false
-		main.new_game(false))
+	_section(box, Career.mode_badge())
 	var dim := Color(0.8, 0.82, 0.85)
+	box.add_child(_button("Menu: season, exhibition or sim lab", func(): main.show_menu()))
+	if Career.sim_mode():
+		box.add_child(_label("Choose your coach (the play-calling scheme) and brains, tune the lab team's roster - swaps, upgrades, new robots - then simulate a game against each of these ten opponents. You only watch the results. The robots are copies: nothing breaks, nobody is paid, your season is untouched. Lab purse $%d." % Career.money(0), fs - 1, dim))
+		for o in Career.sim_opponents():
+			var ovr := 0.0
+			for s0 in o["starters"]:
+				ovr += Robot.overall(o["starters"][s0])
+			box.add_child(_label("   %s · coach %s · average %d" % [o["name"], o["coach"], int(ovr / 22.0)], fs - 2, Color(0.85, 0.9, 0.95)))
+		var lr := HFlowContainer.new()
+		lr.add_theme_constant_override("h_separation", 6)
+		box.add_child(lr)
+		lr.add_child(_button("New opponents", func(): Career.new_sim_opponents(); open_teams(true)))
+		lr.add_child(_button("New lab team ($2,000)", func(): Career.new_sim_lab(); main.new_game(false)))
+		return
 	if Career.exhibition():
 		box.add_child(_label("One game. Both sides are drafted fresh with a single $2,000 budget: spend yours below (or let the coach); the rival's coach has spent his. Nobody is paid and nothing carries over to your season.", fs - 1, dim))
 		box.add_child(_button("New exhibition teams", func(): Career.new_exhibition(); main.new_game(false)))
@@ -531,9 +540,25 @@ func _mode_section(box: VBoxContainer) -> void:
 
 
 func open_teams(pregame := false) -> void:
-	var box := _open("New game: set up the teams" if pregame else "Teams, coaches and brains")
-	box.add_child(_label("Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
-	if pregame:
+	var title := "New game: set up the teams" if pregame else "Teams, coaches and brains"
+	if pregame and Career.loaded:
+		match Career.mode():
+			"sim":
+				title = "Sim lab: schemes and roster"
+			"exhibition":
+				title = "Exhibition: %s vs %s" % [Career.team(0)["name"], Career.team(1)["name"]]
+			_:
+				title = ("Season over" if Career.season_over() else "Week %d of %d: %s vs %s" % [int(Career.season()["week"]), Career.WEEKS, Career.team(0)["name"], Career.team(1)["name"]])
+	if Career.loaded and Career.sim_mode():
+		_teams_side = 0
+	var box := _open(title)
+	var lab := Career.loaded and Career.sim_mode()
+	box.add_child(_label("Set up your coach (the AI that calls the plays), the brains at every position (the AI that plays them) and your robots, then Simulate." if lab else "Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
+	if pregame and lab:
+		var sim_b := _button("Simulate %d games" % Career.SIM_OPPONENTS, func(): main.run_sim())
+		sim_b.add_theme_font_size_override("font_size", fs + 4)
+		box.add_child(sim_b)
+	elif pregame:
 		var ko := _button("Kick off", func():
 			if Career.loaded and not Career.exhibition() and Career.season_over():
 				Career.new_season()
@@ -544,7 +569,7 @@ func open_teams(pregame := false) -> void:
 		_mode_section(box)
 	var sides := HBoxContainer.new()
 	box.add_child(sides)
-	for t in 2:
+	for t in (1 if lab else 2):
 		var b := _button("%s side%s" % [Career.team(t)["name"] if Career.loaded else Team.NAMES[t], " (you)" if t == 0 else ""], func(): _teams_side = t; open_teams(pregame), true)
 		b.button_pressed = _teams_side == t
 		b.add_theme_color_override("font_color", FieldView.COLORS[t].lightened(0.4))
@@ -561,8 +586,11 @@ func open_teams(pregame := false) -> void:
 	var c: Coach = Library.coach(cur)
 	if c != null:
 		box.add_child(_label(c.about, fs - 1, Color(0.8, 0.82, 0.85)))
-	_section(box, "Play calling (offense and defense)")
 	var cf := HFlowContainer.new()
+	if lab:
+		cf.visible = false
+	else:
+		_section(box, "Play calling (offense and defense)")
 	cf.add_theme_constant_override("h_separation", 6)
 	cf.add_theme_constant_override("v_separation", 6)
 	box.add_child(cf)
@@ -574,7 +602,8 @@ func open_teams(pregame := false) -> void:
 		"coach": "The coach's rules pick every play.",
 		"random": "Any play in the playbook, picked at random every down.",
 		"generated": "A brand-new play made up every down: random formation, routes, gaps, coverages and blitzes. Save the good ones from the Log."}
-	box.add_child(_label(why[main.calling[t]], fs - 1, Color(0.8, 0.82, 0.85)))
+	if not lab:
+		box.add_child(_label(why[main.calling[t]], fs - 1, Color(0.8, 0.82, 0.85)))
 	if Career.loaded:
 		_section(box, "Robots")
 		var tm := Career.team(t)
@@ -1120,8 +1149,15 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 					box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 2, MAGENTA if r["you"] else Color(0.8, 0.85, 0.9)))
 		_garage(box, func(): show_stats(g, mode, snap, back))
 	if mode == "final":
-		row.add_child(_button("Next game" if Career.loaded else "Play again", func(): close_overlay(); main.new_game(not Career.loaded)))
-		row.add_child(_button("Sim ×10 these teams", func(): close_overlay(); main.run_batch(10)))
+		if not Career.loaded:
+			row.add_child(_button("Play again", func(): close_overlay(); main.new_game()))
+		elif Career.exhibition():
+			row.add_child(_button("Another exhibition", func(): close_overlay(); Career.new_exhibition(); main.new_game(false)))
+		elif Career.season_over():
+			row.add_child(_button("Start next season", func(): close_overlay(); main.new_game(false)))
+		else:
+			row.add_child(_button("On to week %d" % int(Career.season().get("week", 1)), func(): close_overlay(); main.new_game(false)))
+		row.add_child(_button("Menu", func(): main.show_menu()))
 		_final_extras(box, g)
 
 
@@ -1427,9 +1463,84 @@ func show_batch(agg: Dictionary, names: Array) -> void:
 	_rules_section(box, agg["brain_tally"], agg["coach_tally"], [main.game.teams[0]["coach"], main.game.teams[1]["coach"]] if main.game != null else [Library.coach(main.coaches[0]), Library.coach(main.coaches[1])])
 	var row := HFlowContainer.new()
 	box.add_child(row)
-	row.add_child(_button("Sim ×10 again", func(): close_overlay(); main.run_batch(10)))
-	row.add_child(_button("Sim ×50", func(): close_overlay(); main.run_batch(50)))
 	row.add_child(_button("Teams", func(): open_teams()))
+
+
+## ---- the start menu -------------------------------------------------------------------------
+
+func open_menu() -> void:
+	Career.ensure()
+	var box := _open("Gridiron Career")
+	box.add_child(_label("Pick how you want to play. Each mode keeps its own teams and money: an exhibition or the sim lab never touches your season.", fs - 1, Color(0.8, 0.82, 0.85)))
+	# season
+	_section(box, "Season")
+	var sn := Career.season()
+	var you: Dictionary = Career.data["teams"][0]
+	var rec := Career._rec_text(sn.get("you", {"w": 0, "l": 0, "t": 0}))
+	var line := ""
+	if Career.season_over():
+		line = "Season over - champions: %s. Your record %s. Next: a new season with $2,000." % [sn.get("champion", "?"), rec]
+	else:
+		var opp: Dictionary = sn["clubs"][int(sn.get("opp", 0))]
+		line = "Week %d of %d · %s %s · purse $%d · next: %s (%s)" % [int(sn["week"]), Career.WEEKS, you["name"], rec, int(Career.data["money"][0]), opp["name"], opp["coach"]]
+	box.add_child(_label(line, fs, Color(0.9, 0.93, 1.0)))
+	box.add_child(_label("Six weeks against three rival clubs. Your robots, money and damage carry from week to week; you are paid for wins and what you do in each game.", fs - 2, Color(0.75, 0.8, 0.85)))
+	var sr := HFlowContainer.new()
+	sr.add_theme_constant_override("h_separation", 6)
+	box.add_child(sr)
+	var cont := _button("Continue season" if not Career.season_over() else "Start next season", func(): main.choose_mode("season"))
+	cont.add_theme_font_size_override("font_size", fs + 3)
+	sr.add_child(cont)
+	sr.add_child(_button("Really wipe it? Tap again" if _confirm_new_season else "New season (wipes this one)", func():
+		if _confirm_new_season:
+			_confirm_new_season = false
+			Career.new_season()
+			main.choose_mode("season")
+		else:
+			_confirm_new_season = true
+			open_menu()))
+	# exhibition
+	_section(box, "Exhibition")
+	box.add_child(_label("One game. Both teams drafted fresh with $2,000 each to spend; no pay, nothing carries over.", fs - 2, Color(0.75, 0.8, 0.85)))
+	var er := HFlowContainer.new()
+	er.add_theme_constant_override("h_separation", 6)
+	box.add_child(er)
+	er.add_child(_button("New exhibition", func(): Career.ensure(); Career.data["mode"] = "exhibition"; Career.new_exhibition(); main.choose_mode("exhibition")))
+	if Career.data.has("exhibition"):
+		er.add_child(_button("Back to the last one", func(): main.choose_mode("exhibition")))
+	# sim lab
+	_section(box, "Sim lab")
+	box.add_child(_label("Choose schemes and tune a lab team's roster, then simulate a game against each of ten opponents and read the results. Copies only: nothing breaks, no pay.", fs - 2, Color(0.75, 0.8, 0.85)))
+	box.add_child(_button("Open the sim lab", func(): main.choose_mode("sim")))
+
+
+## The sim lab's results: one game against each opponent.
+func show_sim(games: Array) -> void:
+	var agg := Batch.aggregate(games)
+	var n := int(agg["n"])
+	var me := String(Career.team(0)["name"])
+	var box := _open("Sim lab: %d-%d-%d" % [agg["wins"][0], agg["wins"][1], agg["ties"]])
+	box.add_child(_label("%s (coach %s) against %d opponents: won %d, lost %d, tied %d. Points a game %.1f - %.1f." % [me, main.coaches[0], n,
+		agg["wins"][0], agg["wins"][1], agg["ties"], float(agg["points"][0]) / n, float(agg["points"][1]) / n], fs + 1))
+	for g: Game in games:
+		var o: Dictionary = g.get_meta("opp", {})
+		var res := "W" if g.score[0] > g.score[1] else ("L" if g.score[0] < g.score[1] else "T")
+		box.add_child(_label("   %s %d-%d  vs %s (%s)" % [res, g.score[0], g.score[1], o.get("name", "?"), o.get("coach", "?")], fs - 1,
+			Color(0.5, 0.95, 0.6) if res == "W" else (Color(1.0, 0.5, 0.5) if res == "L" else Color(0.9, 0.9, 0.9))))
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	box.add_child(row)
+	row.add_child(_button("Simulate again", func(): main.run_sim()))
+	row.add_child(_button("Back to the lab", func(): main.new_game(false)))
+	row.add_child(_button("New opponents", func(): Career.new_sim_opponents(); main.new_game(false)))
+	row.add_child(_button("Menu", func(): main.show_menu()))
+	var names := [me, "Opponents"]
+	_section(box, "Box score (a game)")
+	_box_score(box, agg["stats"], [n, n], names)
+	_section(box, "Your players (a game)")
+	_player_tables(box, agg["pstats"][0], n, Team.build(0, main.coaches[0], main.picks[0]))
+	_section(box, "Your play calls (calls · yards a call)")
+	box.add_child(_label(_calls_line(agg["calls"][0], me), fs - 2))
 
 
 ## ---- the roster and each robot ----------------------------------------------------------------

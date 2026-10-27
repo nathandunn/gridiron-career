@@ -102,6 +102,8 @@ static func team(t: int) -> Dictionary:
 	ensure()
 	if exhibition():
 		return data["exhibition"]["teams"][t]
+	if sim_mode():
+		return data["sim"]["team"] if t == 0 else data["sim"]["opps"][int(data["sim"].get("idx", 0))]
 	if t == 1 and data.has("season"):
 		return data["season"]["clubs"][int(data["season"].get("opp", 0))]
 	return data["teams"][t]
@@ -128,6 +130,10 @@ static func regenerate(t: int) -> void:
 	var nt := new_team(t)
 	if exhibition():
 		data["exhibition"]["teams"][t] = nt
+	elif sim_mode():
+		var tm := team(t)
+		for k in ["starters", "bench", "special"]:
+			tm[k] = nt[k]
 	elif t == 1 and data.has("season"):
 		var club := team(1)
 		for k in ["starters", "bench"]:
@@ -284,6 +290,8 @@ static func money(t: int) -> int:
 	ensure()
 	if exhibition():
 		return int(data["exhibition"]["money"][t])
+	if sim_mode():
+		return int(data["sim"]["money"]) if t == 0 else 0
 	if t == 1 and data.has("season"):
 		return int(team(1).get("money", 0))
 	if not data.has("money"):
@@ -295,6 +303,9 @@ static func add_money(t: int, amount: int) -> void:
 	money(t)
 	if exhibition():
 		data["exhibition"]["money"][t] = int(data["exhibition"]["money"][t]) + amount
+	elif sim_mode():
+		if t == 0:
+			data["sim"]["money"] = int(data["sim"]["money"]) + amount
 	elif t == 1 and data.has("season"):
 		team(1)["money"] = int(team(1).get("money", 0)) + amount
 	else:
@@ -717,12 +728,73 @@ static func exhibition() -> bool:
 	return String(data.get("mode", "season")) == "exhibition" and data.has("exhibition")
 
 
-static func set_mode(mode: String) -> void:
+## The sim lab: your own lab team ($2,000 to fit it out) against ten drafted opponents; games are
+## only simulated, on copies of the robots - nothing breaks, nobody is paid, the season is untouched.
+static func sim_mode() -> bool:
+	return String(data.get("mode", "season")) == "sim" and data.has("sim")
+
+
+static func mode() -> String:
 	ensure()
-	data["mode"] = mode
-	if mode == "exhibition" and not data.has("exhibition"):
+	if exhibition():
+		return "exhibition"
+	if sim_mode():
+		return "sim"
+	return "season"
+
+
+## "Season · week 3 of 6" / "Exhibition · no pay" / "Sim lab"
+static func mode_badge() -> String:
+	match mode():
+		"exhibition":
+			return "Exhibition · no pay"
+		"sim":
+			return "Sim lab"
+	if season_over():
+		return "Season over"
+	return "Season · week %d of %d" % [int(season().get("week", 1)), WEEKS]
+
+
+static func set_mode(m: String) -> void:
+	ensure()
+	data["mode"] = m
+	if m == "exhibition" and not data.has("exhibition"):
 		new_exhibition()
+	if m == "sim" and not data.has("sim"):
+		new_sim_lab()
 	save()
+
+
+const SIM_OPPONENTS := 10
+
+
+static func new_sim_lab() -> void:
+	data["sim"] = {"team": new_team(0, -1, false), "money": EXHIBITION_BUDGET, "opps": [], "idx": 0}
+	data["sim"]["team"]["name"] = "Lab Rats"
+	new_sim_opponents()
+
+
+## Ten opponents, each drafted with $2,000 of upgrades fitted and its own coach.
+static func new_sim_opponents() -> void:
+	var opps: Array = []
+	var names := RIVAL_NAMES.duplicate()
+	names.shuffle()
+	for i in SIM_OPPONENTS:
+		var tm := new_team(1)
+		tm["name"] = String(names[i % names.size()]) + ("" if i < names.size() else " II")
+		tm["coach"] = _random_coach()
+		opps.append(tm)
+	data["sim"]["opps"] = opps
+	data["sim"]["idx"] = 0
+	save()
+
+
+static func sim_opponents() -> Array:
+	return data["sim"]["opps"] if sim_mode() else []
+
+
+static func set_sim_opponent(i: int) -> void:
+	data["sim"]["idx"] = i
 
 
 ## Fresh teams for a one-off game, $2,000 each; the rival's coach spends his at once.

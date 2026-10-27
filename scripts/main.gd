@@ -126,6 +126,12 @@ func _ready() -> void:
 				c3.look_at(Vector3(0, 1.2, 31.0))
 				c3.current = true
 			"kickoff": new_game(true)
+			"menu": show_menu()
+			"lab":
+				choose_mode("sim")
+			"simrun":
+				choose_mode("sim")
+				run_sim()
 			"fourth":
 				game.down = 4
 				game.to_go = 7.0
@@ -384,6 +390,8 @@ func _build_ui() -> void:
 	Career.ensure()      # the career's robots play in this game
 	# a game starts with setting up your side (test runs that play themselves skip it)
 	new_game(OS.get_cmdline_user_args().has("--autopick"))
+	if not OS.get_cmdline_user_args().has("--autopick") and not OS.get_cmdline_user_args().has("--nomenu"):
+		show_menu()
 
 
 ## A phone's canvas is in device pixels: scale the 2D up so the text is readable.
@@ -889,7 +897,62 @@ func run_batch(n: int) -> void:
 	hud.set_progress("Simulating %d games..." % n)
 
 
+## The sim lab: your lab team against each of the ten opponents in turn, simulated, on copies
+## of the robots (nothing breaks, nobody is paid).
+func run_sim() -> void:
+	if not Career.sim_mode():
+		return
+	hud.close_overlay(false)
+	_sim_run = true
+	_batch_left = Career.SIM_OPPONENTS
+	_batch_games = []
+	_batch_seed = randi()
+	paused = false
+	_phase = "pregame"
+	hud.set_progress("Simulating game 1 of %d..." % _batch_left)
+
+
+var _sim_run := false
+
+
+static func _copies(d: Dictionary) -> Dictionary:
+	for k in ["roster", "bench", "special"]:
+		if d.has(k):
+			d[k] = (d[k] as Variant).duplicate(true)
+	return d
+
+
+func _sim_step() -> void:
+	var i := _batch_games.size()
+	Career.set_sim_opponent(i)
+	var opp: Dictionary = Career.team(1)
+	var g := Batch.play_game(_copies(Team.build(0, coaches[0], picks[0], "coach")), _copies(Team.build(1, String(opp["coach"]), {}, "coach")), qlen, _batch_seed + i)
+	g.set_meta("opp", {"name": String(opp["name"]), "coach": String(opp["coach"])})
+	_batch_games.append(g)
+	_batch_left -= 1
+	hud.set_progress("Simulating game %d of %d..." % [_batch_games.size() + 1, Career.SIM_OPPONENTS] if _batch_left > 0 else "")
+	if _batch_left <= 0:
+		_sim_run = false
+		Career.set_sim_opponent(0)
+		hud.show_sim(_batch_games)
+
+
+## The start menu: season, exhibition or the sim lab.
+func show_menu() -> void:
+	hud.close_overlay(false)
+	_phase = "pregame"
+	hud.open_menu()
+
+
+func choose_mode(m: String) -> void:
+	Career.set_mode(m)
+	new_game(false)
+
+
 func _batch_step() -> void:
+	if _sim_run:
+		_sim_step()
+		return
 	var i := _batch_games.size()
 	var g := Batch.play_game(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, _batch_seed + i)
 	_batch_games.append(g)
