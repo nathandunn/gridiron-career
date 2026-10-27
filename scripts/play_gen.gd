@@ -281,6 +281,35 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 	return _finish(_name(rng), "defense", ", ".join(parts), lines)
 
 
+## A kick return, played out like any snap: the returner (in the QB's spot, `depth` yards behind
+## the line) has the ball, his ten form a wall in front of him, and the kicking team's eleven
+## come down on him from `gap` yards upfield. {off, def} Plays.
+static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0) -> Dictionary:
+	var lines: Array[String] = ["formation shotgun", "QB at 0 %s" % _f(-depth)]
+	# a wedge: the big men 5-6 yards in front of him, the quick ones closer and wider
+	var wall := {"LT": Vector2(-5, -depth + 5.5), "LG": Vector2(-2.5, -depth + 6.2), "C": Vector2(0, -depth + 6.6),
+		"RG": Vector2(2.5, -depth + 6.2), "RT": Vector2(5, -depth + 5.5),
+		"WR1": Vector2(-11, -depth + 4.5), "WR2": Vector2(11, -depth + 4.5), "WR3": Vector2(0, -depth + 3.0),
+		"TE": Vector2(-7, -depth + 3.5), "RB": Vector2(7, -depth + 3.5)}
+	for s in wall:
+		lines.append("%s at %s %s" % [s, _f(wall[s].x + rng.randf_range(-1.5, 1.5)), _f(wall[s].y)])
+	lines.append("kind run")
+	for s in wall:
+		lines.append("%s: block" % s)
+	var lane := _r(rng.randf_range(-4.0, 4.0))
+	lines.append("QB: run at %s" % _f(lane))
+	var off := _finish("Return", "offense", "Kick return up the %s" % ("middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")), lines)
+	var dl: Array[String] = ["kind blitz", "front off"]
+	var n := Play.DEFENSE_SLOTS.size()
+	for i in n:
+		var s: String = Play.DEFENSE_SLOTS[i]
+		var x := -22.0 + 44.0 * float(i) / float(n - 1) + rng.randf_range(-1.0, 1.0)
+		dl.append("%s: blitz" % s)
+		dl.append("%s at %s %s" % [s, _f(x), _f(gap + rng.randf_range(0.0, 3.0) + absf(x) * 0.06)])
+	var dfn := _finish("Coverage", "defense", "Kick coverage", dl)
+	return {"off": off["play"], "def": dfn["play"]}
+
+
 static func _finish(name: String, side: String, about: String, lines: Array[String]) -> Dictionary:
 	var text := "play \"%s\"\nabout \"%s\"\nside %s\n%s\n" % [name, about, side, "\n".join(lines)]
 	var p := Play.parse(text)

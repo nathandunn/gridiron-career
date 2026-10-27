@@ -773,10 +773,11 @@ func _next() -> void:
 		hud.show_game_over(game)
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
-	if game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off") or _choice.has("kick")):
+	var returning := not game.return_due.is_empty()     # a kick or punt return: nothing to call
+	if not returning and game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off") or _choice.has("kick")):
 		_open_picker("offense")
 		return
-	if game.calling_for(false) == "pick" and not (_choice.has("def") or _choice.has("coach_def") or _choice.has("kick")):
+	if not returning and game.calling_for(false) == "pick" and not (_choice.has("def") or _choice.has("coach_def") or _choice.has("kick")):
 		_open_picker("defense")
 		return
 	var poss_before := game.poss

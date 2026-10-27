@@ -128,14 +128,15 @@ func _kickoff(receiver: int) -> String:
 	var leg := _leg(1 - receiver, "K")
 	var edge := _return_edge(receiver)
 	var k := _who(_specialist(1 - receiver, "K"), "The kicker")
+	return_due = {}
 	if rng.randf() < clampf(0.55 + (leg - 60.0) * 0.012, 0.15, 0.9):
 		yl = 25.0
 		text = "%s boots it deep: touchback, %s start at the 25." % [k, who]
 	else:
-		yl = clampf(roundf(rng.randfn(27.0 + 5.0 * edge - (leg - 60.0) * 0.08, 7.0)), 6.0, 45.0)
-		if rng.randf() < 0.04 + 0.03 * maxf(edge, 0.0):
-			yl = roundf(rng.randf_range(48.0, 70.0))
-		text = "%s kicks off, returned by %s to the %s." % [k, _who(_returner(receiver), who), _spot_text(yl, receiver)]
+		# fielded short of the goal line: the return is played out as the next snap
+		yl = clampf(roundf(rng.randfn(6.0 - (leg - 60.0) * 0.08 - 2.0 * edge, 4.0)), 1.0, 15.0)
+		return_due = {"kind": "kickoff", "kicker": 1 - receiver, "catch": yl, "depth": 12.0, "gap": 38.0}
+		text = "%s kicks off; %s takes it at the %s." % [k, _who(_returner(receiver), who), _spot_text(yl, receiver)]
 	down = 1
 	to_go = 10.0
 	ball_x = 0.0
@@ -178,6 +179,8 @@ func calling_for(on_offense: bool) -> String:
 func next_snap(choice: Dictionary = {}) -> Dictionary:
 	if over:
 		return {"kind": "over"}
+	if not return_due.is_empty():
+		return _return_snap()
 	var oc: Coach = offense()["coach"]
 	var dc: Coach = defense()["coach"]
 	var od := _coach_call(oc, true, poss)
@@ -237,8 +240,86 @@ func make_sim() -> PlaySim:
 		"score_diff": score[poss] - score[1 - poss]}
 	var r := RandomNumberGenerator.new()
 	r.seed = rng.randi()
-	sim.setup(offense(), defense(), pending["off"], pending["def"], ctx, r)
+	var off := offense()
+	if pending.has("return"):
+		# the returner carries it, from the quarterback's spot in the return play
+		var ret := _returner(poss)
+		if off.has("roster") and not ret.is_empty():
+			off = off.duplicate()
+			var ro: Dictionary = (off["roster"] as Dictionary).duplicate()
+			ro["QB"] = ret
+			off["roster"] = ro
+	sim.setup(off, defense(), pending["off"], pending["def"], ctx, r)
 	return sim
+
+
+## ---- kick and punt returns, played out ----------------------------------------------------------
+var return_due := {}       # set by a kickoff or punt that is fielded: the next snap is the return
+
+
+func _return_snap() -> Dictionary:
+	var rd := return_due
+	return_due = {}
+	var catch_y := float(rd["catch"])
+	var depth := float(rd["depth"])
+	var los := catch_y + depth
+	var gap := minf(float(rd["gap"]), 97.0 - los)
+	var kr := PlayGen.kick_return(rng, depth, gap)
+	yl = los
+	down = 1
+	to_go = 10.0
+	ball_x = 0.0
+	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
+	pending = {"kind": "play", "return": rd, "off": kr["off"], "def": kr["def"], "off_name": nm, "def_name": "Coverage",
+		"off_text": "", "def_text": ""}
+	return pending
+
+
+func _finish_return(sim: PlaySim) -> Dictionary:
+	var r: Dictionary = sim.result
+	var rd: Dictionary = pending["return"]
+	var team := poss
+	var st: Dictionary = stats[team]
+	var catch_y := float(rd["catch"])
+	var spot := yl + float(r["y"])
+	var ret_yds := spot - catch_y
+	var who := _who(_returner(team), teams[team]["name"])
+	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
+	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
+	st["returns"] = int(st.get("returns", 0)) + 1
+	var e := {"kind": "play", "team": team, "off": nm, "def": "Coverage", "gain": ret_yds, "why": r["why"], "text": "",
+		"down": 1, "to_go": 10.0, "yl": catch_y, "return": true}
+	down_event = ""
+	var elapsed := float(r["t"])
+	if r["turnover"] != "":
+		st["turnovers"] = int(st["turnovers"]) + 1
+		st["fumbles"] = int(st["fumbles"]) + 1
+		e["text"] = "%s: %s FUMBLES on the return - the kicking team has it!" % [nm, who]
+		drive["result"] = "fumble"
+		_tick(elapsed, true)
+		ball_x = clampf(float(r["x"]), -HASH, HASH)
+		_take_over(clampf(spot, 1.0, 99.0))
+	elif r["td"] or spot >= 100.0:
+		st["td"] = int(st["td"]) + 1
+		_pts(team, 7)
+		drive["result"] = "return TD"
+		e["text"] = "%s: %s takes it ALL THE WAY - TOUCHDOWN! (%d yards)" % [nm, who, int(round(100.0 - catch_y))]
+		r["td"] = true
+		_tick(elapsed, true)
+		e["text"] += " " + _kickoff(1 - team)
+	else:
+		yl = clampf(spot, 1.0, 99.0)
+		down = 1
+		to_go = minf(10.0, 100.0 - yl)
+		ball_x = clampf(float(r["x"]), -HASH, HASH)
+		e["text"] = "%s: %s brings it back %d yards to the %s." % [nm, who, int(round(ret_yds)), _spot_text(yl, team)]
+		if ret_yds >= 20.0:
+			st["explosive"] = int(st["explosive"]) + 1
+		_tick(elapsed, true)
+	e["down_event"] = down_event
+	_log_play(e)
+	pending = {}
+	return e
 
 
 func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictionary:
@@ -425,12 +506,13 @@ func _punt() -> Dictionary:
 		_new_drive()
 		text = "%s punt into the end zone. Touchback." % who
 	else:
-		var edge := _return_edge(1 - kicker)
-		var ret := maxf(0.0, rng.randfn(6.0 + 4.0 * edge, 5.0)) if land < 95.0 else 0.0
-		if land < 95.0 and rng.randf() < 0.03 + 0.04 * maxf(edge, 0.0):
-			ret = rng.randf_range(25.0, 60.0)       # he breaks one
-		_take_over(maxf(land - ret, 1.0))
-		text = "%s punts %d yards, returned %d by %s to the %s." % [_who(pr, who), int(round(gross)), int(round(ret)), _who(_returner(poss), "the returner"), _spot_text(yl, poss)]
+		_take_over(land)
+		if land < 92.0:
+			# he fields it: the return is played out as the next snap
+			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 8.0}
+			text = "%s punts %d yards; %s fields it at the %s." % [_who(pr, who), int(round(gross)), _who(_returner(poss), "the returner"), _spot_text(yl, poss)]
+		else:
+			text = "%s punts %d yards, downed at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
 	ball_x = 0.0
 	_tick(9.0, true)
 	var e := {"kind": "punt", "text": text}
@@ -481,6 +563,8 @@ func finish(sim: PlaySim) -> Dictionary:
 	for pl: Dictionary in sim.parts_lost:
 		var p: PlaySim.P = sim.players[int(pl["idx"])]
 		broken.append({"team": p.team, "slot": p.slot, "name": String(p.robot.get("name", p.slot)), "part": pl["part"], "q": quarter, "id": String(p.robot.get("id", ""))})
+	if pending.has("return"):
+		return _finish_return(sim)
 	var op: Play = pending["off"]
 	var dp: Play = pending["def"]
 	var team := poss
