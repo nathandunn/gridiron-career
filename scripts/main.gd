@@ -538,6 +538,8 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 		hud.toast("TOUCHDOWN!\n%s" % who, 2.4)
 	elif r.get("safety", false):
 		hud.toast("SAFETY!\n7 points %s" % other, 2.2)
+	elif String(e.get("text", "")).begins_with("Touchback"):
+		hud.toast("TOUCHBACK", 1.6)
 	elif r.get("turnover", "") == "int":
 		hud.toast("INTERCEPTED!\nby %s · %s ball" % [String(r.get("carrier", "")), other], 2.2)
 	elif r.get("turnover", "") == "fumble":
@@ -569,7 +571,7 @@ func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scor
 	elif r.get("td", false) or scored >= 6:
 		line = "TOUCHDOWN, %s!" % who
 	elif r.get("safety", false):
-		line = "Safety! Two points for %s." % other
+		line = "Safety! Seven points for %s." % other
 	elif r.get("turnover", "") != "":
 		line = "Turnover! %s ball." % other
 	elif String(e.get("down_event", "")) == "downs":

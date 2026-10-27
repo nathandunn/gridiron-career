@@ -2565,7 +2565,8 @@ func _end(why: String, spot: Vector2) -> void:
 	if why == "td" and c != null and c.side == 1:
 		r["def_td"] = true
 	# a safety: the offense's carrier brought down in his own end zone
-	if c != null and c.side == 0 and spot.y <= -own_goal and why != "td":
+	# (not on a kick: a kick downed in the end zone, or a returner brought down in it, is a touchback)
+	if c != null and c.side == 0 and spot.y <= -own_goal and why != "td" and not air.get("kick", false):
 		r["safety"] = true
 	# yards for the box score
 	if c != null and c.side == 0 and not r["incomplete"]:
