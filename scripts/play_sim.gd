@@ -504,6 +504,22 @@ func step() -> void:
 		_end("whistle", carrier.pos if carrier != null else ball_pos)
 
 
+## A kick return opens with the kick: the ball comes down from `from` onto the returner (in the
+## quarterback's spot) after `hang` seconds while the coverage runs down and his wall waits; then
+## he runs it back - or, on a fair catch, the play ends where he catches it.
+func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void:
+	var qb: P = by_slot["o:QB"]
+	snapped = true
+	carry_slot = "QB"
+	carrier = null
+	ball_state = "air"
+	air = {"from": from, "to": qb.pos, "t0": t, "T": hang, "lob": not low, "dist": from.distance_to(qb.pos), "kick": true, "fair": fair}
+	air_target = qb
+	ball_pos = from
+	_say("the kick is away")
+	_fx("kick", null, qb, qb.pos)
+
+
 func run_to_end() -> Dictionary:
 	var guard := 0
 	while not over and guard < 2000:
@@ -946,7 +962,8 @@ func _blocker_ahead(p: P) -> P:
 	var best: P = null
 	var bd := 1e9
 	for m: P in _mates(p):
-		if m == p or m.down:
+		# a lead blocker on the move, not a lineman already locked up on the line
+		if m == p or m.down or m.engaged != null:
 			continue
 		var rel := m.pos - p.pos
 		if rel.y * dir > 0.3 and rel.y * dir < 7.0 and absf(rel.x) < 4.0:
@@ -1546,7 +1563,8 @@ func _drive_carrier(p: P) -> void:
 	var keeper := carry_slot == "QB" and p.slot == "QB" and not handed
 	if keeper:
 		since_handoff = t - 0.3
-	if (handed or keeper) and p == by_slot.get("o:" + carry_slot) and since_handoff < 0.25 + 0.6 * p.d("patience") and p.intent == "assignment" and p.side == 0:
+	# (his brain's running rules wait until he has pressed the hole he was called to)
+	if (handed or keeper) and p == by_slot.get("o:" + carry_slot) and since_handoff < 0.25 + 0.6 * p.d("patience") and p.intent in ["assignment", "follow_blocker", "daylight", "cut_upfield"] and p.side == 0 and p.pos.y < 0.5:
 		var gap := String(p.assign.get("gap", "middle"))
 		var gx: float = ball_x + gap_x_of(p.assign)
 		var aim := Vector2(gx, p.pos.y + 3.0)
@@ -1631,7 +1649,9 @@ func _steer(p: P) -> Vector2:
 		# behind the line on an inside run, going sideways is going nowhere
 		if p.side == 0 and p.pos.y < 1.0 and not gap_wide(p.assign):
 			s -= absf(h.x) * 1.2
-		s += h.dot(p.heading) * (0.6 - 0.3 * float(p.body["agility"]))
+		# keep going the way he is going unless something is clearly better: a runner who
+		# re-decides every tenth of a second dithers, cuts, slows and is caught behind the line
+		s += h.dot(p.heading) * float(K.get("commit", 0.6)) * (1.0 - 0.5 * float(p.body["agility"]))
 		if s > bs:
 			bs = s
 			best = h
@@ -1848,6 +1868,10 @@ func _drive_defense_run(p: P) -> void:
 func _drive_air(p: P) -> void:
 	var to: Vector2 = air["to"]
 	var left := float(air["t0"]) + float(air["T"]) - t
+	if air.get("kick", false) and p.side == 0:
+		# the returner waits under it; his wall holds its ground until he has it
+		_set_want(p, Vector2.ZERO)
+		return
 	if p == air_target:
 		# get there as the ball does, not before and past it
 		var dv := to - p.pos
@@ -2133,7 +2157,7 @@ func _resolve_blocks() -> void:
 		if carrier != null and carrier.side != e.side and e.pos.distance_to(carrier.pos) < 2.5 and not _qb_holding():
 			# the runner is right there: worth letting go of the block, unless the blocker has him sealed
 			var seal := (carrier.pos - e.pos).normalized().dot((b.pos - e.pos).normalized())
-			sh += (0.5 + 0.4 * e.d("aggression")) * (0.3 if seal > 0.3 else 1.0)
+			sh += (0.5 + 0.4 * e.d("aggression")) * (0.3 if seal > 0.3 else 1.0) * float(K.get("near_shed", 1.0)) * (0.6 if rate < 0.0 else 1.0)
 		if double:
 			sh *= 0.35
 		if not e_on_d:
@@ -2271,6 +2295,15 @@ func _ball() -> void:
 
 
 func _arrive() -> void:
+	if air.get("kick", false):
+		var rr: P = air_target
+		carrier = rr
+		ball_state = "held"
+		_say("fielded by the returner")
+		_fx("catch", rr, null, rr.pos)
+		if air.get("fair", false):
+			_end("fair", rr.pos)
+		return
 	var to: Vector2 = air["to"]
 	if air.get("away", false) or absf(to.x) > SIDELINE or to.y > to_goal + 10.0:
 		_incomplete("incomplete")

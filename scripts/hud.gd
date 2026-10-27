@@ -951,7 +951,8 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 		box.add_child(cl)
 		box.move_child(cl, grid.get_index())
 	if side == "offense" and g.down == 4:
-		grid.add_child(_punt_card(g, team, cw, String(coach.get("call", "")) == "punt"))
+		for pc in _punt_cards(g, team, cw, String(coach.get("call", "")) == "punt"):
+			grid.add_child(pc)
 	for ci in hand.size():
 		var g2: Dictionary = hand[ci]
 		var p: Play = g2["play"]
@@ -1023,7 +1024,8 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 
 
 ## 4th down: the punt, as the first card in the hand.
-func _punt_card(g: Game, team: int, cw: float, coach_pick: bool) -> Button:
+## A big text card for a special-teams call (no diagram): title, a line or two, the coach's mark.
+func _text_card(cw: float, title: String, sub: String, coach_pick: bool, on_pick: Callable) -> Button:
 	var card := Button.new()
 	card.focus_mode = Control.FOCUS_NONE
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
@@ -1038,25 +1040,81 @@ func _punt_card(g: Game, team: int, cw: float, coach_pick: bool) -> Button:
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.offset_left = 6
+	v.offset_right = -6
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	card.add_child(v)
-	var big := _label("PUNT", fs + 14, YELLOW)
+	var big := _label(title.to_upper(), fs + 8, YELLOW)
 	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	big.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(big)
-	var pr: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("P", {})
-	var leg := Robot.eff(pr, "leg") if not pr.is_empty() else 60.0
-	var gross := 43.0 + (leg - 60.0) * 0.22
-	var sub := "%s · about %d yards" % [("#%d %s" % [int(pr["number"]), pr["name"]]) if not pr.is_empty() else "Punter", int(round(gross))]
-	if g.yl + gross >= 100.0:
-		sub += " (touchback likely)"
-	for t2 in [sub, "COACH'S PICK" if coach_pick else "Give it to them deep"]:
+	for t2 in [sub, "COACH'S PICK" if coach_pick else ""]:
+		if t2 == "":
+			continue
 		var l := _label(t2, fs - 2, MAGENTA if t2 == "COACH'S PICK" else Color(0.85, 0.88, 0.92))
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		v.add_child(l)
-	card.pressed.connect(func(): main.pick_made("kick", "punt"))
+	card.pressed.connect(on_pick)
 	return card
+
+
+func _who_txt(r: Dictionary, fallback: String) -> String:
+	return ("#%d %s" % [int(r["number"]), r["name"]]) if not r.is_empty() else fallback
+
+
+## 4th down: the three punts, first in the hand.
+func _punt_cards(g: Game, team: int, cw: float, coach_pick: bool) -> Array:
+	var pr: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("P", {})
+	var leg := Robot.eff(pr, "leg") if not pr.is_empty() else 60.0
+	var gross := 43.0 + (leg - 60.0) * 0.22
+	var who := _who_txt(pr, "Your punter")
+	var sub := "%s · about %d yards, then a return" % [who, int(round(gross))]
+	if g.yl + gross >= 100.0:
+		sub += " (touchback likely)"
+	return [
+		_text_card(cw, "Punt", sub, coach_pick, func(): main.pick_made("kick", "punt")),
+		_text_card(cw, "Coffin corner", "Aimed out of bounds deep: a little shorter, but no return", false, func(): main.pick_made("kick", "coffin")),
+		_text_card(cw, "Pooch punt", "High and short to pin them deep: they fair-catch it", false, func(): main.pick_made("kick", "pooch")),
+	]
+
+
+## Kickoffs and returns: the kicking side picks the kick, the receiving side the return.
+func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
+	var tname := String(g.teams[team].get("club", g.teams[team]["name"]))
+	var box := _open(("%s kick off" if kind == "kickoff" else "%s return") % tname)
+	var vp := get_viewport().get_visible_rect().size
+	var inner := minf(vp.x - 16.0, 900.0) - 40.0
+	var cols := 2
+	var cw := floorf((inner - 8.0 * (cols - 1)) / cols)
+	var grid := GridContainer.new()
+	grid.columns = cols
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	box.add_child(grid)
+	if kind == "kickoff":
+		var k: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
+		var leg := Robot.eff(k, "leg") if not k.is_empty() else 60.0
+		var subs := {"deep": "%s, leg %d: as deep as he can - a touchback or a long return" % [_who_txt(k, "Your kicker"), int(leg)],
+			"squib": "Low and bouncing to their 20-30: no touchback, a short return",
+			"onside": "Short, for your side to recover: about 1 in 5, otherwise they start near midfield"}
+		for c in Game.KICKS:
+			grid.add_child(_text_card(cw, Game.KICKS[c], subs[c], c == coach_pick, func(): main.pick_made("kickoff", c)))
+	else:
+		var rd: Dictionary = g.return_due
+		var ret := g._returner(team)
+		var who := _who_txt(ret, "Your returner")
+		var deep := String(rd.get("kind", "")) == "kickoff" and float(rd.get("catch", 0.0)) <= 0.0
+		var subs := {"middle": "%s takes it straight up behind the wedge" % who,
+			"left": "The wall sets up to the left; he bends it that way",
+			"right": "The wall sets up to the right; he bends it that way",
+			"fair": "Take a knee in the end zone: ball at the 25" if deep else "Fair catch: your ball where he catches it, no return"}
+		box.add_child(_label("%s is coming: the ball comes down around the %s." % ["The kickoff" if String(rd.get("kind", "")) == "kickoff" else "The punt",
+			"end zone" if deep else g._spot_text(maxf(float(rd.get("catch", 20.0)), 1.0), team)], fs - 1, Color(0.85, 0.88, 0.92)))
+		box.move_child(box.get_child(box.get_child_count() - 1), grid.get_index())
+		for c in Game.RETURNS:
+			var title := "Take a knee" if c == "fair" and deep else ("Fair catch" if c == "fair" else String(Game.RETURNS[c]))
+			grid.add_child(_text_card(cw, title, subs[c], c == coach_pick, func(): main.pick_made("return", c)))
 
 
 func _play_subline(p: Play) -> String:

@@ -159,14 +159,22 @@ static func offense(rng: RandomNumberGenerator) -> Dictionary:
 		lines.append("%s at %s %s" % [s, _f(at[s].x), _f(at[s].y)])
 	var about := ""
 	if rng.randf() < 0.42:
-		# a run: aim anywhere along the line
-		var keeper := rng.randf() < 0.15
-		var hole := _r(rng.randf_range(-6.0, 6.0) if keeper else rng.randf_range(-12.0, 12.0))
+		# a run: aim anywhere along the line. The back lines up in the backfield, where a handoff
+		# can reach him (a back split out wide took the ball late and ran sideways into a tackle)
+		var bx := _r(rng.randf_range(-3.0, 3.0))
+		var by := _r(rng.randf_range(-7.5, -4.5))
+		for i in lines.size():
+			if lines[i].begins_with("RB at "):
+				lines[i] = "RB at %s %s" % [_f(bx), _f(by)]
+		at["RB"] = Vector2(bx, by)
+		var keeper := rng.randf() < 0.05
+		var hole := _r(rng.randf_range(-6.0, 6.0) if keeper else rng.randf_range(-9.0, 9.0))
 		lines.append("kind run")
 		lines.append("OL: block run")
 		var pulls := 0
 		for g in ["LG", "RG", "LT", "RT"]:
-			if rng.randf() < 0.18 and pulls < 2:
+			# pulling is for getting outside: on an inside run a pulled guard just leaves a man free
+			if rng.randf() < (float(PlaySim.K.get("gen_pull", 0.25)) if absf(hole) >= 4.0 else 0.0) and pulls < 2:
 				lines.append("%s: pull %s" % [g, "right" if hole > 0.0 else "left"])
 				pulls += 1
 		if keeper:
@@ -284,19 +292,28 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 ## A kick return, played out like any snap: the returner (in the QB's spot, `depth` yards behind
 ## the line) has the ball, his ten form a wall in front of him, and the kicking team's eleven
 ## come down on him from `gap` yards upfield. {off, def} Plays.
-static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0) -> Dictionary:
+static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0, call := "middle") -> Dictionary:
 	var lines: Array[String] = ["formation shotgun", "QB at 0 %s" % _f(-depth)]
 	# a wedge: the big men 5-6 yards in front of him, the quick ones closer and wider
 	var wall := {"LT": Vector2(-5, -depth + 5.5), "LG": Vector2(-2.5, -depth + 6.2), "C": Vector2(0, -depth + 6.6),
 		"RG": Vector2(2.5, -depth + 6.2), "RT": Vector2(5, -depth + 5.5),
 		"WR1": Vector2(-11, -depth + 4.5), "WR2": Vector2(11, -depth + 4.5), "WR3": Vector2(0, -depth + 3.0),
 		"TE": Vector2(-7, -depth + 3.5), "RB": Vector2(7, -depth + 3.5)}
+	var lane := 0.0
+	match call:
+		"left":
+			lane = _r(rng.randf_range(-8.0, -5.0))
+		"right":
+			lane = _r(rng.randf_range(5.0, 8.0))
+		"fair":
+			lane = 0.0
+		_:
+			lane = _r(rng.randf_range(-2.0, 2.0))
 	for s in wall:
-		lines.append("%s at %s %s" % [s, _f(wall[s].x + rng.randf_range(-1.5, 1.5)), _f(wall[s].y)])
+		lines.append("%s at %s %s" % [s, _f(wall[s].x + lane * 0.35 + rng.randf_range(-1.5, 1.5)), _f(wall[s].y)])
 	lines.append("kind run")
 	for s in wall:
 		lines.append("%s: block" % s)
-	var lane := _r(rng.randf_range(-4.0, 4.0))
 	lines.append("QB: run at %s" % _f(lane))
 	var off := _finish("Return", "offense", "Kick return up the %s" % ("middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")), lines)
 	var dl: Array[String] = ["kind blitz", "front off"]

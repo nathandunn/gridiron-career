@@ -121,28 +121,90 @@ func _who(r: Dictionary, fallback: String) -> String:
 	return ("#%d %s" % [int(r["number"]), r["name"]]) if not r.is_empty() else fallback
 
 
+## A kickoff is owed: the kicking side calls it (deep, squib or onside) as the next snap, and
+## the kick and the return are then played out on the field.
+var kick_due := {}
+
+
 func _kickoff(receiver: int) -> String:
 	poss = receiver
-	var who: String = teams[receiver]["name"]
-	var text := ""
-	var leg := _leg(1 - receiver, "K")
-	var edge := _return_edge(receiver)
-	var k := _who(_specialist(1 - receiver, "K"), "The kicker")
 	return_due = {}
-	if rng.randf() < clampf(0.55 + (leg - 60.0) * 0.012, 0.15, 0.9):
-		yl = 25.0
-		text = "%s boots it deep: touchback, %s start at the 25." % [k, who]
-	else:
-		# fielded short of the goal line: the return is played out as the next snap
-		yl = clampf(roundf(rng.randfn(6.0 - (leg - 60.0) * 0.08 - 2.0 * edge, 4.0)), 1.0, 15.0)
-		return_due = {"kind": "kickoff", "kicker": 1 - receiver, "catch": yl, "depth": 12.0, "gap": 38.0}
-		text = "%s kicks off; %s takes it at the %s." % [k, _who(_returner(receiver), who), _spot_text(yl, receiver)]
+	kick_due = {"receiver": receiver}
+	yl = 25.0
 	down = 1
 	to_go = 10.0
 	ball_x = 0.0
-	_new_drive()
+	var text := "%s kick off to %s." % [teams[1 - receiver]["name"], teams[receiver]["name"]]
 	_say(text)
 	return text
+
+
+const KICKS := {"deep": "Deep kick", "squib": "Squib kick", "onside": "Onside kick"}
+const RETURNS := {"middle": "Return up the middle", "left": "Return left", "right": "Return right", "fair": "Fair catch / take a knee"}
+const PUNTS := {"punt": "Punt", "coffin": "Coffin corner", "pooch": "Pooch punt"}
+
+
+## What the kicking side's coach calls: onside only when it is late and he must have the ball.
+func coach_kick() -> String:
+	var kicker := 1 - int(kick_due.get("receiver", poss))
+	var diff: int = score[kicker] - score[1 - kicker]
+	if quarter == 4 and clock < 180.0 and diff < 0 and diff >= -14:
+		return "onside"
+	return "deep"
+
+
+## What the returning side's coach calls.
+func coach_return() -> String:
+	var rd := return_due
+	if String(rd.get("kind", "")) == "kickoff" and float(rd.get("catch", 0.0)) < -3.0:
+		return "fair"          # deep in the end zone: take a knee
+	if String(rd.get("kind", "")) == "punt" and float(rd.get("catch", 50.0)) < 10.0:
+		return "fair"
+	if bool(rd.get("pooch", false)):
+		return "fair"
+	return ["middle", "middle", "left", "right"][rng.randi() % 4]
+
+
+func _do_kickoff(kind: String) -> Dictionary:
+	var receiver := int(kick_due["receiver"])
+	var kicker := 1 - receiver
+	kick_due = {}
+	var leg := _leg(kicker, "K")
+	var k := _who(_specialist(kicker, "K"), teams[kicker]["name"])
+	var who: String = teams[receiver]["name"]
+	var text := ""
+	poss = receiver
+	down = 1
+	to_go = 10.0
+	ball_x = 0.0
+	match kind:
+		"onside":
+			var got := rng.randf() < 0.22
+			if got:
+				poss = kicker
+				yl = 47.0
+				text = "%s ONSIDE KICK - and %s RECOVER at the %s!" % [k, teams[kicker]["name"], _spot_text(47.0, kicker)]
+			else:
+				yl = 53.0
+				text = "%s onside kick - %s fall on it at the %s." % [k, who, _spot_text(53.0, receiver)]
+			_new_drive()
+		"squib":
+			var c := clampf(roundf(rng.randfn(22.0, 5.0)), 10.0, 34.0)
+			yl = c
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 10.0, "gap": 22.0, "hang": 1.7, "low": true, "kick_dist": 45.0}
+			text = "%s squibs it along the ground." % k
+			_new_drive()
+		_:
+			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
+			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
+			yl = maxf(c, 1.0)
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 66.0, "hang": 3.4, "kick_dist": 62.0}
+			text = "%s kicks it deep." % k
+			_new_drive()
+	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
+	_say(text)
+	_log_play(e)
+	return e
 
 
 ## "own 32" / "50" / "Blue 40", from the side with the ball.
@@ -179,20 +241,22 @@ func calling_for(on_offense: bool) -> String:
 func next_snap(choice: Dictionary = {}) -> Dictionary:
 	if over:
 		return {"kind": "over"}
+	if not kick_due.is_empty():
+		return _do_kickoff(String(choice.get("kickoff", coach_kick())))
 	if not return_due.is_empty():
-		return _return_snap()
+		return _return_snap(String(choice.get("return", coach_return())))
 	var oc: Coach = offense()["coach"]
 	var dc: Coach = defense()["coach"]
 	var od := _coach_call(oc, true, poss)
 	var dd := _coach_call(dc, false, 1 - poss)
 	if calling_for(true) == "pick" and (choice.has("off") or choice.has("kick")):
-		od = {"kind": "punt" if choice.has("kick") else "play", "play": od.get("play", "")}
+		od = {"kind": "punt" if choice.has("kick") else "play", "play": od.get("play", ""), "punt": String(choice.get("kick", "punt"))}
 		if od["play"] == "":
 			od["play"] = Library.plays_for("offense")[0]
 	if String(od["kind"]) == "kneel":
 		return _kneel()
 	if String(od["kind"]) == "punt":
-		return _punt()
+		return _punt(String(od.get("punt", "punt")) if PUNTS.has(String(od.get("punt", "punt"))) else "punt")
 	var op: Play = Library.play(od["play"])
 	var dp: Play = Library.play(dd.get("play", ""))
 	if dp == null:
@@ -250,6 +314,9 @@ func make_sim() -> PlaySim:
 			ro["QB"] = ret
 			off["roster"] = ro
 	sim.setup(off, defense(), pending["off"], pending["def"], ctx, r)
+	if pending.has("return"):
+		var rd: Dictionary = pending["return"]
+		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)))
 	return sim
 
 
@@ -257,19 +324,22 @@ func make_sim() -> PlaySim:
 var return_due := {}       # set by a kickoff or punt that is fielded: the next snap is the return
 
 
-func _return_snap() -> Dictionary:
+func _return_snap(call := "middle") -> Dictionary:
 	var rd := return_due
 	return_due = {}
+	rd["call"] = call
+	rd["fair"] = call == "fair"
 	var catch_y := float(rd["catch"])
 	var depth := float(rd["depth"])
 	var los := catch_y + depth
 	var gap := minf(float(rd["gap"]), 97.0 - los)
-	var kr := PlayGen.kick_return(rng, depth, gap)
+	rd["from_y"] = minf(-depth + float(rd.get("kick_dist", 55.0)), 99.0 - los)
+	var kr := PlayGen.kick_return(rng, depth, gap, call)
 	yl = los
 	down = 1
 	to_go = 10.0
 	ball_x = 0.0
-	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
+	var nm := ("Kickoff" if String(rd["kind"]) == "kickoff" else "Punt") + " · " + String(RETURNS.get(call, call)).to_lower()
 	pending = {"kind": "play", "return": rd, "off": kr["off"], "def": kr["def"], "off_name": nm, "def_name": "Coverage",
 		"off_text": "", "def_text": ""}
 	return pending
@@ -283,8 +353,26 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 	var catch_y := float(rd["catch"])
 	var spot := yl + float(r["y"])
 	var ret_yds := spot - catch_y
+	if String(r["why"]) == "fair" or (spot <= 0.0 and r["turnover"] == ""):
+		# a fair catch, a knee in the end zone, or downed in it: no return
+		var kick := String(rd["kind"]) == "kickoff"
+		var at := (25.0 if kick else 20.0) if catch_y <= 0.0 or spot <= 0.0 else catch_y
+		var what := ("Touchback" if catch_y <= 0.0 or spot <= 0.0 else "Fair catch")
+		yl = at
+		down = 1
+		to_go = 10.0
+		ball_x = 0.0
+		var e0 := {"kind": "play", "team": team, "off": "Return", "def": "Coverage", "gain": 0.0, "why": "fair", "return": true,
+			"text": "%s: %s, %s ball at the %s." % [what, _who(_returner(team), teams[team]["name"]), teams[team]["name"], _spot_text(yl, team)], "down": 1, "to_go": 10.0, "yl": at}
+		_tick(float(r["t"]), true)
+		e0["down_event"] = ""
+		_log_play(e0)
+		pending = {}
+		return e0
 	var who := _who(_returner(team), teams[team]["name"])
 	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
+	if String(rd.get("call", "middle")) in ["left", "right"]:
+		nm += " (%s)" % rd["call"]
 	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
 	st["returns"] = int(st.get("returns", 0)) + 1
 	var e := {"kind": "play", "team": team, "off": nm, "def": "Coverage", "gain": ret_yds, "why": r["why"], "text": "",
@@ -486,12 +574,16 @@ func _coach_sense(id: String, a: Array, team: int, on_offense: bool) -> bool:
 
 ## A punt: rolled, not played out. About 43 yards, a short return; into the end zone is a
 ## touchback at the 20.
-func _punt() -> Dictionary:
+func _punt(kind := "punt") -> Dictionary:
 	var kicker := poss
 	var pr := _specialist(kicker, "P")
 	var leg := _leg(kicker, "P")
 	var acc := Robot.eff(pr, "accuracy") if not pr.is_empty() else 60.0
 	var gross := 43.0 + (leg - 60.0) * 0.22 + rng.randfn(0.0, 5.5 * clampf(1.3 - (acc - 60.0) / 80.0, 0.6, 1.6))
+	if kind == "pooch":
+		gross = minf(gross, 100.0 - yl - rng.randf_range(6.0, 14.0))     # high and short, to pin them
+	elif kind == "coffin":
+		gross = minf(gross - 4.0, 100.0 - yl - rng.randf_range(3.0, 12.0) + rng.randfn(0.0, 3.0 * clampf(1.3 - (acc - 60.0) / 80.0, 0.6, 1.6)))
 	var land := yl + gross
 	var st: Dictionary = stats[poss]
 	st["punts"] = int(st.get("punts", 0)) + 1
@@ -507,10 +599,13 @@ func _punt() -> Dictionary:
 		text = "%s punt into the end zone. Touchback." % who
 	else:
 		_take_over(land)
-		if land < 92.0:
-			# he fields it: the return is played out as the next snap
-			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 8.0}
-			text = "%s punts %d yards; %s fields it at the %s." % [_who(pr, who), int(round(gross)), _who(_returner(poss), "the returner"), _spot_text(yl, poss)]
+		if kind == "coffin":
+			text = "%s angles it out of bounds: a %d-yard coffin corner, out at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
+		elif land < 95.0:
+			# he fields it: the punt and the return are played out as the next snap
+			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 40.0,
+				"hang": 4.6 if kind == "pooch" else 3.9, "kick_dist": gross + 12.0, "pooch": kind == "pooch"}
+			text = "%s punts it away." % _who(pr, who)
 		else:
 			text = "%s punts %d yards, downed at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
 	ball_x = 0.0

@@ -127,6 +127,13 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"kickpick":
+				game.kick_due = {"receiver": 1}
+				_open_special("kickoff", 0)
+			"retpick":
+				game.return_due = {"kind": "kickoff", "catch": -2.0}
+				game.poss = 0
+				_open_special("return", 0)
 			"lab":
 				choose_mode("sim")
 			"simrun":
@@ -409,6 +416,8 @@ func reopen_panel() -> Callable:
 	match _phase:
 		"picking":
 			return func(): _open_picker(_picking_side)
+		"special":
+			return func(): _open_special(_special_kind, _special_team)
 		"injury":
 			return func(): hud.open_injuries(_broken_mine())
 	return Callable()
@@ -485,6 +494,21 @@ func _open_picker(side: String) -> void:
 		# test hook: pick for the person (a random card)
 		var kind := "off" if side == "offense" else "def"
 		(func(): pick_made(kind, hand[randi() % hand.size()])).call_deferred()
+
+
+var _special_kind := ""
+var _special_team := 0
+
+
+func _open_special(kind: String, team: int) -> void:
+	_special_kind = kind
+	_special_team = team
+	_skip_drive = false
+	_phase = "special"
+	var coach := game.coach_kick() if kind == "kickoff" else game.coach_return()
+	hud.open_special(game, team, kind, coach)
+	if OS.get_cmdline_user_args().has("--autopick"):
+		(func(): pick_made(kind, coach)).call_deferred()
 
 
 ## From the picker: kind is "off" / "def" (value: a generated {text, play}), "kick" ("punt" /
@@ -701,6 +725,8 @@ func _resume_label() -> String:
 	match _phase:
 		"picking":
 			return "Call the %s play" % _picking_side
+		"special":
+			return "Call the kick" if _special_kind == "kickoff" else "Call the return"
 		"qbreak":
 			return "Continue to the next quarter"
 		"injury":
@@ -715,6 +741,8 @@ func resume_panel() -> void:
 	match _phase:
 		"picking":
 			hud.open_picker(game, _pick_team, _picking_side, _hand, _coach_hint)
+		"special":
+			_open_special(_special_kind, _special_team)
 		"qbreak":
 			hud.show_stats(game, "quarter", game.quarter_ends[_seen_q - 1])
 		"pregame":
@@ -781,7 +809,16 @@ func _next() -> void:
 		hud.show_game_over(game)
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
-	var returning := not game.return_due.is_empty()     # a kick or punt return: nothing to call
+	# kickoffs and returns: the side that calls its own plays picks the kick, or the return
+	if not game.kick_due.is_empty():
+		var kt := 1 - int(game.kick_due["receiver"])
+		if String(game.teams[kt].get("calling", "coach")) == "pick" and not _choice.has("kickoff"):
+			_open_special("kickoff", kt)
+			return
+	var returning := not game.return_due.is_empty()
+	if returning and String(game.teams[game.poss].get("calling", "coach")) == "pick" and not _choice.has("return"):
+		_open_special("return", game.poss)
+		return
 	if not returning and game.calling_for(true) == "pick" and not (_choice.has("off") or _choice.has("coach_off") or _choice.has("kick")):
 		_open_picker("offense")
 		return
@@ -798,6 +835,8 @@ func _next() -> void:
 			hud.toast("FIELD GOAL IS GOOD!" if bool(snap.get("good", false)) else "NO GOOD!", 2.0)
 		elif snap["kind"] == "punt":
 			hud.toast("PUNT", 1.2)
+		elif snap["kind"] == "kickoff":
+			hud.toast(String(snap.get("call", "KICKOFF")).to_upper(), 1.2)
 		_phase = "kick"
 		_wait = AFTER * 1.2
 		if poss_before != game.poss:
@@ -821,7 +860,7 @@ func _process(delta: float) -> void:
 		_batch_step()
 		return
 	# a panel that is waiting on you was closed: nothing happens until you come back to it
-	if _phase in ["picking", "qbreak", "injury", "pregame"]:
+	if _phase in ["picking", "special", "qbreak", "injury", "pregame"]:
 		hud.show_resume(not hud.any_overlay(), _resume_label())
 		return
 	if paused or hud.any_overlay() and _phase != "over":

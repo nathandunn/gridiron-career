@@ -60,6 +60,9 @@ func on_action(kind: String) -> void:
 			play("servo", -9.0)
 		"throw":
 			play("whoosh", -6.0)
+		"kick":
+			play("thump", 0.0, 0.7)
+			play("whoosh", -3.0, 0.8)
 		"catch", "int", "handoff":
 			play("thump", -4.0)
 		"part_off":
