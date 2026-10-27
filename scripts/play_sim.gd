@@ -1881,10 +1881,13 @@ func _drive_air(p: P) -> void:
 		# well out in front of him when he catches it
 		if p == air_target:
 			_set_want(p, Vector2.ZERO)
-		elif left > 0.6:
-			_set_want(p, Vector2(0, 1) * p.spd() * 0.4)
+		elif p.block_target != null:
+			# go and meet your man, keeping between him and the returner
+			var tgt := p.block_target
+			var aim := tgt.pos + (air_target.pos - tgt.pos).normalized() * 1.0
+			_toward(p, aim, 0.75 if left > 0.5 else 1.0, 0.0)
 		else:
-			_set_want(p, Vector2.ZERO)
+			_set_want(p, Vector2(0, 1) * p.spd() * 0.4)
 		return
 	if p == air_target:
 		# get there as the ball does, not before and past it
@@ -1915,6 +1918,9 @@ func _drive_air(p: P) -> void:
 ## Who blocks whom, re-decided every tenth of a second.
 func _assign_blocks() -> void:
 	if int(t / DT) % 3 != 0:
+		return
+	if air.get("kick", false):
+		_assign_return_blocks()
 		return
 	var blocking: Array = []
 	var carrier_side := carrier.side if carrier != null else 0
@@ -2009,6 +2015,48 @@ func _assign_blocks() -> void:
 		taken[e.idx] = int(taken.get(e.idx, 0)) + 1
 	for b: P in free:
 		if not done.has(b.idx):
+			b.block_target = null
+
+
+## A kick return: every man in the returner's wall takes one man in the coverage - the nearest
+## free one, however far off he still is - and goes to meet him; pairs that are locked up stay so.
+func _assign_return_blocks() -> void:
+	var ret: P = air_target
+	var blockers: Array = []
+	for p: P in off:
+		if p != ret and not p.down:
+			blockers.append(p)
+	var taken := {}
+	for b: P in blockers:
+		if b.engaged != null:
+			b.block_target = b.engaged
+			taken[b.engaged.idx] = true
+	var pairs: Array = []
+	for b: P in blockers:
+		if b.engaged != null:
+			continue
+		for e: P in dfn:
+			if e.down or taken.has(e.idx):
+				continue
+			# already past the returner: no use chasing him
+			if ret != null and (e.pos.y - ret.pos.y) < -1.0:
+				continue
+			var cost := b.pos.distance_to(e.pos) + absf(e.pos.x - b.pos.x) * 0.6
+			if b.block_target == e:
+				cost -= 4.0
+			pairs.append([cost, b, e])
+	pairs.sort_custom(func(x, y): return x[0] < y[0])
+	var done := {}
+	for pr in pairs:
+		var b: P = pr[1]
+		var e: P = pr[2]
+		if done.has(b.idx) or taken.has(e.idx):
+			continue
+		b.block_target = e
+		done[b.idx] = true
+		taken[e.idx] = true
+	for b: P in blockers:
+		if b.engaged == null and not done.has(b.idx):
 			b.block_target = null
 
 

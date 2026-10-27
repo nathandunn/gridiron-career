@@ -198,7 +198,7 @@ func _do_kickoff(kind: String) -> Dictionary:
 			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
 			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
 			yl = maxf(c, 1.0)
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 58.0, "hang": 3.4, "kick_dist": 62.0}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 48.0, "hang": 3.4, "kick_dist": 62.0}
 			text = "%s kicks it deep." % k
 			_new_drive()
 	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
