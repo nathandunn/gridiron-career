@@ -515,7 +515,7 @@ func _mode_section(box: VBoxContainer) -> void:
 	else:
 		var opp := Career.team(1)
 		box.add_child(_label("Week %d of %d. This week: %s (coach %s, %s)." % [int(sn["week"]), Career.WEEKS, opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
-		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid what that game's damage costs to put right, plus 20% of $2,000 for a win ($400), 15% for a tie, 10% for a loss. Each rival plays twice; best record is champion.", fs - 1, dim))
+		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid $3,000 for a win, $2,000 for a tie, $1,000 for a loss - repairs, upgrades and new robots come out of it. Each rival plays twice; best record is champion.", fs - 1, dim))
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
 	var ns := _button("Really start over? Tap again" if _confirm_new_season else "Start a new season", func():

@@ -340,7 +340,7 @@ static func buy_repair(t: int, robot: Dictionary, k: String) -> bool:
 ## Pay between games: whatever the damage costs to put right (every lost or worn part back to
 ## new), plus a share of the $2,000 budget for the result - 20% for a win, 15% a tie, 10% a loss -
 ## to spend on upgrades or new robots. So winning buys you a 20% better team for next week.
-const RESULT_SHARE := {"win": 0.20, "tie": 0.15, "loss": 0.10}
+const RESULT_PAY := {"win": 3000, "tie": 2000, "loss": 1000}   # flat: repairs come out of it
 
 
 static func damage_bill(t: int) -> int:
@@ -366,13 +366,8 @@ static func pay_game(g: Game) -> Array:
 	for t in 2:
 		var lines: Array = []
 		var res := "tie" if w < 0 else ("win" if w == t else "loss")
-		var share := int(STARTER_BUDGET * float(RESULT_SHARE[res]))
-		lines.append(["%s (%d%% of $%d)" % [{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(RESULT_SHARE[res] * 100), STARTER_BUDGET], share])
-		# only this game's damage: what was already broken before kickoff was yours to fix
-		var bill := maxi(damage_bill(t) - int(data.get("bill_before", [0, 0])[t]), 0)
-		if bill > 0:
-			lines.append(["Damage covered", bill])
-		var total := share + bill
+		var total := int(RESULT_PAY[res])
+		lines.append([{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], total])
 		add_money(t, total)
 		slips.append({"lines": lines, "total": total, "name": String(team(t)["name"]), "purse": money(t)})
 	save()

@@ -78,9 +78,8 @@ shows each part's condition.
 
 **Money.** One purse per side. A **junk spare costs $25** (or whatever is left: you can always
 field a robot); a **real (Stock) part costs money** (head $200, core $250, arm $120, leg $140) and
-a worn part costs a share of that to repair. After a season game each side is paid **what that
-game's damage costs to put right, plus a share of $2,000 for the result: 20% ($400) for a win,
-15% a tie, 10% a loss** - so a win is worth a 20% upgrade once the repairs are done. Junk a robot
+a worn part costs a share of that to repair. After a season game each side is paid **$3,000 for a win, $2,000 for a tie, $1,000 for a
+loss**; repairs, upgrades and new robots come out of that. Junk a robot
 started with is not damage (replace it on his page if you like); a junk spare bolted on in a game
 is. The final box score lists every damaged robot with a *Fix* button (and *Fix everybody*), the
 upgrade buttons, and a **robot market** of three robots for sale (new ones after every game) that
