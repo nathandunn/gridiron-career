@@ -14,14 +14,16 @@ const SKILLS := {
 	"QB": ["arm", "accuracy"], "RB": ["hands", "elusiveness"], "WR": ["hands", "routes"],
 	"TE": ["hands", "blocking"], "OL": ["blocking"], "DL": ["rush", "tackling"],
 	"LB": ["tackling", "coverage"], "CB": ["coverage", "ball_skills"], "S": ["coverage", "tackling"],
+	"K": ["leg", "accuracy"], "P": ["leg", "accuracy"],
 }
 const LABEL := {"speed": "Speed", "strength": "Strength", "toughness": "Toughness", "iq": "IQ",
 	"arm": "Arm", "accuracy": "Accuracy", "hands": "Hands", "elusiveness": "Elusiveness", "routes": "Routes",
 	"blocking": "Blocking", "rush": "Pass rush", "tackling": "Tackling", "coverage": "Coverage",
-	"ball_skills": "Ball skills"}
+	"ball_skills": "Ball skills", "leg": "Leg"}
 ## What each rating does in the engine, for the details screen.
 const RATING_HELP := {
 	"speed": "Top speed and acceleration",
+	"leg": "How far he kicks: punt distance, deep kickoffs and touchbacks",
 	"strength": "Blocking and shedding, making and breaking tackles, the pile",
 	"toughness": "Gets up faster after a knock-down; holds on to the ball",
 	"iq": "Caps the brain's vision, patience and discipline; quicker reactions",
@@ -94,8 +96,8 @@ const PART_RATINGS := {
 	"head": ["iq"], "core": ["strength", "toughness"],
 	"larm": ["hands", "tackling", "arm", "accuracy", "ball_skills", "blocking"],
 	"rarm": ["hands", "tackling", "arm", "accuracy", "ball_skills", "blocking"],
-	"lleg": ["speed", "elusiveness", "routes", "coverage", "rush"],
-	"rleg": ["speed", "elusiveness", "routes", "coverage", "rush"],
+	"lleg": ["speed", "elusiveness", "routes", "coverage", "rush", "leg"],
+	"rleg": ["speed", "elusiveness", "routes", "coverage", "rush", "leg"],
 }
 
 

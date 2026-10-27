@@ -126,6 +126,10 @@ func _ready() -> void:
 				c3.look_at(Vector3(0, 1.2, 31.0))
 				c3.current = true
 			"kickoff": new_game(true)
+			"fourth":
+				game.down = 4
+				game.to_go = 7.0
+				_open_picker("offense")
 			"sim2end": sim_to_end()
 			"injuries":
 				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0

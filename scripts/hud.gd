@@ -570,7 +570,7 @@ func open_teams(pregame := false) -> void:
 		var b := _button(Game.CALLING_LABEL[mode], func(): main.calling[t] = mode; main.library_changed(); open_teams(pregame), true)
 		b.button_pressed = main.calling[t] == mode
 		cf.add_child(b)
-	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. On 4th down you can punt.",
+	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. On 4th down the first card is the punt.",
 		"coach": "The coach's rules pick every play.",
 		"random": "Any play in the playbook, picked at random every down.",
 		"generated": "A brand-new play made up every down: random formation, routes, gaps, coverages and blitzes. Save the good ones from the Log."}
@@ -921,6 +921,8 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 		var cl := _label("COACH'S PICK: %s would call %s (his rule: %s). The marked card is the closest to it in this hand.%s" % [coach_name, String(coach.get("call", "")), String(coach.get("why", "-")), gtxt], fs - 1, MAGENTA)
 		box.add_child(cl)
 		box.move_child(cl, grid.get_index())
+	if side == "offense" and g.down == 4:
+		grid.add_child(_punt_card(g, team, cw, String(coach.get("call", "")) == "punt"))
 	for ci in hand.size():
 		var g2: Dictionary = hand[ci]
 		var p: Play = g2["play"]
@@ -987,12 +989,45 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
-	if side == "offense" and g.down == 4:
-		var pb := _button("Punt it away", func(): main.pick_made("kick", "punt"))
-		pb.add_theme_color_override("font_color", YELLOW)
-		row.add_child(pb)
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
 	box.add_child(_label("Yellow is the run, the blue line is the line of scrimmage. Defense: shaded zones, dashed lines for man coverage, pink arrows for blitzers.", fs - 3, Color(0.7, 0.74, 0.78)))
+
+
+## 4th down: the punt, as the first card in the hand.
+func _punt_card(g: Game, team: int, cw: float, coach_pick: bool) -> Button:
+	var card := Button.new()
+	card.focus_mode = Control.FOCUS_NONE
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	card.custom_minimum_size = Vector2(cw, cw * 0.62 + fs * 2.6 + 10.0)
+	for st in ["normal", "hover", "pressed"]:
+		var sb := (card.get_theme_stylebox(st) as StyleBoxFlat)
+		if sb != null:
+			sb = sb.duplicate()
+			sb.border_color = MAGENTA if coach_pick else YELLOW
+			sb.set_border_width_all(3 if coach_pick else 2)
+			card.add_theme_stylebox_override(st, sb)
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	card.add_child(v)
+	var big := _label("PUNT", fs + 14, YELLOW)
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	big.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.add_child(big)
+	var pr: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("P", {})
+	var leg := Robot.eff(pr, "leg") if not pr.is_empty() else 60.0
+	var gross := 43.0 + (leg - 60.0) * 0.22
+	var sub := "%s · about %d yards" % [("#%d %s" % [int(pr["number"]), pr["name"]]) if not pr.is_empty() else "Punter", int(round(gross))]
+	if g.yl + gross >= 100.0:
+		sub += " (touchback likely)"
+	for t2 in [sub, "COACH'S PICK" if coach_pick else "Give it to them deep"]:
+		var l := _label(t2, fs - 2, MAGENTA if t2 == "COACH'S PICK" else Color(0.85, 0.88, 0.92))
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(l)
+	card.pressed.connect(func(): main.pick_made("kick", "punt"))
+	return card
 
 
 func _play_subline(p: Play) -> String:
@@ -1430,6 +1465,10 @@ func open_roster(t := -1) -> void:
 		for g in sg[1]:
 			for s in Play.GROUP_SLOTS.get(g, [g]):
 				box.add_child(_robot_row(starters[s], s))
+	_section(box, "Special teams")
+	var sp := Career.special(_roster_team)
+	for s in ["K", "P"]:
+		box.add_child(_robot_row(sp[s], s))
 	_section(box, "Bench")
 	for r in tm["bench"]:
 		box.add_child(_robot_row(r, ""))

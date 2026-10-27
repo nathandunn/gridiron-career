@@ -77,18 +77,65 @@ func defense() -> Dictionary:
 ## A kickoff (to start a half, and after every score): mostly a touchback at the 25, otherwise a
 ## return to somewhere around the 15-40, now and then a long one. Not played out: rolled.
 ## Returns a line for the log.
+## Special teams. With career robots the kicker's and punter's Leg (with his leg parts) sets
+## how far it goes, and the return comes from the receiving side's best returner against the
+## kicking side's coverage; without them, everyone is a 60.
+func _specialist(t: int, s: String) -> Dictionary:
+	return (teams[t].get("special", {}) as Dictionary).get(s, {})
+
+
+func _leg(t: int, s: String) -> float:
+	var r := _specialist(t, s)
+	return Robot.eff(r, "leg") if not r.is_empty() else 60.0
+
+
+func _returner(t: int) -> Dictionary:
+	var best := {}
+	var bs := -1.0
+	var roster: Dictionary = teams[t].get("roster", {})
+	for s in roster:
+		var r: Dictionary = roster[s]
+		if String(r.get("group", "")) in ["RB", "WR", "CB"] and Robot.can_play(r):
+			var v := Robot.eff(r, "speed") + 0.6 * Robot.eff(r, "elusiveness" if Robot.keys(r).has("elusiveness") else "speed")
+			if v > bs:
+				bs = v
+				best = r
+	return best
+
+
+## How much better the returner is than the coverage (about -1..1).
+func _return_edge(receiver: int) -> float:
+	var ret := _returner(receiver)
+	var rv := (Robot.eff(ret, "speed") - 60.0) / 40.0 if not ret.is_empty() else 0.0
+	var cov := 0.0
+	var n := 0
+	var roster: Dictionary = teams[1 - receiver].get("roster", {})
+	for s in roster:
+		if String(roster[s].get("group", "")) in ["LB", "S", "CB"]:
+			cov += (Robot.eff(roster[s], "speed") - 60.0) / 40.0
+			n += 1
+	return clampf(rv - (cov / n if n > 0 else 0.0), -1.0, 1.0)
+
+
+func _who(r: Dictionary, fallback: String) -> String:
+	return ("#%d %s" % [int(r["number"]), r["name"]]) if not r.is_empty() else fallback
+
+
 func _kickoff(receiver: int) -> String:
 	poss = receiver
 	var who: String = teams[receiver]["name"]
 	var text := ""
-	if rng.randf() < 0.55:
+	var leg := _leg(1 - receiver, "K")
+	var edge := _return_edge(receiver)
+	var k := _who(_specialist(1 - receiver, "K"), "The kicker")
+	if rng.randf() < clampf(0.55 + (leg - 60.0) * 0.012, 0.15, 0.9):
 		yl = 25.0
-		text = "Kickoff: touchback, %s start at the 25." % who
+		text = "%s boots it deep: touchback, %s start at the 25." % [k, who]
 	else:
-		yl = clampf(roundf(rng.randfn(27.0, 7.0)), 6.0, 45.0)
-		if rng.randf() < 0.04:
+		yl = clampf(roundf(rng.randfn(27.0 + 5.0 * edge - (leg - 60.0) * 0.08, 7.0)), 6.0, 45.0)
+		if rng.randf() < 0.04 + 0.03 * maxf(edge, 0.0):
 			yl = roundf(rng.randf_range(48.0, 70.0))
-		text = "Kickoff returned to the %s." % _spot_text(yl, receiver)
+		text = "%s kicks off, returned by %s to the %s." % [k, _who(_returner(receiver), who), _spot_text(yl, receiver)]
 	down = 1
 	to_go = 10.0
 	ball_x = 0.0
@@ -359,7 +406,11 @@ func _coach_sense(id: String, a: Array, team: int, on_offense: bool) -> bool:
 ## A punt: rolled, not played out. About 43 yards, a short return; into the end zone is a
 ## touchback at the 20.
 func _punt() -> Dictionary:
-	var gross := 43.0 + rng.randfn(0.0, 5.5)
+	var kicker := poss
+	var pr := _specialist(kicker, "P")
+	var leg := _leg(kicker, "P")
+	var acc := Robot.eff(pr, "accuracy") if not pr.is_empty() else 60.0
+	var gross := 43.0 + (leg - 60.0) * 0.22 + rng.randfn(0.0, 5.5 * clampf(1.3 - (acc - 60.0) / 80.0, 0.6, 1.6))
 	var land := yl + gross
 	var st: Dictionary = stats[poss]
 	st["punts"] = int(st.get("punts", 0)) + 1
@@ -374,9 +425,12 @@ func _punt() -> Dictionary:
 		_new_drive()
 		text = "%s punt into the end zone. Touchback." % who
 	else:
-		var ret := maxf(0.0, rng.randfn(6.0, 5.0)) if land < 95.0 else 0.0
-		_take_over(land - ret)
-		text = "%s punt %d yards, returned %d to the %s." % [who, int(round(gross)), int(round(ret)), _spot_text(yl, poss)]
+		var edge := _return_edge(1 - kicker)
+		var ret := maxf(0.0, rng.randfn(6.0 + 4.0 * edge, 5.0)) if land < 95.0 else 0.0
+		if land < 95.0 and rng.randf() < 0.03 + 0.04 * maxf(edge, 0.0):
+			ret = rng.randf_range(25.0, 60.0)       # he breaks one
+		_take_over(maxf(land - ret, 1.0))
+		text = "%s punts %d yards, returned %d by %s to the %s." % [_who(pr, who), int(round(gross)), int(round(ret)), _who(_returner(poss), "the returner"), _spot_text(yl, poss)]
 	ball_x = 0.0
 	_tick(9.0, true)
 	var e := {"kind": "punt", "text": text}

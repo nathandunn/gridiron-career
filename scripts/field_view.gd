@@ -313,6 +313,8 @@ func _ensure_player(p: PlaySim.P) -> void:
 ## head: block (linemen), dome (backs, corners) or visor; extras pick the trimmings.
 const STYLE := {
 	"QB": {"w": 1.0, "leg": 1.0, "chest": 1.0, "sh": 0.95, "head": "visor", "extras": ["antenna", "monocle"]},
+	"K": {"w": 0.86, "leg": 1.22, "chest": 0.88, "sh": 0.85, "head": "dome", "extras": ["antenna"]},
+	"P": {"w": 0.9, "leg": 1.25, "chest": 0.9, "sh": 0.88, "head": "visor", "extras": ["antenna"]},
 	"RB": {"w": 1.08, "leg": 0.86, "chest": 1.05, "sh": 1.0, "head": "dome", "extras": ["thigh_pads", "ram_bar"]},
 	"WR": {"w": 0.84, "leg": 1.16, "chest": 0.9, "sh": 0.85, "head": "visor", "extras": ["antennas", "gloves"]},
 	"TE": {"w": 1.12, "leg": 1.06, "chest": 1.1, "sh": 1.1, "head": "visor", "extras": ["gloves", "neck_roll"]},

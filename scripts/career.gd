@@ -78,6 +78,7 @@ static func new_team(t: int, seed_v := -1, fit := true) -> Dictionary:
 		bench.append(r)
 		n += 1
 	var tm := {"name": TEAM_NAMES[t], "starters": starters, "bench": bench}
+	tm["special"] = _make_special(rng, t, used)
 	if fit:
 		starter_upgrades(tm, rng)
 	return tm
@@ -138,10 +139,39 @@ static func regenerate(t: int) -> void:
 
 
 ## Find a robot by id on either team: {team, robot, where ("starter"/"bench"), slot}.
+## Special teams: a kicker (kickoffs) and a punter. Teams from before get theirs when first asked.
+static func _make_special(rng: RandomNumberGenerator, t: int, used := {}) -> Dictionary:
+	var out := {}
+	for s in ["K", "P"]:
+		var n := rng.randi_range(1, 19)
+		var tries := 0
+		while used.has(n) and tries < 40:
+			n = rng.randi_range(1, 19)
+			tries += 1
+		used[n] = true
+		var r := Robot.make(rng, s, n, "t%d-%s%d" % [t, s, rng.randi() % 100000], true)
+		r["ratings"]["leg"] = int(clampf(roundf(rng.randfn(66.0, 12.0)), 35.0, 97.0))
+		out[s] = r
+	return out
+
+
+static func special(t: int) -> Dictionary:
+	var tm := team(t)
+	if not tm.has("special"):
+		var rng := RandomNumberGenerator.new()
+		rng.randomize()
+		tm["special"] = _make_special(rng, t)
+		save()
+	return tm["special"]
+
+
 static func find(id: String) -> Dictionary:
 	ensure()
 	for t in 2:
 		var tm: Dictionary = team(t)
+		for s in special(t):
+			if String(tm["special"][s]["id"]) == id:
+				return {"team": t, "robot": tm["special"][s], "where": "special", "slot": s}
 		for s in tm["starters"]:
 			if String(tm["starters"][s]["id"]) == id:
 				return {"team": t, "robot": tm["starters"][s], "where": "starter", "slot": s}
@@ -413,7 +443,7 @@ static func market() -> Array:
 static func restock() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.randomize()
-	var groups := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S"]
+	var groups := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S", "K", "P"]
 	groups.shuffle()
 	var out: Array = []
 	for g in groups.slice(0, 3):
@@ -434,7 +464,11 @@ static func buy_robot(t: int, id: String) -> bool:
 				return false
 			market().erase(r)
 			r.erase("price")
-			team(t)["bench"].append(r)
+			if String(r["group"]) in ["K", "P"]:
+				r["slot"] = String(r["group"])
+				special(t)[String(r["group"])] = r     # a new kicker or punter takes the job
+			else:
+				team(t)["bench"].append(r)
 			save()
 			return true
 	return false
@@ -453,6 +487,9 @@ static func team_of(robot: Dictionary) -> int:
 				return t
 		for b in tm["bench"]:
 			if is_same(b, robot):
+				return t
+		for s in tm.get("special", {}):
+			if is_same(tm["special"][s], robot):
 				return t
 	return -1
 
