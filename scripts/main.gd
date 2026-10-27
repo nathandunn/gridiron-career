@@ -848,9 +848,13 @@ func _next() -> void:
 		return
 	sim = game.make_sim()
 	var team: String = Team.NAMES[game.poss]
-	hud.show_call("%s: %s   vs   %s" % [team, snap["off_name"], snap["def_name"]])
 	view.set_play(sim, game.poss, game.yl, game.to_go)
-	announcer.presnap(game, String(snap["off_name"]), String(snap["def_name"]))
+	if snap.has("return"):
+		# no down and distance on a kick: just who is kicking and how it will be run back
+		hud.show_call("%s · %s receive" % [String(snap["off_name"]), String(game.teams[game.poss].get("club", team))])
+	else:
+		hud.show_call("%s: %s   vs   %s" % [team, snap["off_name"], snap["def_name"]])
+		announcer.presnap(game, String(snap["off_name"]), String(snap["def_name"]))
 	_phase = "presnap"
 	_wait = PRESNAP
 

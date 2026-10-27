@@ -254,10 +254,17 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 		_players[k]["tilt"] = 0.0
 	if s == null:
 		_ball.visible = false
+		_los.visible = true
+		_sticks.visible = true
 		_place_line(_los, yard_line)
 		_place_line(_sticks, minf(yard_line + to_go, 100.0))
 		return
 	_ball.visible = true
+	# a kick or punt return has no line of scrimmage or first-down marker of its own: the
+	# return play's "line" is only where the returner's wall sets up, so the lines are hidden
+	var kick: bool = s.air.get("kick", false)
+	_los.visible = not kick
+	_sticks.visible = not kick
 	for p in s.players:
 		_ensure_player(p)
 		_players[p.idx]["root"].visible = true
@@ -1264,11 +1271,16 @@ func _part_off(p: PlaySim.P, part: String, by: PlaySim.P) -> void:
 	add_child(piece)
 	piece.global_transform = xf
 	n.visible = false
-	# the part glows hot, so it shows where it lies for the rest of the game
-	var hot := _glow(Color(1.0, 0.45, 0.1), 1.6)
+	# the part keeps its team's colour and glows, so you can see whose it was and where it lies
+	# for the rest of the game; its torn-off end burns orange
+	var tc: Color = COLORS[clampi(p.team, 0, 1)]
+	var hot := _glow(tc.lightened(0.1), 1.0)
+	var ember := _glow(Color(1.0, 0.45, 0.1), 2.2)
+	var k := 0
 	for c in piece.get_children():
 		if c is MeshInstance3D:
-			(c as MeshInstance3D).material_override = hot
+			(c as MeshInstance3D).material_override = ember if k == 0 and piece.get_child_count() > 1 else hot
+			k += 1
 	_ring(world(_cur.get(p.idx, p.pos), 0.06))
 	var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 	if by != null:
