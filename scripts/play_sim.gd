@@ -525,6 +525,15 @@ func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void
 	air = {"from": from, "to": qb.pos, "t0": t, "T": hang, "lob": not low, "dist": from.distance_to(qb.pos), "kick": true, "fair": fair}
 	air_target = qb
 	ball_pos = from
+	var lx := 1e9
+	var rx := -1e9
+	for e: P in dfn:
+		if e.pos.x < lx:
+			lx = e.pos.x
+			air["contain_l"] = e.idx
+		if e.pos.x > rx:
+			rx = e.pos.x
+			air["contain_r"] = e.idx
 	_say("the kick is away")
 	_fx("kick", null, qb, qb.pos)
 
@@ -1706,34 +1715,44 @@ func _pursue(p: P) -> void:
 	var c := carrier
 	var d := p.pos.distance_to(c.pos)
 	var aim := _intercept_point(p, c)
-	# stay on top: a deep defender keeps the carrier in front of him
+	# kick coverage: the two outside men keep contain - outside him, turning him back inside
+	if air.get("kick", false) and p.side == 1 and (p.idx == int(air.get("contain_l", -1)) or p.idx == int(air.get("contain_r", -1))):
+		var side := -1.0 if p.idx == int(air.get("contain_l", -1)) else 1.0
+		if (p.pos.x - c.pos.x) * side < 1.5 or d > 6.0:
+			aim.x = c.pos.x + side * maxf(2.5, absf(aim.x - c.pos.x))
 	var dir := _attack_dir(c)
 	if (p.pos.y - c.pos.y) * dir > 1.5 and d > 4.0 and (p.intent == "stay_deep" or (p.group == "S" and p.d("discipline") > 0.6 and d > 7.0)):
 		# keep leverage: match him across the field, stay between him and the goal, close in
 		var lead := d / p.spd()
 		aim = Vector2(c.pos.x + c.vel.x * lead, c.pos.y + dir * clampf(d * 0.35, 1.0, 5.0))
-	_toward(p, aim, 1.0, 0.0)
+	# break down as he closes, rather than overrun the runner and let him cut back past
+	_toward(p, aim, 0.8 if d < 4.5 and d > 1.6 and air.get("kick", false) else 1.0, 0.0)
 
 
 ## Where to run to meet the carrier: the earliest point on his line (at his current velocity)
 ## that I can reach no later than he does; if none, cut him off further along.
 func _intercept_point(p: P, c: P) -> Vector2:
-	# assume he is heading for the end zone as much as where he is going now
+	# where he is really going: his velocity over the last half second (a runner on a straight
+	# line keeps going that way at that pace), only a little bent towards the end zone
 	var dirg := _attack_dir(c)
-	var v := c.vel.lerp(Vector2(0, dirg) * c.spd(), 0.45)
+	var v := c.vel
+	if c.hist.size() >= 12:
+		v = (c.pos - (c.hist[c.hist.size() - 12] as Vector2)) / (11.0 * DT)
+	var straight := clampf(v.normalized().dot(c.vel.normalized()) if v.length() > 0.5 and c.vel.length() > 0.5 else 0.0, 0.0, 1.0)
+	v = v.lerp(c.vel, 0.4).lerp(Vector2(0, dirg) * c.spd(), 0.12 + 0.2 * (1.0 - straight))
 	var close := p.pos.distance_to(c.pos)
-	if close < 3.5:
+	if close < 3.0:
 		# break down and go at him: aim at where he'll be in a blink
-		return c.pos + v * (0.08 + 0.05 * close)
+		return c.pos + v * (0.1 + 0.06 * close)
 	var sp := p.spd() * (0.92 + 0.08 * p.d("vision")) * float(K["pursuit"])
 	var tt := 0.0
-	while tt <= 2.5:
+	while tt <= 4.0:
 		var q := c.pos + v * tt
 		if p.pos.distance_to(q) <= sp * tt + TACKLE_R:
 			return q
 		tt += 0.1
-	# can't catch him on that line: aim at where he's going, ahead of him by the goal line
-	return c.pos + v * 1.2
+	# can't catch him on that line: run to cut him off further along it
+	return c.pos + v * minf(close / maxf(sp, 1.0) + 0.5, 4.0)
 
 
 ## Defense before the throw.
@@ -2198,12 +2217,17 @@ func _resolve_blocks() -> void:
 			goal = air["to"]
 		var dirE := (goal - e.pos).normalized()
 		var bpow := 0.0
+		var bskill := 0.0
 		for x: P in bl:
 			bpow += float(x.body["power"]) * (1.08 if x.intent == "drive_block" else 1.0)
+			bskill = maxf(bskill, _skill(x, "blocking"))
 		var epow := float(e.body["power"]) * (1.15 if e.intent == "bull_rush" else 1.0)
+		# the man's craft counts as well as his strength: a rusher's rush against a blocker's
+		# blocking (each -1 at a rating of 20 .. +1 at 100)
+		var eskill := _skill(e, "rush" if pass_play and not handed else "tackling")
 		var double := bl.size() >= 2
 		var run_block := not pass_play or handed or ball_out_of_qb()
-		var rate := 0.35 + (epow - bpow) * 3.0
+		var rate := 0.35 + (epow - bpow) * 3.0 + (eskill - bskill) * float(K.get("skill_push", 1.2))
 		if run_block:
 			rate -= 0.5
 		if double:
@@ -2222,7 +2246,8 @@ func _resolve_blocks() -> void:
 			e.mem["_push"] = dirE * rate
 			e.mem["_bface"] = dirE
 		# shed
-		var sh := 0.12 + (epow - float(b.body["power"])) * 0.6 + float(e.body["agility"]) * 0.12
+		var sh := 0.12 + (epow - float(b.body["power"])) * 0.6 + float(e.body["agility"]) * 0.12 \
+			+ (eskill - bskill) * float(K.get("skill_shed", 0.35))
 		if e.intent == "speed_rush":
 			sh += float(e.body["agility"]) * 0.15
 		if e.intent == "shed" or e.group in ["LB", "S", "CB"]:
@@ -2243,6 +2268,13 @@ func _resolve_blocks() -> void:
 	for b: P in players:
 		if b.engaged != null and not b.engaged.blockers.has(b) and b.engaged.engaged != b:
 			b.engaged = null
+
+
+## A rating as -1 (20) .. 0 (60) .. +1 (100), with his parts; 0 for a body with no robot.
+func _skill(p: P, k: String) -> float:
+	if p.robot.is_empty() or not (p.robot.get("ratings", {}) as Dictionary).has(k):
+		return 0.0
+	return clampf((Robot.eff(p.robot, k) - 60.0) / 40.0, -1.2, 1.5)
 
 
 func ball_out_of_qb() -> bool:

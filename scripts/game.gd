@@ -308,19 +308,73 @@ func make_sim() -> PlaySim:
 	var r := RandomNumberGenerator.new()
 	r.seed = rng.randi()
 	var off := offense()
+	var dfn := defense()
 	if pending.has("return"):
-		# the returner carries it, from the quarterback's spot in the return play
+		# special teams: the returner and a return team, and the coverage, drawn from the bench
+		# and the starters who play special teams (not the quarterback or the linemen first)
 		var ret := _returner(poss)
 		if off.has("roster") and not ret.is_empty():
 			off = off.duplicate()
-			var ro: Dictionary = (off["roster"] as Dictionary).duplicate()
-			ro["RB"] = ret
-			off["roster"] = ro
-	sim.setup(off, defense(), pending["off"], pending["def"], ctx, r)
+			off["roster"] = _special_unit(poss, "return", ret)
+		if dfn.has("roster"):
+			dfn = dfn.duplicate()
+			dfn["roster"] = _special_unit(1 - poss, "cover", {})
+	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
 	if pending.has("return"):
 		var rd: Dictionary = pending["return"]
 		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)))
 	return sim
+
+
+## A special-teams unit for side t: "return" (the offense slots, the returner in the RB spot)
+## or "cover" (the defense slots). Healthy bench robots go first, then starters from the
+## positions that usually play special teams; each slot takes the best-suited body available.
+const ST_WANT := {
+	"return": {"LT": ["OL", "DL", "TE", "LB"], "LG": ["OL", "DL", "TE", "LB"], "C": ["OL", "DL", "TE", "LB"],
+		"RG": ["OL", "DL", "TE", "LB"], "RT": ["OL", "DL", "TE", "LB"], "TE": ["TE", "LB", "RB"], "QB": ["LB", "S", "TE"],
+		"WR1": ["WR", "CB", "S", "RB"], "WR2": ["WR", "CB", "S", "RB"], "WR3": ["RB", "WR", "CB", "S"]},
+	"cover": {"DE1": ["LB", "DL", "TE"], "DT1": ["DL", "LB", "TE"], "DT2": ["DL", "LB", "TE"], "DE2": ["LB", "DL", "TE"],
+		"OLB1": ["LB", "S", "RB"], "MLB": ["LB", "S", "TE"], "OLB2": ["LB", "S", "RB"], "CB1": ["CB", "WR", "S"],
+		"CB2": ["CB", "WR", "S"], "FS": ["S", "CB", "LB"], "SS": ["S", "LB", "CB"]},
+}
+const ST_STARTERS := ["LB", "S", "TE", "RB", "CB", "WR", "DL", "OL"]
+
+
+func _special_unit(t: int, role: String, ret: Dictionary) -> Dictionary:
+	var tm: Dictionary = teams[t]
+	var pool: Array = []
+	for b in tm.get("bench", []):
+		if Robot.can_play(b) and not is_same(b, ret):
+			pool.append(b)
+	var starters: Array = []
+	for s0 in tm["roster"]:
+		var r0: Dictionary = tm["roster"][s0]
+		if String(r0.get("group", "")) != "QB" and not is_same(r0, ret) and Robot.can_play(r0):
+			starters.append(r0)
+	starters.sort_custom(func(a1, b1): return ST_STARTERS.find(String(a1["group"])) < ST_STARTERS.find(String(b1["group"])))
+	pool.append_array(starters)
+	var unit := {}
+	var used := {}
+	var want: Dictionary = ST_WANT[role]
+	for slot in want:
+		var best := {}
+		var best_rank := 99
+		for cand in pool:
+			if used.has(String(cand["id"])):
+				continue
+			var rank := (want[slot] as Array).find(String(cand["group"]))
+			if rank < 0:
+				rank = 9
+			if rank < best_rank:
+				best_rank = rank
+				best = cand
+		if best.is_empty():
+			best = (tm["roster"] as Dictionary).get(slot, {})
+		used[String(best.get("id", ""))] = true
+		unit[slot] = best
+	if role == "return":
+		unit["RB"] = ret
+	return unit
 
 
 ## ---- kick and punt returns, played out ----------------------------------------------------------
