@@ -224,6 +224,32 @@ static func effective_overall(robot: Dictionary) -> float:
 	return o
 
 
+## His overall as he would be: "healthy" (every lost part replaced with a new Stock one),
+## "junk" (junk spares on the lost parts) or "now" (as he is). Missing and junk parts count.
+static func overall_if(robot: Dictionary, state := "now") -> int:
+	var r: Dictionary = robot.duplicate(true)
+	for k in lost_parts(r):
+		if state == "healthy":
+			ensure_parts(r)[k] = {"tier": "Stock", "hp": TIER_HP["Stock"]}
+		elif state == "junk":
+			bolt_on_junk(r, k)
+	return maxi(int(roundf(effective_overall(r))), 1)
+
+
+## How he would rate playing `group`: his core ratings and that position's skills - a skill he
+## was never built for counts as 35 - less what missing and junk parts cost him.
+static func overall_at(robot: Dictionary, group: String) -> int:
+	if String(robot.get("group", "")) == group:
+		return overall_if(robot, "now")
+	var ks: Array = CORE + (SKILLS.get(group, []) as Array)
+	var own := keys(robot)
+	var s := 0.0
+	for k in ks:
+		s += eff(robot, k) if own.has(k) else 35.0 + bonus(robot, k)
+	var o := s / ks.size()
+	return int(roundf(o - (float(overall(robot)) - effective_overall(robot))))
+
+
 ## What missing and junk parts do to his body (after his ratings are applied).
 static func apply_parts(robot: Dictionary, b: Dictionary) -> Dictionary:
 	if not robot.has("parts"):

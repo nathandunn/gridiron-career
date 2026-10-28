@@ -732,7 +732,10 @@ func _on_moment(a: Dictionary) -> void:
 		var part := String(a.get("part", ""))
 		var who := String(v.robot.get("name", "%s %s" % [Team.NAMES[v.team], v.slot]))
 		var what := "IS POWERED DOWN!" if part == "core" else "LOSES HIS %s!" % String(Robot.PART_LABEL.get(part, part)).to_upper()
-		hud.toast("%s\n%s" % [who.to_upper(), what], 2.2)
+		var ovr := ""
+		if not v.robot.is_empty():
+			ovr = "\nOVR %d -> %d" % [Robot.overall_if(v.robot, "healthy"), Robot.overall_if(v.robot, "now")]
+		hud.toast("%s\n%s%s" % [who.to_upper(), what, ovr], 2.4)
 		_slowmo = 1.3
 	sfx.on_action(String(a["kind"]))
 	announcer.on_action(a, sim)

@@ -1894,7 +1894,7 @@ func open_robot(id: String) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots")
-	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. A junk spare costs $25 (or whatever is left in the purse - you can always field a robot).", fs - 2, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Each choice shows what his overall would be; a junk spare costs $25.", fs - 2, Color(0.8, 0.83, 0.88)))
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
 	box.add_child(top)
@@ -1907,7 +1907,11 @@ func open_injuries(slots: Array) -> void:
 		var r: Dictionary = tm["roster"][s]
 		var lost := Robot.lost_parts(r)
 		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
+		var o_full := Robot.overall_if(r, "healthy")
+		var o_now := Robot.overall_if(r, "now")
+		var o_junk := Robot.overall_if(r, "junk")
 		_section(box, "%s  #%d %s - no %s" % [s, int(r["number"]), r["name"], " or ".join(names)])
+		box.add_child(_label("Overall %d -> %d without %s (-%d)   ·   with junk %d   ·   with new %d" % [o_full, o_now, "them" if lost.size() > 1 else "it", o_full - o_now, o_junk, o_full], fs, YELLOW))
 		var help: Array = []
 		for k in lost:
 			help.append(String(Robot.PART_HELP[k]))
@@ -1916,7 +1920,7 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		var jb := _button("Bolt on junk %s ($%d)" % [" and ".join(names), Career.JUNK_PRICE * lost.size()], func(): main.injury_choice(s, "junk"))
+		var jb := _button("Bolt on junk %s ($%d) - OVR %d" % [" and ".join(names), Career.JUNK_PRICE * lost.size(), o_junk], func(): main.injury_choice(s, "junk"))
 		jb.disabled = Career.money(0) < Career.JUNK_PRICE * lost.size()
 		row.add_child(jb)
 		if Career.money(0) < Career.JUNK_PRICE and not Robot.can_play(r):
@@ -1929,11 +1933,11 @@ func open_injuries(slots: Array) -> void:
 		var cost := 0
 		for k in lost:
 			cost += Career.repair_cost(r, k)
-		var buy := _button("New %s ($%d)" % [" and ".join(names), cost], func(): main.injury_choice(s, "buy"))
+		var buy := _button("New %s ($%d) - OVR %d" % [" and ".join(names), cost, o_full], func(): main.injury_choice(s, "buy"))
 		buy.disabled = Career.money(0) < cost
 		row.add_child(buy)
 		if Robot.can_play(r):
-			row.add_child(_button("Play on without it", func(): main.injury_choice(s, "play_on")))
+			row.add_child(_button("Play on without it - OVR %d" % o_now, func(): main.injury_choice(s, "play_on")))
 		else:
 			row.add_child(_label("He can't play like this.", fs - 2, MAGENTA))
 		# or anyone healthy off the bench, from any position - his own kind first
@@ -1942,12 +1946,9 @@ func open_injuries(slots: Array) -> void:
 			if Robot.can_play(b):
 				subs.append(b)
 		var grp := String(Play.SLOT_GROUP[s])
-		subs.sort_custom(func(x, y):
-			var xs := (100.0 if String(x["group"]) == grp else 0.0) + Robot.effective_overall(x)
-			var ys := (100.0 if String(y["group"]) == grp else 0.0) + Robot.effective_overall(y)
-			return xs > ys)
+		subs.sort_custom(func(x, y): return Robot.overall_at(x, grp) > Robot.overall_at(y, grp))
 		if not subs.is_empty():
-			box.add_child(_label("Or put in from the bench:", fs - 2, CYAN))
+			box.add_child(_label("Or put in from the bench - each shown with how he would rate as a %s, best first:" % grp, fs - 2, CYAN))
 			var srow := HFlowContainer.new()
 			srow.add_theme_constant_override("h_separation", 6)
 			srow.add_theme_constant_override("v_separation", 6)
@@ -1955,7 +1956,9 @@ func open_injuries(slots: Array) -> void:
 			for b: Dictionary in subs:
 				var bid := String(b["id"])
 				var tag := "" if String(b["group"]) == grp else "  (plays %s)" % b["group"]
-				srow.add_child(_button("#%d %s, %s OVR %d%s" % [int(b["number"]), b["name"], b["group"], Robot.overall(b), tag], func(): main.injury_choice(s, "sub:" + bid)))
+				var bo := Robot.overall_at(b, grp)
+				var better := "  (better)" if bo > maxi(o_now, o_junk) else ""
+				srow.add_child(_button("#%d %s, %s - as %s %d%s" % [int(b["number"]), b["name"], b["group"], grp, bo, better], func(): main.injury_choice(s, "sub:" + bid)))
 
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:
