@@ -828,9 +828,7 @@ static func mode_badge() -> String:
 			return "Exhibition · no pay"
 		"sim":
 			return "Sim lab"
-	if season_over():
-		return "Season over"
-	return "Season · week %d of %d" % [int(season().get("week", 1)), WEEKS]
+	return "Season · " + week_label().to_lower()
 
 
 static func set_mode(m: String) -> void:
@@ -935,12 +933,29 @@ static func season() -> Dictionary:
 
 
 static func season_over() -> bool:
-	return int(season().get("week", 1)) > WEEKS
+	return int(season().get("week", 1)) > WEEKS + 1
+
+
+## After the six weeks the top two in the table meet in the championship game.
+static func is_final() -> bool:
+	return int(season().get("week", 1)) == WEEKS + 1
+
+
+## "Week 3 of 6" / "Championship game" / "Season over"
+static func week_label() -> String:
+	if season_over():
+		return "Season over"
+	if is_final():
+		return "Championship game"
+	return "Week %d of %d" % [int(season().get("week", 1)), WEEKS]
 
 
 ## Who you play this week: points team(1) at that club.
 static func _set_opponent() -> void:
 	var sn := season()
+	if is_final() and sn.has("final"):
+		sn["opp"] = int(sn["final"]["opp"])
+		return
 	var wk := clampi(int(sn.get("week", 1)), 1, WEEKS)
 	for pair in SCHEDULE[wk - 1]:
 		if 0 in pair:
@@ -971,9 +986,26 @@ static func finish_week(g: Game) -> Array:
 		return []
 	var lines: Array = []
 	var opp: Dictionary = team(1)
+	var wk := int(sn["week"])
+	if wk > WEEKS:
+		# the championship game: no draws - a tie goes to overtime
+		var mine := g.score[0]
+		var theirs := g.score[1]
+		var ot := ""
+		if mine == theirs:
+			var w := _overtime(-1, int(sn["opp"]))
+			ot = " (won in overtime)"
+			mine += 1 if w == 0 else 0
+			theirs += 1 if w == 1 else 0
+		sn["champion"] = String(data["teams"][0]["name"]) if mine > theirs else String(opp["name"])
+		sn["results"].append("Championship: %s %d - %d %s%s" % [data["teams"][0]["name"], g.score[0], g.score[1], opp["name"], ot])
+		lines.append("CHAMPIONS: %s%s!" % [sn["champion"], ot])
+		sn["week"] = wk + 1
+		restock()
+		save()
+		return lines
 	_record(sn["you"], g.score[0], g.score[1])
 	_record(opp["rec"], g.score[1], g.score[0])
-	var wk := int(sn["week"])
 	sn["results"].append("Week %d: %s %d - %d %s" % [wk, data["teams"][0]["name"], g.score[0], g.score[1], opp["name"]])
 	# the other game this week
 	for pair in SCHEDULE[wk - 1]:
@@ -1007,15 +1039,72 @@ static func finish_week(g: Game) -> Array:
 		lines.append("Elsewhere: %s %d - %d %s" % [a["name"], og.score[0], og.score[1], b["name"]])
 	sn["week"] = wk + 1
 	restock()
-	if season_over():
+	if wk == WEEKS:
+		# the regular season is done: the top two play for the championship
 		var table := standings()
-		sn["champion"] = String(table[0]["name"])
-		lines.append("SEASON OVER - champions: %s" % sn["champion"])
+		var a: Dictionary = table[0]
+		var b: Dictionary = table[1]
+		if a["you"] or b["you"]:
+			var other: Dictionary = b if a["you"] else a
+			for ci in sn["clubs"].size():
+				if String(sn["clubs"][ci]["name"]) == String(other["name"]):
+					sn["final"] = {"opp": ci}
+			_set_opponent()
+			lines.append("YOU'RE IN THE CHAMPIONSHIP GAME: %s vs %s" % [data["teams"][0]["name"], opponent_name()])
+		else:
+			# you missed out: the two clubs play it out
+			var ia := _club_index(String(a["name"]))
+			var ib := _club_index(String(b["name"]))
+			var ca: Dictionary = sn["clubs"][ia]
+			var cb: Dictionary = sn["clubs"][ib]
+			var og := Batch.play_game(_club_side(0, ca), _club_side(1, cb), g.qlen, randi())
+			var sa: int = og.score[0]
+			var sb: int = og.score[1]
+			var ot := ""
+			if sa == sb:
+				ot = " (overtime)"
+				if _overtime(ia, ib) == 0:
+					sa += 1
+				else:
+					sb += 1
+			sn["champion"] = String(ca["name"]) if sa > sb else String(cb["name"])
+			sn["results"].append("Championship: %s %d - %d %s%s" % [ca["name"], og.score[0], og.score[1], cb["name"], ot])
+			lines.append("You missed the championship game. %s %d - %d %s%s: CHAMPIONS %s" % [ca["name"], og.score[0], og.score[1], cb["name"], ot, sn["champion"]])
+			sn["week"] = WEEKS + 2
 	else:
 		_set_opponent()
 		lines.append("Next week: %s (%s)" % [opponent_name(), _rec_text(team(1)["rec"])])
 	save()
 	return lines
+
+
+static func _club_index(name: String) -> int:
+	var sn := season()
+	for ci in sn["clubs"].size():
+		if String(sn["clubs"][ci]["name"]) == name:
+			return ci
+	return 0
+
+
+static func _club_side(side: int, club: Dictionary) -> Dictionary:
+	var tm := Team.build(side, String(club["coach"]))
+	tm["roster"] = club["starters"]
+	tm["bench"] = club["bench"]
+	tm["club"] = String(club["name"])
+	return tm
+
+
+## A tied championship game goes to overtime: short periods until someone is ahead (a coin toss
+## after three). `a` / `b` are club indices, -1 for your team. Returns 0 if `a` wins, 1 if `b`.
+static func _overtime(a: int, b: int) -> int:
+	var sn := season()
+	for i in 3:
+		var ta: Dictionary = Team.build(0, String(data.get("coach0", "Balanced"))) if a < 0 else _club_side(0, sn["clubs"][a])
+		var tb: Dictionary = _club_side(1, sn["clubs"][b])
+		var og := Batch.play_game(ta, tb, 120.0, randi())
+		if og.score[0] != og.score[1]:
+			return 0 if og.score[0] > og.score[1] else 1
+	return randi() % 2
 
 
 static func _rec_text(r: Dictionary) -> String:

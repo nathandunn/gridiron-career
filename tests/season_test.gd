@@ -14,13 +14,18 @@ func _init() -> void:
 		var bill := Career.damage_bill(0)
 		var before := Career.money(0)
 		var slips := Career.pay_game(g)
-		opps[g.teams[1]["club"]] = int(opps.get(g.teams[1]["club"], 0)) + 1
+		if not Career.is_final():
+			opps[g.teams[1]["club"]] = int(opps.get(g.teams[1]["club"], 0)) + 1
+		else:
+			print("CHAMPIONSHIP GAME vs ", g.teams[1]["club"])
 		print("wk %d %s %d-%d  damage $%d  paid $%d  (%s)" % [Career.season()["week"], g.teams[1]["club"], g.score[0], g.score[1], bill, Career.money(0) - before, slips[0]["lines"]])
 		for l in Career.finish_week(g):
 			print("   ", l)
 		Career.coach_spend(0, true)
 	for r in Career.standings():
 		print(r["text"])
+	print("champion ", Career.season()["champion"], "  results: ", Career.season()["results"].slice(-2))
+	assert(String(Career.season()["champion"]) != "")
 	assert(opps.size() == 3)
 	for k in opps:
 		assert(opps[k] == 2)

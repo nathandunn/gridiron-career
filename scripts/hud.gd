@@ -523,7 +523,7 @@ func _mode_section(box: VBoxContainer) -> void:
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
 		var opp := Career.team(1)
-		box.add_child(_label("Week %d of %d. This week: %s (coach %s, %s)." % [int(sn["week"]), Career.WEEKS, opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
+		box.add_child(_label("%s. This week: %s (coach %s, %s)." % [Career.week_label(), opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
 		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid for the result (win $1,300, tie $700) and for what you did: $250 a touchdown, $100 a big play (20+ yards), $100 a sack, $200 a takeaway, $50 a big hit (a part knocked off), $25 a first down - about $3,000 for a typical win, $1,000 for a loss. Repairs, upgrades and new robots come out of it. Each rival plays twice; best record is champion.", fs - 1, dim))
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
@@ -548,7 +548,7 @@ func open_teams(pregame := false) -> void:
 			"exhibition":
 				title = "Exhibition: %s vs %s" % [Career.team(0)["name"], Career.team(1)["name"]]
 			_:
-				title = ("Season over" if Career.season_over() else "Week %d of %d: %s vs %s" % [int(Career.season()["week"]), Career.WEEKS, Career.team(0)["name"], Career.team(1)["name"]])
+				title = ("Season over" if Career.season_over() else "%s: %s vs %s" % [Career.week_label(), Career.team(0)["name"], Career.team(1)["name"]])
 	if Career.loaded and Career.sim_mode():
 		_teams_side = 0
 	var box := _open(title)
@@ -1213,7 +1213,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		elif Career.season_over():
 			row.add_child(_button("Start next season", func(): close_overlay(); main.new_game(false)))
 		else:
-			var nx := _button("Next game: week %d  »" % int(Career.season().get("week", 1)), func(): main.next_game())
+			var nx := _button("Next game: %s  »" % Career.week_label().to_lower(), func(): main.next_game())
 			nx.add_theme_font_size_override("font_size", fs + 3)
 			row.add_child(nx)
 			row.move_child(nx, 0)
@@ -1315,7 +1315,7 @@ func open_next() -> void:
 	var sn := Career.season()
 	var opp := Career.team(1)
 	var me := Career.team(0)
-	var box := _open("Week %d of %d: %s vs %s" % [int(sn.get("week", 1)), Career.WEEKS, me["name"], opp["name"]])
+	var box := _open("%s: %s vs %s" % [Career.week_label(), me["name"], opp["name"]])
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
 	box.add_child(top)
@@ -1590,7 +1590,7 @@ func open_menu() -> void:
 		line = "Season over - champions: %s. Your record %s. Next: a new season with $2,000." % [sn.get("champion", "?"), rec]
 	else:
 		var opp: Dictionary = sn["clubs"][int(sn.get("opp", 0))]
-		line = "Week %d of %d · %s %s · purse $%d · next: %s (%s)" % [int(sn["week"]), Career.WEEKS, you["name"], rec, int(Career.data["money"][0]), opp["name"], opp["coach"]]
+		line = "%s · %s %s · purse $%d · next: %s (%s)" % [Career.week_label(), you["name"], rec, int(Career.data["money"][0]), opp["name"], opp["coach"]]
 	box.add_child(_label(line, fs, Color(0.9, 0.93, 1.0)))
 	box.add_child(_label("Six weeks against three rival clubs. Your robots, money and damage carry from week to week; you are paid for wins and what you do in each game.", fs - 2, Color(0.75, 0.8, 0.85)))
 	var sr := HFlowContainer.new()
