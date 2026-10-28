@@ -96,7 +96,10 @@ func _returner(t: int) -> Dictionary:
 	for s in roster:
 		var r: Dictionary = roster[s]
 		if String(r.get("group", "")) in ["RB", "WR", "CB"] and Robot.can_play(r):
-			var v := Robot.eff(r, "speed") + 0.6 * Robot.eff(r, "elusiveness" if Robot.keys(r).has("elusiveness") else "speed")
+			# the job usually goes to a fast receiver: sure hands to field it, speed to take it back
+			var v := Robot.eff(r, "speed") + 0.4 * (Robot.eff(r, "hands") if Robot.keys(r).has("hands") else 50.0)
+			if String(r["group"]) == "WR":
+				v += 25.0
 			if v > bs:
 				bs = v
 				best = r
