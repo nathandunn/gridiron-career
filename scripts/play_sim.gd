@@ -508,7 +508,8 @@ func step() -> void:
 		_ball()
 		_contacts()
 		_check_end()
-	if t > PLAY_CAP and not over:
+	# (a kick return gets longer: the ball's hang time and a run the length of the field)
+	if t > PLAY_CAP + (12.0 if air.get("kick", false) else 0.0) and not over:
 		_end("whistle", carrier.pos if carrier != null else ball_pos)
 
 
@@ -1896,6 +1897,13 @@ func _drive_air(p: P) -> void:
 		if need.length() > p.spd():
 			need = need.normalized() * p.spd()
 		_set_want(p, need)
+		return
+	if p.side == 1 and air.get("kick", false):
+		# kick coverage keeps its lanes on the way down, so the field stays covered from
+		# sideline to sideline; each man closes on the ball only in the last 15 yards
+		var dy := absf(p.pos.y - to.y)
+		var lane_x := lerpf(p.pos.x, to.x, clampf(1.0 - (dy - 6.0) / 25.0, 0.04, 1.0) * 0.25)
+		_toward(p, Vector2(lane_x, to.y + 4.0), 1.0)
 		return
 	if p.side == 1:
 		var reachable := p.pos.distance_to(to) - REACH < p.spd() * (left + 0.25)

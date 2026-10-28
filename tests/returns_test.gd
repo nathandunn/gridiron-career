@@ -5,6 +5,8 @@ func _init() -> void:
 	var n := {"Kickoff": 0, "Punt": 0, "fair": 0}
 	var yds := {"Kickoff": 0.0, "Punt": 0.0, "fair": 0.0}
 	var tds := 0
+	var longest := 0.0
+	var all_ret := []
 	var fum := 0
 	var pts := 0
 	for i in 12:
@@ -15,6 +17,8 @@ func _init() -> void:
 				var kk := "fair" if String(e.get("why", "")) == "fair" else ("Kickoff" if String(e["off"]).begins_with("Kick") else "Punt")
 				n[kk] += 1
 				yds[kk] += float(e["gain"])
+				longest = maxf(longest, float(e["gain"]))
+				if kk == "Kickoff": all_ret.append(int(e["gain"]))
 				if String(e["text"]).find("TOUCHDOWN") >= 0:
 					tds += 1
 				if String(e["text"]).find("FUMBLES") >= 0:
@@ -25,6 +29,8 @@ func _init() -> void:
 					print("  ", e["text"])
 	for k in n:
 		print("%s: %d, %.1f yds avg" % [k, n[k], yds[k] / maxf(n[k], 1)])
+	all_ret.sort()
+	print("longest %.0f, kickoff returns %s" % [longest, all_ret])
 	print("return TDs %d, fumbles %d, points per game %.1f" % [tds, fum, pts / 12.0])
 	assert(n["Kickoff"] > 0)
 	print("OK")

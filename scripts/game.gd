@@ -198,7 +198,7 @@ func _do_kickoff(kind: String) -> Dictionary:
 			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
 			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
 			yl = maxf(c, 1.0)
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 4.0}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 4.4}
 			text = "%s kicks it deep." % k
 			_new_drive()
 	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
@@ -605,7 +605,7 @@ func _punt(kind := "punt") -> Dictionary:
 			# the return starts from where it was punted: the line is the punting team's, the punter
 			# 13 yards behind it, the returner as far downfield as the kick goes
 			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "from_los": gross, "back": 13.0,
-				"hang": 4.8 if kind == "pooch" else 4.5, "pooch": kind == "pooch"}
+				"hang": 5.0 if kind == "pooch" else 4.8, "pooch": kind == "pooch"}
 			text = "%s punts it away." % _who(pr, who)
 		else:
 			text = "%s punts %d yards, downed at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
