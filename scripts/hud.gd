@@ -1916,7 +1916,16 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		row.add_child(_button("Bolt on junk %s ($%d)" % [" and ".join(names), Career.JUNK_PRICE * lost.size()], func(): main.injury_choice(s, "junk")))
+		var jb := _button("Bolt on junk %s ($%d)" % [" and ".join(names), Career.JUNK_PRICE * lost.size()], func(): main.injury_choice(s, "junk"))
+		jb.disabled = Career.money(0) < Career.JUNK_PRICE * lost.size()
+		row.add_child(jb)
+		if Career.money(0) < Career.JUNK_PRICE and not Robot.can_play(r):
+			var any_sub := false
+			for bb in Career.team(0)["bench"]:
+				if Robot.can_play(bb):
+					any_sub = true
+			if not any_sub:
+				row.add_child(_button("Emergency junk (purse empty, no one on the bench)", func(): main.injury_choice(s, "emergency")))
 		var cost := 0
 		for k in lost:
 			cost += Career.repair_cost(r, k)
@@ -1969,7 +1978,9 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			line.add_child(gl)
-			line.add_child(_button("Junk $%d" % Career.JUNK_PRICE, func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id)))
+			var jk := _button("Junk $%d" % Career.JUNK_PRICE, func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id))
+			jk.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.JUNK_PRICE
+			line.add_child(jk)
 			var nb := _button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id))
 			nb.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.repair_cost(r, k)
 			line.add_child(nb)

@@ -266,12 +266,27 @@ static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> Strin
 		swap_in(starters, bench, slot, String(sub["id"]))
 		return "%s comes in for %s at %s." % [sub["name"], r["name"], slot]
 	var bought: Array = []
+	var t := team_of(r)
+	# an empty purse buys nothing: he plays on without it if he can, or the best robot on the
+	# bench from any position comes in; only if neither is possible is a junk spare found for him
+	if t >= 0 and money(t) < JUNK_PRICE:
+		if Robot.can_play(r):
+			return "%s plays on without his %s (no money)." % [r["name"], " or ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
+		var any := {}
+		for b in bench:
+			if Robot.can_play(b) and (any.is_empty() or Robot.effective_overall(b) > Robot.effective_overall(any)):
+				any = b
+		if not any.is_empty():
+			swap_any(starters, bench, slot, String(any["id"]))
+			return "%s comes in for %s at %s (no money for parts)." % [any["name"], r["name"], slot]
+		for k in lost:
+			buy_junk(t, r, k, true)
+		return "%s gets an emergency junk %s (purse empty)." % [r["name"], " and junk ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 	for k in lost:
-		var t := team_of(r)
 		if t >= 0 and money(t) >= repair_cost(r, k) * 3 and buy_repair(t, r, k):
 			bought.append(k)
-		else:
-			buy_junk(t, r, k)
+		elif not buy_junk(t, r, k):
+			continue
 	if bought.size() == lost.size():
 		return "%s gets a new %s." % [r["name"], " and new ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 	return "%s gets a junk %s bolted on." % [r["name"], " and junk ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
@@ -358,11 +373,17 @@ static func repair_all_cost(robot: Dictionary) -> int:
 const JUNK_PRICE := 25
 
 
-static func buy_junk(t: int, robot: Dictionary, k: String) -> void:
+## A junk spare costs $25: with less in the purse there is none (unless `emergency`, when the
+## side could not otherwise field a robot there). A simulated copy (t < 0) always gets one.
+static func buy_junk(t: int, robot: Dictionary, k: String, emergency := false) -> bool:
 	if t >= 0:
-		add_money(t, -mini(JUNK_PRICE, maxi(money(t), 0)))
+		if money(t) >= JUNK_PRICE:
+			add_money(t, -JUNK_PRICE)
+		elif not emergency:
+			return false
 		save()
 	Robot.bolt_on_junk(robot, k)
+	return true
 
 
 ## Buy a new Stock part (or a repair) if the purse allows. true if done.
