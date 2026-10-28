@@ -603,7 +603,7 @@ func _punt(kind := "punt") -> Dictionary:
 			text = "%s angles it out of bounds: a %d-yard coffin corner, out at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
 		elif land < 95.0:
 			# he fields it: the punt and the return are played out as the next snap
-			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 25.0,
+			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 30.0,
 				"hang": 4.6 if kind == "pooch" else 3.9, "kick_dist": gross + 12.0, "pooch": kind == "pooch"}
 			text = "%s punts it away." % _who(pr, who)
 		else:

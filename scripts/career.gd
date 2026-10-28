@@ -554,17 +554,74 @@ static func upgrade_funds(t: int) -> int:
 
 ## The coach spends for you: all your credit, and if `purse` the purse above a $400 reserve.
 ## Returns what he bought, as lines.
-static func coach_spend(t: int, purse: bool, reserve := 400) -> Array:
+## What the coach can be told to spend on. Each names the robots and the parts that carry what
+## those robots do (legs for speed and routes, arms for hands and throwing, core for strength).
+const FOCUS := {
+	"": {"label": "Best value anywhere", "slots": [], "parts": []},
+	"qb": {"label": "The perfect quarterback", "slots": ["QB"], "parts": ["rarm", "larm", "head", "core", "lleg", "rleg"]},
+	"wr": {"label": "Better receivers (WR, TE)", "slots": ["WR1", "WR2", "WR3", "TE"], "parts": ["lleg", "rleg", "larm", "rarm", "head"]},
+	"rb": {"label": "Better running back", "slots": ["RB"], "parts": ["lleg", "rleg", "core", "larm", "rarm", "head"]},
+	"ol": {"label": "Better O-line", "slots": ["LT", "LG", "C", "RG", "RT"], "parts": ["core", "larm", "rarm", "lleg", "rleg"]},
+	"dl": {"label": "Pass rush (D-line)", "slots": ["DE1", "DT1", "DT2", "DE2"], "parts": ["core", "lleg", "rleg", "larm", "rarm"]},
+	"lb": {"label": "Linebackers", "slots": ["OLB1", "MLB", "OLB2"], "parts": ["lleg", "rleg", "core", "larm", "rarm", "head"]},
+	"db": {"label": "Secondary (CB, S)", "slots": ["CB1", "CB2", "FS", "SS"], "parts": ["lleg", "rleg", "larm", "rarm", "head"]},
+	"st": {"label": "Kicker and punter", "slots": ["K", "P"], "parts": ["lleg", "rleg", "larm", "rarm"]},
+}
+
+
+## Spend `budget` on one group: round after round, the cheapest next tier among its robots'
+## parts, so the whole group gets better together, up to Prototype. Returns what it cost.
+static func focus_upgrades(t: int, focus: String, budget: int) -> int:
+	var f: Dictionary = FOCUS[focus]
+	var tm := team(t)
+	var robots: Array = []
+	for s in f["slots"]:
+		var r: Dictionary = tm["starters"].get(s, {})
+		if r.is_empty() and tm.has("special"):
+			r = tm["special"].get(s, {})
+		if not r.is_empty():
+			robots.append(r)
+	var left := budget
+	for guard in 200:
+		# the weakest part first; among equals, the part that matters most (listed first)
+		var best := {}
+		var best_k := ""
+		var best_p := 0
+		var best_score := 1 << 30
+		for r in robots:
+			for i in (f["parts"] as Array).size():
+				var k: String = f["parts"][i]
+				var nt := next_tier(r, k)
+				if nt == "":
+					continue
+				var pr := upgrade_price(k, nt)
+				var score := Robot.TIERS.find(nt) * 100 + i
+				if pr <= left and score < best_score:
+					best_score = score
+					best_p = pr
+					best = r
+					best_k = k
+		if best.is_empty():
+			break
+		var tier := next_tier(best, best_k)
+		Robot.ensure_parts(best)[best_k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
+		left -= best_p
+	return budget - left
+
+
+static func coach_spend(t: int, purse: bool, reserve := 400, focus := "") -> Array:
 	var news: Array = []
 	var budget := credit(t) + (maxi(money(t) - reserve, 0) if purse else 0)
 	if budget <= 0:
 		return news
 	var before := {}
-	var st: Dictionary = team(t)["starters"]
+	var st: Dictionary = (team(t)["starters"] as Dictionary).duplicate()
+	for s in special(t):
+		st[s] = special(t)[s]
 	for s in st:
 		for k in Robot.PARTS:
 			before[s + k] = String(Robot.ensure_parts(st[s])[k]["tier"])
-	var spent := upgrades_with(team(t), budget)
+	var spent := upgrades_with(team(t), budget) if focus == "" else focus_upgrades(t, focus, budget)
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))

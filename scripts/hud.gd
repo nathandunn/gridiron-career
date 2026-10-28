@@ -2002,9 +2002,16 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 			var hint := _label("Spend the purse on upgrades yourself on the robot pages (tap a robot, then a part's upgrade button), or let the coach:", fs - 2, Color(0.8, 0.83, 0.88))
 			box.add_child(hint)
 			box.move_child(hint, row.get_index())
-		row.add_child(_button("Coach buys upgrades (keeps $400)", func():
-			var news := Career.coach_spend(t, true)
-			refresh.call()
-			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
-			for n in news.slice(1):
-				caption("Coach bought: " + n, false, YELLOW)))
+		box.add_child(_label("Coach buys upgrades (keeps $400) - for:", fs - 2, Color(0.8, 0.83, 0.88)))
+		var fr := HFlowContainer.new()
+		fr.add_theme_constant_override("h_separation", 6)
+		fr.add_theme_constant_override("v_separation", 6)
+		box.add_child(fr)
+		for fk in Career.FOCUS:
+			var fkey: String = fk
+			fr.add_child(_button(String(Career.FOCUS[fkey]["label"]), func():
+				var news := Career.coach_spend(t, true, 400, fkey)
+				refresh.call()
+				toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
+				for n in news.slice(1):
+					caption("Coach bought: " + n, false, YELLOW)))

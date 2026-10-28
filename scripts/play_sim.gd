@@ -34,7 +34,7 @@ const BODY := {
 	"S": {"speed": 8.8, "accel": 8.5, "power": 0.55, "hands": 0.56, "agility": 0.7, "tackle": 0.7},
 }
 ## Global tuning knobs (set from the command line with --k=name:value,name:value).
-static var K := {"dmg_cal": 0.7, "tackle": 0.85, "evade": 0.5, "carry_speed": 0.97, "sight": 1.0, "shed": 1.0, "throw_err": 1.8, "catch": 1.0, "pursuit": 1.05}
+static var K := {"dmg_cal": 0.7, "near_shed": 0.3, "eng_reach": 0.7, "eng_tackle": 0.2, "run_shed": 0.75, "tackle": 0.95, "evade": 0.5, "carry_speed": 0.97, "sight": 1.0, "shed": 1.0, "throw_err": 1.8, "catch": 1.0, "pursuit": 1.05}
 const QB_ARM := 0.9
 const QB_ACC := 0.8
 
@@ -1881,6 +1881,9 @@ func _drive_air(p: P) -> void:
 		# well out in front of him when he catches it
 		if p == air_target:
 			_set_want(p, Vector2.ZERO)
+		elif p.idx in (air.get("escorts", []) as Array) and p.block_target == null:
+			var side := -1.0 if p.idx == int((air["escorts"] as Array)[0]) else 1.0
+			_toward(p, air_target.pos + Vector2(side * 1.8, 4.0), 0.8)
 		elif p.block_target != null:
 			# go and meet your man, keeping between him and the returner
 			var tgt := p.block_target
@@ -2031,9 +2034,27 @@ func _assign_return_blocks() -> void:
 		if b.engaged != null:
 			b.block_target = b.engaged
 			taken[b.engaged.idx] = true
+	# two lead blockers stay with the returner and lead him up the field; they take a man only
+	# when he gets close to the ball
+	if not air.has("escorts") and ret != null:
+		var by_d := blockers.duplicate()
+		by_d.sort_custom(func(a, b): return a.pos.distance_to(ret.pos) < b.pos.distance_to(ret.pos))
+		air["escorts"] = by_d.slice(0, 2).map(func(b): return b.idx)
+	var escorts: Array = air.get("escorts", [])
 	var pairs: Array = []
 	for b: P in blockers:
 		if b.engaged != null:
+			continue
+		if b.idx in escorts:
+			var near: P = null
+			var nd := 7.0
+			for e: P in dfn:
+				if not e.down and not taken.has(e.idx) and ret != null and e.pos.distance_to(ret.pos) < nd and (e.pos.y - ret.pos.y) > -0.5:
+					nd = e.pos.distance_to(ret.pos)
+					near = e
+			b.block_target = near
+			if near != null:
+				taken[near.idx] = true
 			continue
 		for e: P in dfn:
 			if e.down or taken.has(e.idx):
@@ -2056,7 +2077,7 @@ func _assign_return_blocks() -> void:
 		done[b.idx] = true
 		taken[e.idx] = true
 	for b: P in blockers:
-		if b.engaged == null and not done.has(b.idx):
+		if b.engaged == null and not done.has(b.idx) and not (b.idx in escorts):
 			b.block_target = null
 
 
@@ -2222,6 +2243,8 @@ func _resolve_blocks() -> void:
 			sh += (0.5 + 0.4 * e.d("aggression")) * (0.3 if seal > 0.3 else 1.0) * float(K.get("near_shed", 1.0)) * (0.6 if rate < 0.0 else 1.0)
 		if double:
 			sh *= 0.35
+		if run_block:
+			sh *= float(K.get("run_shed", 0.6))   # a drive block on a run is harder to get off than a pass set
 		if not e_on_d:
 			sh = 0.4
 		if rng.randf() < maxf(sh, 0.01) * DT * float(K["shed"]):
@@ -2510,7 +2533,7 @@ func _contacts() -> void:
 			continue
 		var d := e.pos.distance_to(c.pos)
 		var dive := false
-		if e.engaged != null and d > 0.9:
+		if e.engaged != null and d > float(K.get("eng_reach", 0.9)):
 			continue   # a blocked man can only reach out an arm
 		if d > TACKLE_R:
 			# a diving tackle: closing on him and nearly there
@@ -2521,7 +2544,7 @@ func _contacts() -> void:
 		e.tackle_cd = t + 0.55
 		var p := float(K["tackle"]) + (float(e.body["tackle"]) - 0.6) * 0.7 + (float(e.body["power"]) - float(c.body["power"])) * 0.25 - float(c.body["agility"]) * 0.1
 		if e.engaged != null:
-			p *= 0.3
+			p *= float(K.get("eng_tackle", 0.3))
 		if e.manner.get("wrap_up", false):
 			p += 0.12
 		if c.manner.get("lower_shoulder", false):
