@@ -228,65 +228,96 @@ static func offense(rng: RandomNumberGenerator) -> Dictionary:
 	return _finish(name, "offense", about, lines)
 
 
-## A random defensive play: {text, play}.
+## A random defensive play, built like a real one: a coverage shell (cover 0, 1, 2, 2-man,
+## 3 or a fire-zone blitz) with the corners on the wide receivers, the safeties deep or rolled
+## down, the linebackers in the box - and at random who blitzes, who spies, who plays the
+## robber, contain on the edge, press or off. Alignment comes from the jobs, as for the
+## playbook's plays. {text, play}
 static func defense(rng: RandomNumberGenerator) -> Dictionary:
 	var lines: Array[String] = []
 	var jobs := {}
-	var targets := _shuffle(rng, ["WR1", "WR2", "WR3", "TE", "RB"])
-	var counts := {"rush": 0, "blitz": 0, "man": 0, "zone": 0, "spy": 0}
-	for s in Play.DEFENSE_SLOTS:
-		var g: String = Play.SLOT_GROUP[s]
-		var r := rng.randf()
-		var job := ""
-		if g == "DL":
-			job = "rush" if r < 0.8 else "zone"
-		else:
-			job = "blitz" if r < 0.18 else ("man" if r < 0.5 else ("zone" if r < 0.92 else "spy"))
-		jobs[s] = job
-	# at least three come after the quarterback
-	var rushers := Play.DEFENSE_SLOTS.filter(func(s): return jobs[s] in ["rush", "blitz"]).size()
-	for s in _shuffle(rng, Play.DEFENSE_SLOTS):
-		if rushers >= 3:
-			break
-		if not (jobs[s] in ["rush", "blitz"]):
-			jobs[s] = "rush" if Play.SLOT_GROUP[s] == "DL" else "blitz"
-			rushers += 1
-	var taken: Array = []
-	for s in Play.DEFENSE_SLOTS:
-		var job: String = jobs[s]
-		counts[job] = int(counts[job]) + 1
-		var line := ""
-		var spot := Vector2.INF
-		match job:
-			"rush", "blitz":
-				line = "rush contain" if job == "rush" and rng.randf() < 0.3 else job
-				var deep := 1.0 if Play.SLOT_GROUP[s] == "DL" else rng.randf_range(1.0, 5.0)
-				spot = _free_spot(rng, taken, func(): return Vector2(_r(rng.randf_range(-7.0, 7.0)), _r(deep)))
-			"man":
-				var tgt: String = targets[0] if not targets.is_empty() else String(_pick(rng, ["WR1", "WR2", "WR3", "TE", "RB"]))
-				if not targets.is_empty():
-					targets.pop_front()
-				line = "man " + tgt
-			"zone":
-				var zx := _r(rng.randf_range(-20.0, 20.0))
-				var zy := _r(rng.randf_range(2.0, 22.0))
-				var size := _r(rng.randf_range(4.0, 11.0))
-				line = "zone at %s %s size %s" % [_f(zx), _f(zy), _f(size)]
-				spot = _free_spot(rng, taken, func(): return Vector2(_r(zx * rng.randf_range(0.4, 1.0)), _r(clampf(zy - rng.randf_range(1.0, 6.0), 1.5, 15.0))))
-			"spy":
-				line = "spy"
-				spot = _free_spot(rng, taken, func(): return Vector2(_r(rng.randf_range(-3.0, 3.0)), _r(rng.randf_range(4.0, 8.0))))
-		lines.append("%s: %s" % [s, line])
-		if spot != Vector2.INF:
-			lines.append("%s at %s %s" % [s, _f(spot.x), _f(spot.y)])
-	var kind := "blitz" if int(counts["blitz"]) >= 2 else ("man" if int(counts["man"]) > int(counts["zone"]) else "zone")
-	var parts := []
-	for k in ["rush", "blitz", "man", "zone", "spy"]:
-		if int(counts[k]) > 0:
-			parts.append("%d %s" % [counts[k], k])
-	lines.insert(0, "kind " + kind)
-	lines.insert(1, "front " + ("press" if rng.randf() < 0.4 else "off"))
-	return _finish(_name(rng), "defense", ", ".join(parts), lines)
+	for s0 in ["DE1", "DT1", "DT2", "DE2"]:
+		jobs[s0] = "rush"
+	if rng.randf() < 0.45:
+		jobs["DE1"] = "rush contain"
+		jobs["DE2"] = "rush contain"
+	var families := ["cover1", "cover1", "cover2", "cover2man", "cover3", "cover3", "cover0", "firezone"]
+	var fam: String = families[rng.randi() % families.size()]
+	var lbs := _shuffle(rng, ["OLB1", "MLB", "OLB2"])
+	var about := ""
+	var kind := "zone"
+	match fam:
+		"cover0":
+			kind = "blitz"
+			jobs["CB1"] = "man WR1"
+			jobs["CB2"] = "man WR2"
+			jobs["SS"] = "man WR3"
+			jobs["FS"] = "man TE" if rng.randf() < 0.5 else "man RB"
+			jobs[lbs[0]] = "blitz"
+			jobs[lbs[1]] = "blitz"
+			jobs[lbs[2]] = "man RB" if jobs["FS"] == "man TE" else "man TE"
+			about = "Cover 0: man everywhere, two linebackers come, nobody deep"
+		"cover1":
+			kind = "man"
+			jobs["CB1"] = "man WR1"
+			jobs["CB2"] = "man WR2"
+			jobs["FS"] = "zone deep middle"
+			jobs["SS"] = "man WR3" if rng.randf() < 0.7 else "man TE"
+			var left := ["TE", "RB"] if jobs["SS"] == "man WR3" else ["WR3", "RB"]
+			jobs[lbs[0]] = "man " + left[0]
+			jobs[lbs[1]] = "man " + left[1]
+			var r := rng.randf()
+			jobs[lbs[2]] = "blitz" if r < 0.5 else ("spy" if r < 0.7 else "zone robber")
+			about = "Cover 1: man on everyone, a free safety deep, %s" % ("a linebacker blitzes" if jobs[lbs[2]] == "blitz" else ("a spy on the QB" if jobs[lbs[2]] == "spy" else "a robber in the middle"))
+		"cover2":
+			jobs["CB1"] = "zone flat left"
+			jobs["CB2"] = "zone flat right"
+			jobs["FS"] = "zone deep half left"
+			jobs["SS"] = "zone deep half right"
+			jobs["OLB1"] = "zone hook left"
+			jobs["MLB"] = "zone hook middle"
+			jobs["OLB2"] = "zone hook right"
+			if rng.randf() < 0.3:
+				jobs[lbs[0]] = "blitz"
+				kind = "blitz"
+			about = "Cover 2: two deep halves, corners squat in the flats"
+		"cover2man":
+			kind = "man"
+			jobs["CB1"] = "man WR1"
+			jobs["CB2"] = "man WR2"
+			jobs["FS"] = "zone deep half left"
+			jobs["SS"] = "zone deep half right"
+			jobs[lbs[0]] = "man WR3"
+			jobs[lbs[1]] = "man TE"
+			jobs[lbs[2]] = "man RB"
+			about = "2-man: man underneath with two safeties over the top"
+		"cover3":
+			jobs["CB1"] = "zone deep third left"
+			jobs["CB2"] = "zone deep third right"
+			jobs["FS"] = "zone deep third middle"
+			jobs["SS"] = ["zone flat right", "zone curl right", "zone robber"][rng.randi() % 3]
+			jobs["OLB1"] = "zone curl left"
+			jobs["MLB"] = "zone hook middle"
+			jobs["OLB2"] = "zone flat right" if jobs["SS"] != "zone flat right" else "zone hook right"
+			about = "Cover 3: three deep, the corners bail, four underneath"
+		"firezone":
+			kind = "blitz"
+			jobs["CB1"] = "zone deep third left"
+			jobs["CB2"] = "zone deep third right"
+			jobs["FS"] = "zone deep third middle"
+			jobs[lbs[0]] = "blitz"
+			jobs[lbs[1]] = "blitz" if rng.randf() < 0.5 else "zone hook middle"
+			jobs[lbs[2]] = "zone curl left"
+			jobs["SS"] = "zone curl right"
+			# a lineman drops out into the flat in place of a blitzer
+			jobs["DE1" if rng.randf() < 0.5 else "DE2"] = "zone flat left" if rng.randf() < 0.5 else "zone flat right"
+			about = "Fire zone: linebackers blitz, a lineman drops, three deep behind it"
+	var front := "press" if (kind == "man" or kind == "blitz") and rng.randf() < 0.6 else ("even" if rng.randf() < 0.3 else "off")
+	lines.append("kind " + kind)
+	lines.append("front " + front)
+	for s1 in Play.DEFENSE_SLOTS:
+		lines.append("%s: %s" % [s1, jobs.get(s1, "zone hook middle")])
+	return _finish(_name(rng), "defense", about, lines)
 
 
 ## A kick return, played out like any snap: the returner (in the QB's spot, `depth` yards behind
@@ -369,6 +400,12 @@ static func hand(rng: RandomNumberGenerator, side: String, n: int, to_go := 10.0
 		var p: Play = g["play"]
 		if not p.errors.is_empty() or seen.has(p.name):
 			continue
+		if side == "defense":
+			# a spread of shells, not eight versions of one
+			var fam := p.about.get_slice(":", 0)
+			if int(seen.get("fam:" + fam, 0)) >= 2:
+				continue
+			seen["fam:" + fam] = int(seen.get("fam:" + fam, 0)) + 1
 		if side == "offense":
 			var is_run := p.kind == "run"
 			var left := n - out.size()

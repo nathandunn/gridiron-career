@@ -127,6 +127,12 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"defpick":
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				game.poss = 1
+				_open_picker("defense")
 			"next": next_game()
 			"punt":
 				hud.close_overlay(false)
