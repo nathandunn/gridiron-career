@@ -1251,6 +1251,13 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) ->
 	var v := func(slot: String, k: String) -> float: return float(ps[slot][k]) / float(per)
 	var fmt := func(x: float) -> String: return str(int(round(x))) if per == 1 else "%.1f" % x
 	var who := func(slot: String) -> String:
+		# the robot himself: number and name (and his position)
+		var rb: Dictionary = (team.get("roster", {}) as Dictionary).get(slot, {})
+		if not rb.is_empty():
+			var nm := String(rb.get("name", slot))
+			var parts := nm.split(" ")
+			var short := ("%s. %s" % [parts[0].substr(0, 1), " ".join(parts.slice(1))]) if parts.size() > 1 else nm
+			return "#%d %s (%s)" % [int(rb.get("number", 0)), short, slot]
 		var b: Brain = (team.get("brains", {}) as Dictionary).get(slot, null)
 		return slot if b == null else "%s %s" % [slot, b.name.split(" ")[0]]
 	if per > 1:
@@ -1462,6 +1469,9 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 	rows.append(["Rush car-yds (avg)", _rush_line(stats[0], per[0]), _rush_line(stats[1], per[1])])
 	rows.append(["Sacks taken", "%.1f" % f.call(0, "sacks"), "%.1f" % f.call(1, "sacks")])
 	rows.append(["Turnovers", "%.1f" % f.call(0, "turnovers"), "%.1f" % f.call(1, "turnovers")])
+	rows.append(["  interceptions thrown", "%.1f" % f.call(0, "ints"), "%.1f" % f.call(1, "ints")])
+	rows.append(["  fumbles lost", "%.1f" % f.call(0, "fumbles"), "%.1f" % f.call(1, "fumbles")])
+	rows.append(["Returns (yds)", "%.1f (%.0f)" % [f.call(0, "returns"), f.call(0, "ret_yds")], "%.1f (%.0f)" % [f.call(1, "returns"), f.call(1, "ret_yds")]])
 	rows.append(["3rd down", _rate(stats[0], "third_conv", "third_att"), _rate(stats[1], "third_conv", "third_att")])
 	rows.append(["Big plays (20+)", "%.1f" % f.call(0, "explosive"), "%.1f" % f.call(1, "explosive")])
 	rows.append(["Punts", "%.1f" % f.call(0, "punts"), "%.1f" % f.call(1, "punts")])

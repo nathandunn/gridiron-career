@@ -163,7 +163,9 @@ func _ready() -> void:
 				game.down = 4
 				game.to_go = 7.0
 				_open_picker("offense")
-			"sim2end": sim_to_end()
+			"sim2end":
+				hud._stats_tab = String(args.get("tab", "team"))
+				sim_to_end()
 			"fixtest":
 				sim_to_end()
 				await get_tree().create_timer(3.0).timeout
