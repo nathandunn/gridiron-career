@@ -1862,7 +1862,7 @@ func open_robot(id: String) -> void:
 	var grp := String(r["group"])
 	if slot == "":
 		_section(box, "Put him in")
-		box.add_child(_label("For any position - his own first. He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+		box.add_child(_label("At his own position, or one built much the same - his own first. He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
 		var row := HFlowContainer.new()
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
@@ -1870,6 +1870,8 @@ func open_robot(id: String) -> void:
 		var slots: Array = (Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS).duplicate()
 		slots.sort_custom(func(a1, b1): return int(String(Play.SLOT_GROUP[a1]) == grp) > int(String(Play.SLOT_GROUP[b1]) == grp))
 		for s in slots:
+			if not Career.fits(r, s):
+				continue
 			var out: Dictionary = Career.roster(t)[s]
 			var b := _button("%s: for #%d %s (%d)" % [s, int(out["number"]), out["name"], Robot.overall(out)], func():
 				Career.swap_any(Career.roster(t), Career.team(t)["bench"], s, id); Career.save(); open_robot(id))
@@ -1878,7 +1880,7 @@ func open_robot(id: String) -> void:
 			row.add_child(b)
 	else:
 		_section(box, "Take him out")
-		box.add_child(_label("Bring in anyone from the bench - his position first. From the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+		box.add_child(_label("Bring in a bench robot who can play here - his position first. From the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
 		var row2 := HFlowContainer.new()
 		row2.add_theme_constant_override("h_separation", 6)
 		row2.add_theme_constant_override("v_separation", 6)
@@ -1886,6 +1888,8 @@ func open_robot(id: String) -> void:
 		var bench: Array = (Career.team(t)["bench"] as Array).duplicate()
 		bench.sort_custom(func(x, y): return int(String(x["group"]) == String(Play.SLOT_GROUP[slot])) * 1000 + Robot.effective_overall(x) > int(String(y["group"]) == String(Play.SLOT_GROUP[slot])) * 1000 + Robot.effective_overall(y))
 		for bb: Dictionary in bench:
+			if not Career.fits(bb, slot):
+				continue
 			var bid := String(bb["id"])
 			var lost := Robot.lost_parts(bb)
 			var b2 := _button("#%d %s, %s %d%s" % [int(bb["number"]), bb["name"], bb["group"], Robot.overall(bb), (" (no %s)" % ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))) if not lost.is_empty() else ""], func():
@@ -1936,7 +1940,7 @@ func open_injuries(slots: Array) -> void:
 		if Career.money(0) < Career.JUNK_PRICE and not Robot.can_play(r):
 			var any_sub := false
 			for bb in Career.team(0)["bench"]:
-				if Robot.can_play(bb):
+				if Robot.can_play(bb) and Career.fits(bb, s):
 					any_sub = true
 			if not any_sub:
 				row.add_child(_button("Emergency junk (purse empty, no one on the bench)", func(): main.injury_choice(s, "emergency")))
@@ -1953,7 +1957,7 @@ func open_injuries(slots: Array) -> void:
 		# or anyone healthy off the bench, from any position - his own kind first
 		var subs: Array = []
 		for b: Dictionary in tm.get("bench", []):
-			if Robot.can_play(b):
+			if Robot.can_play(b) and Career.fits(b, s):
 				subs.append(b)
 		var grp := String(Play.SLOT_GROUP[s])
 		subs.sort_custom(func(x, y): return Robot.overall_at(x, grp) > Robot.overall_at(y, grp))

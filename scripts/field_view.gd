@@ -1272,16 +1272,15 @@ func _part_off(p: PlaySim.P, part: String, by: PlaySim.P) -> void:
 	add_child(piece)
 	piece.global_transform = xf
 	n.visible = false
-	# the part keeps its team's colour and glows, so you can see whose it was and where it lies
-	# for the rest of the game; its torn-off end burns orange
-	var tc: Color = COLORS[clampi(p.team, 0, 1)]
-	var hot := _glow(tc.lightened(0.1), 1.0)
-	var ember := _glow(Color(1.0, 0.45, 0.1), 2.2)
-	var k := 0
-	for c in piece.get_children():
-		if c is MeshInstance3D:
-			(c as MeshInstance3D).material_override = ember if k == 0 and piece.get_child_count() > 1 else hot
-			k += 1
+	# the part keeps its own colours - red for Red, blue for Blue - with a small orange ember where
+	# it tore off, so you can see whose it was and where it lies for the rest of the game
+	var ember := MeshInstance3D.new()
+	var em := SphereMesh.new()
+	em.radius = 0.09
+	em.height = 0.18
+	ember.mesh = em
+	ember.material_override = _glow(Color(1.0, 0.45, 0.1), 2.4)
+	piece.add_child(ember)
 	_ring(world(_cur.get(p.idx, p.pos), 0.06))
 	var dir := Vector3(randf_range(-1, 1), 0, randf_range(-1, 1)).normalized()
 	if by != null:

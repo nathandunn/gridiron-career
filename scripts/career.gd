@@ -237,10 +237,26 @@ static func qb_arms(starters: Dictionary) -> String:
 
 
 ## Put any healthy bench robot (any position) in at `slot`; the starter sits.
+## Who can stand in where: his own position, or one built much the same (no receiver on the
+## defensive line, no lineman at quarterback).
+const CAN_PLAY := {
+	"QB": ["QB"], "RB": ["RB", "WR", "TE"], "WR": ["WR", "RB", "TE", "CB"], "TE": ["TE", "RB", "WR", "OL"],
+	"OL": ["OL", "TE", "DL"], "DL": ["DL", "OL", "LB"], "LB": ["LB", "DL", "S"], "CB": ["CB", "S", "WR"],
+	"S": ["S", "CB", "LB"], "K": ["K", "P"], "P": ["P", "K"],
+}
+
+
+static func fits(robot: Dictionary, slot: String) -> bool:
+	var g: String = Play.SLOT_GROUP.get(slot, slot)
+	return String(robot.get("group", "")) in (CAN_PLAY.get(g, [g]) as Array)
+
+
 static func swap_any(starters: Dictionary, bench: Array, slot: String, bench_id: String) -> bool:
 	for i in bench.size():
 		var b: Dictionary = bench[i]
 		if String(b["id"]) == bench_id:
+			if not fits(b, slot):
+				return false
 			var out: Dictionary = starters[slot]
 			b["slot"] = slot
 			out["slot"] = ""
@@ -274,7 +290,7 @@ static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> Strin
 			return "%s plays on without his %s (no money)." % [r["name"], " or ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 		var any := {}
 		for b in bench:
-			if Robot.can_play(b) and (any.is_empty() or Robot.effective_overall(b) > Robot.effective_overall(any)):
+			if Robot.can_play(b) and fits(b, slot) and (any.is_empty() or Robot.effective_overall(b) > Robot.effective_overall(any)):
 				any = b
 		if not any.is_empty():
 			swap_any(starters, bench, slot, String(any["id"]))
