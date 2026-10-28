@@ -989,8 +989,8 @@ static func finish_week(g: Game) -> Array:
 	var wk := int(sn["week"])
 	if wk > WEEKS:
 		# the championship game: no draws - a tie goes to overtime
-		var mine := g.score[0]
-		var theirs := g.score[1]
+		var mine: int = g.score[0]
+		var theirs: int = g.score[1]
 		var ot := ""
 		if mine == theirs:
 			var w := _overtime(-1, int(sn["opp"]))
