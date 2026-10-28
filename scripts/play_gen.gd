@@ -292,14 +292,13 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 ## A kick return, played out like any snap: the returner (in the QB's spot, `depth` yards behind
 ## the line) has the ball, his ten form a wall in front of him, and the kicking team's eleven
 ## come down on him from `gap` yards upfield. {off, def} Plays.
-static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0, call := "middle") -> Dictionary:
-	# the returner is a back (the RB's spot; a career team sends in its best returner)
+## A kick or punt, then its return, played out like any snap. The line of scrimmage is where the
+## ball is kicked from; the returner (in the RB's spot - a career team sends in its best
+## returner) waits `depth` yards back where it will come down. On a punt his ten line up on the
+## line against the punting team; on a kickoff they stand in three lines between him and the
+## kicking team. The kicking side's eleven cover from the line. {off, def} Plays.
+static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, call := "middle", kind := "punt") -> Dictionary:
 	var lines: Array[String] = ["formation shotgun", "RB at 0 %s" % _f(-depth)]
-	# a wedge: the big men 6-7 yards in front of him, the quick ones closer and wider
-	var wall := {"LT": Vector2(-5, -depth + 6.5), "LG": Vector2(-2.5, -depth + 7.2), "C": Vector2(0, -depth + 7.6),
-		"RG": Vector2(2.5, -depth + 7.2), "RT": Vector2(5, -depth + 6.5),
-		"WR1": Vector2(-11, -depth + 5.5), "WR2": Vector2(11, -depth + 5.5), "WR3": Vector2(0, -depth + 4.0),
-		"TE": Vector2(-7, -depth + 4.5), "QB": Vector2(7, -depth + 4.5)}
 	var lane := 0.0
 	match call:
 		"left":
@@ -310,20 +309,36 @@ static func kick_return(rng: RandomNumberGenerator, depth := 12.0, gap := 4.0, c
 			lane = 0.0
 		_:
 			lane = _r(rng.randf_range(-2.0, 2.0))
+	var wall := {}
+	if kind == "punt":
+		# across the line from the punting team: they hold up the coverage, he returns it alone
+		var order := ["WR1", "TE", "LT", "LG", "C", "RG", "RT", "QB", "WR3", "WR2"]
+		for i in order.size():
+			wall[order[i]] = Vector2(-19.0 + 38.0 * float(i) / float(order.size() - 1), -1.2)
+	else:
+		# kickoff: a front line 12 yards off the ball, two more lines back towards him
+		var front := ["LT", "LG", "C", "RG", "RT"]
+		for i in front.size():
+			wall[front[i]] = Vector2(-16.0 + 32.0 * float(i) / 4.0, -12.0)
+		wall["TE"] = Vector2(-9.0, -depth * 0.5)
+		wall["QB"] = Vector2(9.0, -depth * 0.5)
+		wall["WR3"] = Vector2(0.0, -depth * 0.55)
+		wall["WR1"] = Vector2(-6.0, -depth * 0.78)
+		wall["WR2"] = Vector2(6.0, -depth * 0.78)
 	for s in wall:
-		lines.append("%s at %s %s" % [s, _f(wall[s].x + lane * 0.35 + rng.randf_range(-1.5, 1.5)), _f(wall[s].y)])
+		lines.append("%s at %s %s" % [s, _f(wall[s].x + (lane * 0.3 if kind != "punt" else 0.0) + rng.randf_range(-1.0, 1.0)), _f(wall[s].y)])
 	lines.append("kind run")
 	for s in wall:
 		lines.append("%s: block" % s)
 	lines.append("RB: run at %s" % _f(lane))
-	var off := _finish("Return", "offense", "Kick return up the %s" % ("middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")), lines)
+	var off := _finish("Return", "offense", "%s return up the %s" % ["Punt" if kind == "punt" else "Kick", "middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")], lines)
 	var dl: Array[String] = ["kind blitz", "front off"]
 	var n := Play.DEFENSE_SLOTS.size()
 	for i in n:
 		var s: String = Play.DEFENSE_SLOTS[i]
-		var x := -22.0 + 44.0 * float(i) / float(n - 1) + rng.randf_range(-1.0, 1.0)
+		var x := -21.0 + 42.0 * float(i) / float(n - 1) + rng.randf_range(-0.6, 0.6)
 		dl.append("%s: blitz" % s)
-		dl.append("%s at %s %s" % [s, _f(x), _f(gap + rng.randf_range(0.0, 3.0) + absf(x) * 0.06)])
+		dl.append("%s at %s %s" % [s, _f(x), _f(gap + rng.randf_range(0.0, 0.6))])
 	var dfn := _finish("Coverage", "defense", "Kick coverage", dl)
 	return {"off": off["play"], "def": dfn["play"]}
 

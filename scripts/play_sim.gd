@@ -1881,9 +1881,6 @@ func _drive_air(p: P) -> void:
 		# well out in front of him when he catches it
 		if p == air_target:
 			_set_want(p, Vector2.ZERO)
-		elif p.idx in (air.get("escorts", []) as Array) and p.block_target == null:
-			var side := -1.0 if p.idx == int((air["escorts"] as Array)[0]) else 1.0
-			_toward(p, air_target.pos + Vector2(side * 1.8, 4.0), 0.8)
 		elif p.block_target != null:
 			# go and meet your man, keeping between him and the returner
 			var tgt := p.block_target
@@ -2034,27 +2031,10 @@ func _assign_return_blocks() -> void:
 		if b.engaged != null:
 			b.block_target = b.engaged
 			taken[b.engaged.idx] = true
-	# two lead blockers stay with the returner and lead him up the field; they take a man only
-	# when he gets close to the ball
-	if not air.has("escorts") and ret != null:
-		var by_d := blockers.duplicate()
-		by_d.sort_custom(func(a, b): return a.pos.distance_to(ret.pos) < b.pos.distance_to(ret.pos))
-		air["escorts"] = by_d.slice(0, 2).map(func(b): return b.idx)
-	var escorts: Array = air.get("escorts", [])
+	var escorts: Array = []
 	var pairs: Array = []
 	for b: P in blockers:
 		if b.engaged != null:
-			continue
-		if b.idx in escorts:
-			var near: P = null
-			var nd := 7.0
-			for e: P in dfn:
-				if not e.down and not taken.has(e.idx) and ret != null and e.pos.distance_to(ret.pos) < nd and (e.pos.y - ret.pos.y) > -0.5:
-					nd = e.pos.distance_to(ret.pos)
-					near = e
-			b.block_target = near
-			if near != null:
-				taken[near.idx] = true
 			continue
 		for e: P in dfn:
 			if e.down or taken.has(e.idx):

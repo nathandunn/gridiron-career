@@ -191,14 +191,14 @@ func _do_kickoff(kind: String) -> Dictionary:
 		"squib":
 			var c := clampf(roundf(rng.randfn(22.0, 5.0)), 10.0, 34.0)
 			yl = c
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 10.0, "gap": 22.0, "hang": 1.7, "low": true, "kick_dist": 45.0}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 1.9, "low": true}
 			text = "%s squibs it along the ground." % k
 			_new_drive()
 		_:
 			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
 			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
 			yl = maxf(c, 1.0)
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "depth": 12.0, "gap": 48.0, "hang": 3.4, "kick_dist": 62.0}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 4.0}
 			text = "%s kicks it deep." % k
 			_new_drive()
 	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
@@ -330,11 +330,10 @@ func _return_snap(call := "middle") -> Dictionary:
 	rd["call"] = call
 	rd["fair"] = call == "fair"
 	var catch_y := float(rd["catch"])
-	var depth := float(rd["depth"])
+	var depth := float(rd["from_los"])
 	var los := catch_y + depth
-	var gap := minf(float(rd["gap"]), 97.0 - los)
-	rd["from_y"] = minf(-depth + float(rd.get("kick_dist", 55.0)), 99.0 - los)
-	var kr := PlayGen.kick_return(rng, depth, gap, call)
+	rd["from_y"] = minf(float(rd.get("back", 0.5)), 99.5 - los)
+	var kr := PlayGen.kick_return(rng, depth, 1.0, call, "punt" if String(rd["kind"]) == "punt" else "kickoff")
 	yl = los
 	down = 1
 	to_go = 10.0
@@ -603,8 +602,10 @@ func _punt(kind := "punt") -> Dictionary:
 			text = "%s angles it out of bounds: a %d-yard coffin corner, out at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
 		elif land < 95.0:
 			# he fields it: the punt and the return are played out as the next snap
-			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "depth": 10.0, "gap": 30.0,
-				"hang": 4.6 if kind == "pooch" else 3.9, "kick_dist": gross + 12.0, "pooch": kind == "pooch"}
+			# the return starts from where it was punted: the line is the punting team's, the punter
+			# 13 yards behind it, the returner as far downfield as the kick goes
+			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "from_los": gross, "back": 13.0,
+				"hang": 4.8 if kind == "pooch" else 4.5, "pooch": kind == "pooch"}
 			text = "%s punts it away." % _who(pr, who)
 		else:
 			text = "%s punts %d yards, downed at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]

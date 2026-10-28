@@ -127,6 +127,20 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"next": next_game()
+			"punt":
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				for tt in 2:
+					game.teams[tt]["calling"] = "coach"
+				game.teams[game.poss]["calling"] = "pick"
+				game.down = 4
+				game.yl = 30.0
+				game.to_go = 8.0
+				_choice = {"kick": "punt"}
+				_phase = "after"
+				_next()
 			"kickpick":
 				game.kick_due = {"receiver": 1}
 				_open_special("kickoff", 0)
@@ -144,6 +158,32 @@ func _ready() -> void:
 				game.to_go = 7.0
 				_open_picker("offense")
 			"sim2end": sim_to_end()
+			"fixtest":
+				sim_to_end()
+				await get_tree().create_timer(3.0).timeout
+				next_game()
+				await get_tree().create_timer(1.0).timeout
+				var found: Array = []
+				var stack: Array = [hud]
+				while not stack.is_empty():
+					var nd: Node = stack.pop_back()
+					if nd is Button and (nd as Button).text.begins_with("Fix $"):
+						found.append(nd)
+					stack.append_array(nd.get_children())
+				print("FIXTEST buttons ", found.size(), " purse ", Career.money(0))
+				if not found.is_empty():
+					var b0: Button = found[found.size() - 1]
+					print("FIXTEST pressing ", b0.text, " disabled ", b0.disabled)
+					b0.pressed.emit()
+					await get_tree().create_timer(0.5).timeout
+					var n2 := 0
+					stack = [hud]
+					while not stack.is_empty():
+						var nd2: Node = stack.pop_back()
+						if nd2 is Button and (nd2 as Button).text.begins_with("Fix $") and not nd2.is_queued_for_deletion():
+							n2 += 1
+						stack.append_array(nd2.get_children())
+					print("FIXTEST after: buttons ", n2, " purse ", Career.money(0))
 			"injuries":
 				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
@@ -984,6 +1024,12 @@ func _sim_step() -> void:
 
 
 ## The start menu: season, exhibition or the sim lab.
+## After a season game: the next-game screen (last week, the table, repairs and shopping).
+func next_game() -> void:
+	new_game(false)
+	hud.open_next()
+
+
 func show_menu() -> void:
 	hud.close_overlay(false)
 	_phase = "pregame"
@@ -992,6 +1038,9 @@ func show_menu() -> void:
 
 func choose_mode(m: String) -> void:
 	Career.set_mode(m)
+	if m == "season" and not Career.season_over():
+		next_game()
+		return
 	new_game(false)
 
 
