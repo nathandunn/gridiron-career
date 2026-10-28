@@ -1844,7 +1844,8 @@ func _cover_zone(p: P) -> void:
 		if deep:
 			# a deep defender only shades across; he comes up only for a receiver already deep
 			aim.x = lerpf(anchor.x, fut.x, w)
-			aim.y = maxf(anchor.y - 2.0 * (1.0 - p.d("discipline")), fut.y + 3.0 + 2.0 * p.d("discipline"))
+			# (a step or two over the top of him - not five yards, which gives him everything underneath)
+			aim.y = maxf(anchor.y - 2.0 * (1.0 - p.d("discipline")), fut.y + 1.0 + 1.0 * p.d("discipline"))
 		else:
 			aim = aim + Vector2(0, 0.8)
 	var frac := 0.85 if p.pos.distance_to(aim) > 4.0 else 1.0
@@ -1910,7 +1911,8 @@ func _drive_air(p: P) -> void:
 		if p.intent == "play_ball" or p.intent == "jump_route" or reachable:
 			_toward(p, to, 1.0, 0.2)
 		else:
-			_toward(p, to + Vector2(0, 3.0), 0.9)
+			# can't get there in time: close on the spot from just behind it, to make the tackle
+			_toward(p, to + Vector2(0, 0.8), 1.0)
 		return
 	# offense: drift toward where it is coming down to block for the catch
 	if p.group in ["WR", "TE", "RB"] and p.pos.distance_to(to) < 15.0:
