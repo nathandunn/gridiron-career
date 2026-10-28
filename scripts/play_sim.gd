@@ -602,10 +602,10 @@ func _sense(id: String, a: Array, p: P) -> bool:
 		"drop_done": return bool(p.mem.get("_drop_done", false))
 		"route_done": return p.route_done
 		"enemy_within": return _nearest_enemy_d(p, false) < float(a[0])
-		"rusher_within": return _rusher_d(p) < float(a[0])
-		"pressure": return _rusher_d(p) < 2.2
-		"pocket_collapsing": return _rushers_within(p, 3.0) >= 2
-		"clean_pocket": return _rusher_d(p) > 4.0
+		"rusher_within": return _rusher_d_seen(p) < float(a[0])
+		"pressure": return _rusher_d_seen(p) < 2.2
+		"pocket_collapsing": return _rushers_within(p, 3.0, true) >= 2
+		"clean_pocket": return _rusher_d_seen(p) > 4.0
 		"blocker_ahead": return _blocker_ahead(p) != null
 		"open_field": return _open_field(p)
 		"crowd_ahead": return _crowd_ahead(p) >= 3
@@ -923,6 +923,26 @@ func _nearest_enemy_d(p: P, free_only: bool) -> float:
 
 
 ## A rusher is a free defender who has got into the backfield.
+## The rush as the quarterback sees it: where the rushers were a moment ago (0.2-0.5 s, less
+## with a high IQ) - by the time he knows a man is free, the man is closer than that.
+func _seen_pos(e: P, p: P) -> Vector2:
+	# only a man who has just come free of a block is a surprise; a blitzer he saw coming
+	if t - float(e.mem.get("_shed_t", -9.0)) > 0.6:
+		return e.pos
+	var lag := clampf(float(K.get("qb_react", 0.45)) / clampf(float(p.body.get("iq", 1.0)), 0.6, 1.6), 0.0, 0.5)
+	var n := clampi(int(round(lag / DT)), 0, e.hist.size() - 1)
+	return e.hist[e.hist.size() - 1 - n] if e.hist.size() > n else e.pos
+
+
+func _rusher_d_seen(p: P) -> float:
+	var bd := 99.0
+	for e: P in dfn:
+		if e.down or e.engaged != null or e.pos.y > -0.3:
+			continue
+		bd = minf(bd, p.pos.distance_to(_seen_pos(e, p)))
+	return bd
+
+
 func _rusher_d(p: P) -> float:
 	var bd := 99.0
 	for e: P in dfn:
@@ -932,10 +952,10 @@ func _rusher_d(p: P) -> float:
 	return bd
 
 
-func _rushers_within(p: P, r: float) -> int:
+func _rushers_within(p: P, r: float, seen := false) -> int:
 	var n := 0
 	for e: P in dfn:
-		if not e.down and e.engaged == null and e.pos.y <= -0.3 and p.pos.distance_to(e.pos) < r:
+		if not e.down and e.engaged == null and e.pos.y <= -0.3 and p.pos.distance_to(_seen_pos(e, p) if seen else e.pos) < r:
 			n += 1
 	return n
 
@@ -1178,7 +1198,7 @@ func _throw(qb: P, r: P) -> bool:
 	var dist := qb.pos.distance_to(c)
 	var sigma := (0.25 + 0.012 * dist + 0.0009 * dist * dist) * (1.3 - float(qb.body.get("acc", QB_ACC))) * float(K["throw_err"])
 	if _rusher_d(qb) < 2.0:
-		sigma *= 1.6
+		sigma *= float(K.get("hurry_err", 2.3))   # hit as he throws: it sails
 	if scrambling or qb.vel.length() > 3.0:
 		sigma *= 1.3
 	var err := Vector2(rng.randfn(0.0, sigma), rng.randfn(0.0, sigma))
@@ -1469,7 +1489,9 @@ func _qb_default(p: P) -> void:
 		read_idx = mini(read_idx + 1, reads.size() - 1)
 	var cur: P = by_slot["o:" + reads[read_idx]]
 	var since := t - 0.3
-	var pressure := _rusher_d(p)
+	var pressure := _rusher_d_seen(p)
+	# he reads the rush a beat late (how late depends on his IQ): a rusher who has just beaten
+	# his man is on him before he reacts, so a beaten block costs sacks, not just a hurried throw
 	# vision lets him see an open man who isn't his current read
 	if _open(p, cur) > need:
 		_throw(p, cur)
@@ -1726,7 +1748,7 @@ func _pursue(p: P) -> void:
 		var lead := d / p.spd()
 		aim = Vector2(c.pos.x + c.vel.x * lead, c.pos.y + dir * clampf(d * 0.35, 1.0, 5.0))
 	# break down as he closes, rather than overrun the runner and let him cut back past
-	_toward(p, aim, 0.8 if d < 4.5 and d > 1.6 and air.get("kick", false) else 1.0, 0.0)
+	_toward(p, aim, float(K.get("breakdown", 0.92)) if d < 4.5 and d > 1.6 and air.get("kick", false) else 1.0, 0.0)
 
 
 ## Where to run to meet the carrier: the earliest point on his line (at his current velocity)
@@ -2282,6 +2304,7 @@ func ball_out_of_qb() -> bool:
 
 
 func _shed(e: P) -> void:
+	e.mem["_shed_t"] = t
 	for b: P in e.blockers:
 		e.shed_from[b.idx] = t + 1.0
 		b.engaged = null
@@ -2580,7 +2603,7 @@ func _contacts() -> void:
 		if t < c.stiff_until:
 			p -= 0.25 * clampf(float(c.body["power"]) - float(e.body["power"]) + 0.6, 0.0, 1.0)
 		if c.slot == "QB" and not handed and c.pos.y < 0.5:
-			p += 0.18   # in the pocket he can't get away
+			p += float(K.get("pocket_tackle", 0.32))   # in the pocket he can't get away
 		p += (gang - 1) * 0.12
 		if dive:
 			p *= 0.5

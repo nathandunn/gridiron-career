@@ -2,6 +2,10 @@ extends SceneTree
 ## Kickoff and punt returns are played out: how many, how far, and nothing breaks.
 func _init() -> void:
 	Library.ensure()
+	for a in OS.get_cmdline_user_args():
+		var kv := a.trim_prefix("--").split("=")
+		if kv.size() == 2:
+			PlaySim.K[kv[0]] = float(kv[1])
 	var n := {"Kickoff": 0, "Punt": 0, "fair": 0}
 	var yds := {"Kickoff": 0.0, "Punt": 0.0, "fair": 0.0}
 	var tds := 0
