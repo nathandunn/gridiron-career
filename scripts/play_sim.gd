@@ -604,7 +604,7 @@ func _sense(id: String, a: Array, p: P) -> bool:
 		"enemy_within": return _nearest_enemy_d(p, false) < float(a[0])
 		"rusher_within": return _rusher_d_seen(p) < float(a[0])
 		"pressure": return _rusher_d_seen(p) < 2.2
-		"pocket_collapsing": return _rushers_within(p, 3.0, true) >= 2
+		"pocket_collapsing": return _rushers_within(p, 3.0, true) + _pushed_back(p) >= 2
 		"clean_pocket": return _rusher_d_seen(p) > 4.0
 		"blocker_ahead": return _blocker_ahead(p) != null
 		"open_field": return _open_field(p)
@@ -952,6 +952,15 @@ func _rusher_d(p: P) -> float:
 	return bd
 
 
+## Rushers still locked up with a blocker but driven back into the quarterback's lap.
+func _pushed_back(p: P) -> int:
+	var n := 0
+	for e: P in dfn:
+		if not e.down and e.engaged != null and e.group == "DL" and p.pos.distance_to(e.pos) < 2.2:
+			n += 1
+	return n
+
+
 func _rushers_within(p: P, r: float, seen := false) -> int:
 	var n := 0
 	for e: P in dfn:
@@ -1199,6 +1208,8 @@ func _throw(qb: P, r: P) -> bool:
 	var sigma := (0.25 + 0.012 * dist + 0.0009 * dist * dist) * (1.3 - float(qb.body.get("acc", QB_ACC))) * float(K["throw_err"])
 	if _rusher_d(qb) < 2.0:
 		sigma *= float(K.get("hurry_err", 2.3))   # hit as he throws: it sails
+	elif _pushed_back(qb) >= 1:
+		sigma *= 1.5                               # the pocket caved in on him: no room to step into it
 	if scrambling or qb.vel.length() > 3.0:
 		sigma *= 1.3
 	var err := Vector2(rng.randfn(0.0, sigma), rng.randfn(0.0, sigma))
@@ -1504,6 +1515,12 @@ func _qb_default(p: P) -> void:
 				_throw(p, r)
 				return
 	var limit := 2.6 + 1.6 * p.d("patience")
+	# a blitzer coming free: get it out to the hot read before he arrives
+	if pressure < float(K.get("hot_read", 3.2)) and pressure >= 1.6 and since > 0.35:
+		var hb := _best_read(p, need - 0.6 - 0.6 * p.d("risk"), -99.0, 9.0)
+		if hb["r"] != null:
+			_throw(p, hb["r"])
+			return
 	if pressure < 1.6 or since > limit:
 		var b := _best_read(p, need - 1.2 - 0.8 * p.d("risk"))
 		if b["r"] != null:
@@ -2017,12 +2034,14 @@ func _assign_blocks() -> void:
 		_assign_run_blocks(blocking)
 		return
 	var taken := {}
-	# engaged pairs keep each other
+	# engaged pairs keep each other; a blocker who has just picked up a blitzer stays on him
 	for b: P in blocking:
 		if b.engaged != null:
 			b.block_target = b.engaged
 			taken[b.engaged.idx] = int(taken.get(b.engaged.idx, 0)) + 1
-	var free: Array = blocking.filter(func(b): return b.engaged == null)
+		elif b.block_target != null and t - float(b.mem.get("_picked", -9.0)) < 1.2 and not b.block_target.down:
+			taken[b.block_target.idx] = int(taken.get(b.block_target.idx, 0)) + 1
+	var free: Array = blocking.filter(func(b): return b.engaged == null and not (b.block_target != null and t - float(b.mem.get("_picked", -9.0)) < 1.2))
 	# greedy: cheapest pair first
 	var pairs: Array = []
 	for b: P in free:
@@ -2196,6 +2215,7 @@ func _assign_run_blocks(blocking: Array) -> void:
 
 
 func _resolve_blocks() -> void:
+	_blitz_pickup()
 	# new engagements
 	for b: P in players:
 		if b.engaged != null or b.block_target == null or b.down or b == carrier:
@@ -2290,6 +2310,43 @@ func _resolve_blocks() -> void:
 	for b: P in players:
 		if b.engaged != null and not b.engaged.blockers.has(b) and b.engaged.engaged != b:
 			b.engaged = null
+
+
+## Blitz pickup in pass protection: a blocker who sees a free rusher coming through his area
+## leaves the man he is on (if a team-mate has that man too, or the free man is the bigger
+## danger) and takes the free one. How often he sees it in time comes from his blocking.
+func _blitz_pickup() -> void:
+	if not pass_play or handed or thrown or qb_runner:
+		return
+	var qb: P = by_slot["o:QB"]
+	for b: P in off:
+		if b.group != "OL" and b.intent != "pick_up_blitz":
+			continue
+		if b.engaged == null or b.down:
+			continue
+		var free: P = null
+		var fd := 3.0
+		for e: P in dfn:
+			if e.down or e.engaged != null or not _rushing(e):
+				continue
+			var d := b.pos.distance_to(e.pos)
+			if d < fd and e.pos.distance_to(qb.pos) < b.engaged.pos.distance_to(qb.pos) + 1.5:
+				fd = d
+				free = e
+		if free == null:
+			continue
+		var cur := b.engaged
+		var shared := cur.blockers.size() >= 2
+		var worse := free.pos.distance_to(qb.pos) + 1.5 < cur.pos.distance_to(qb.pos)
+		if not (shared or worse):
+			continue
+		var see := (0.8 + 2.2 * clampf(_skill(b, "blocking") + 0.5, 0.0, 1.5)) * float(K.get("pickup", 1.0))
+		stat["pickup_chances"] = int(stat.get("pickup_chances", 0)) + 1
+		if rng.randf() < see * DT:
+			stat["pickups"] = int(stat.get("pickups", 0)) + 1
+			_unlock(b)
+			b.block_target = free
+			b.mem["_picked"] = t
 
 
 ## A rating as -1 (20) .. 0 (60) .. +1 (100), with his parts; 0 for a body with no robot.
