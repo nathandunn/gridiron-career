@@ -1204,6 +1204,8 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		"p0", "p1":
 			var t := int(_stats_tab.substr(1))
 			_player_tables(box, pstats[t], 1, g.teams[t])
+			g._track_ovr(false)
+			_condition_table(box, g.teams[t], g.ovr_track)
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
@@ -1328,6 +1330,68 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) ->
 				l.autowrap_mode = TextServer.AUTOWRAP_OFF
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 				grid.add_child(l)
+
+
+## Every robot on the side: his overall at kickoff, minus what the hits took, plus what
+## repairs gave back, equals where he is now; then how worn each of his parts is.
+func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void:
+	var roster: Dictionary = team.get("roster", {})
+	if roster.is_empty():
+		return
+	_section(box, "Condition")
+	box.add_child(_label("OVR at kickoff - damage + repairs = now (a part knocked off costs overall; junk spares cost a little). Then each part's wear: at 100% it comes off.", fs - 3, Color(0.75, 0.8, 0.85)))
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 2)
+	box.add_child(grid)
+	var rows: Array = []
+	for slot in roster:
+		rows.append([String(slot), roster[slot]])
+	for r: Dictionary in team.get("bench", []):
+		rows.append(["bench", r])
+	for row in rows:
+		var r: Dictionary = row[1]
+		if r.is_empty():
+			continue
+		var tr: Dictionary = track.get(String(r.get("id", "")), {})
+		var nm := String(r.get("name", ""))
+		var bits := nm.split(" ")
+		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
+		var nl := _label("#%d %s (%s)" % [int(r.get("number", 0)), short, row[0]], fs - 2, Color(0.85, 0.9, 1))
+		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		grid.add_child(nl)
+		var o_txt := str(Robot.overall_if(r, "now"))
+		var hit := false
+		if not tr.is_empty():
+			var st := int(roundf(float(tr["start"])))
+			var dm := int(roundf(float(tr["dmg"])))
+			var up := int(roundf(float(tr["upg"])))
+			var now := int(roundf(float(tr["last"])))
+			o_txt = "%d" % st
+			if dm > 0:
+				o_txt += " -%d" % dm
+			if up > 0:
+				o_txt += " +%d" % up
+			if dm > 0 or up > 0:
+				o_txt += " = %d" % now
+			hit = dm > 0
+		var ol := _label(o_txt, fs - 2, Color(1.0, 0.55, 0.5) if hit else Color(0.85, 0.88, 0.92))
+		ol.autowrap_mode = TextServer.AUTOWRAP_OFF
+		grid.add_child(ol)
+		var worn: Array = []
+		var parts := Robot.ensure_parts(r)
+		for k in Robot.PARTS:
+			var pt: Dictionary = parts[k]
+			var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
+			var hp := float(pt["hp"])
+			if hp <= 0.0:
+				worn.append("%s OFF" % String(Robot.PART_LABEL[k]).to_lower())
+			elif hp < mx - 0.5:
+				worn.append("%s %d%%" % [String(Robot.PART_LABEL[k]).to_lower(), int(roundf(100.0 * (1.0 - hp / mx)))])
+		var dl := _label(", ".join(worn) if not worn.is_empty() else "unmarked", fs - 2, YELLOW if not worn.is_empty() else Color(0.6, 0.65, 0.7))
+		dl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(dl)
 
 
 func show_game_over(g: Game) -> void:

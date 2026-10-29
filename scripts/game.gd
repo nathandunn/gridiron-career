@@ -46,6 +46,35 @@ const CALLING := ["pick", "coach", "random", "generated"]
 const CALLING_LABEL := {"pick": "You pick (from new plays)", "coach": "Coach calls", "random": "Random from playbook", "generated": "Random new plays"}
 
 
+## Each robot's overall through the game, by robot id: where he started, where he is, and
+## what he lost to damage on the field and got back from repairs between plays.
+## {id: {team, start, last, dmg, upg}}
+var ovr_track := {}
+
+
+func _track_ovr(after_play: bool) -> void:
+	for t in 2:
+		var tm: Dictionary = teams[t]
+		if not tm.has("roster"):
+			continue
+		var bodies: Array = (tm["roster"] as Dictionary).values() + (tm.get("bench", []) as Array)
+		for r: Dictionary in bodies:
+			if r.is_empty() or not r.has("id"):
+				continue
+			var id := String(r["id"])
+			var o := float(Robot.overall_if(r, "now"))
+			if not ovr_track.has(id):
+				ovr_track[id] = {"team": t, "start": o, "last": o, "dmg": 0.0, "upg": 0.0}
+				continue
+			var tr: Dictionary = ovr_track[id]
+			var d := o - float(tr["last"])
+			if d < 0.0:
+				tr["dmg"] = float(tr["dmg"]) - d
+			elif d > 0.0:
+				tr["upg"] = float(tr["upg"]) + d
+			tr["last"] = o
+
+
 func setup(red: Dictionary, blue: Dictionary, quarter_secs: float, seed_v: int) -> void:
 	teams = [red, blue]
 	red["index"] = 0
@@ -59,6 +88,7 @@ func setup(red: Dictionary, blue: Dictionary, quarter_secs: float, seed_v: int) 
 			"first_downs": 0, "third_att": 0, "third_conv": 0, "fourth_att": 0, "fourth_conv": 0, "yards": 0.0,
 			"top": 0.0, "explosive": 0, "turnovers": 0}
 	opened = rng.randi() % 2
+	_track_ovr(false)
 	_kickoff(1 - opened)
 
 
@@ -242,6 +272,7 @@ func calling_for(on_offense: bool) -> String:
 func next_snap(choice: Dictionary = {}) -> Dictionary:
 	if over:
 		return {"kind": "over"}
+	_track_ovr(false)
 	if not kick_due.is_empty():
 		return _do_kickoff(String(choice.get("kickoff", coach_kick())))
 	if not return_due.is_empty():
@@ -761,6 +792,7 @@ func coach_fixes(t: int) -> Array:
 
 
 func finish(sim: PlaySim) -> Dictionary:
+	_track_ovr(true)
 	var r: Dictionary = sim.result
 	for id in sim.hurt_ids:
 		hurt[id] = true
