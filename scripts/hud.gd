@@ -45,7 +45,7 @@ const CYAN := Color(0.5, 0.8, 1.0)          # headings, information
 const MAGENTA := Color(1.0, 0.64, 0.16)     # the accent: titles, selected, the coach's pick
 const YELLOW := Color(1.0, 0.86, 0.36)      # highlights
 const INK := Color(0.08, 0.07, 0.06)        # text on the accent
-const KIND_LABEL := {"coach": "Coaches", "play": "Plays", "ai": "Position brains"}
+const KIND_LABEL := {"coach": "Coaches", "defense": "Defenses", "play": "Plays", "ai": "Position brains"}
 const PLAY_HELP := """Assignments, one line per position (OL, WR, DL, LB, CB, S set the whole group):
 QB: pass drop 3|5|7 read WR1 WR2 ... · play action drop 7 read ... · handoff · run sneak
 RB: run inside left|inside right|middle|outside left|outside right|sweep left|sweep right|draw
@@ -531,7 +531,7 @@ func _mode_section(box: VBoxContainer) -> void:
 			var ovr := 0.0
 			for s0 in o["starters"]:
 				ovr += Robot.overall(o["starters"][s0])
-			box.add_child(_label("   %s · coach %s · average %d" % [o["name"], o["coach"], int(ovr / 22.0)], fs - 2, Color(0.85, 0.9, 0.95)))
+			box.add_child(_label("   %s · %s · average %d" % [o["name"], Career.schemes_text(o), int(ovr / 22.0)], fs - 2, Color(0.85, 0.9, 0.95)))
 		var lr := HFlowContainer.new()
 		lr.add_theme_constant_override("h_separation", 6)
 		box.add_child(lr)
@@ -549,7 +549,7 @@ func _mode_section(box: VBoxContainer) -> void:
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
 		var opp := Career.team(1)
-		box.add_child(_label("%s. This week: %s (coach %s, %s)." % [Career.week_label(), opp["name"], opp["coach"], Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
+		box.add_child(_label("%s. This week: %s (%s, %s)." % [Career.week_label(), opp["name"], Career.schemes_text(opp), Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
 		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid for the result (win $1,300, tie $700) and for what you did: $250 a touchdown, $100 a big play (20+ yards), $100 a sack, $200 a takeaway, $50 a big hit (a part knocked off), $25 a first down - about $3,000 for a typical win, $1,000 for a loss. Repairs, upgrades and new robots come out of it. Each rival plays twice; best record is champion.", fs - 1, dim))
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
@@ -601,17 +601,36 @@ func open_teams(pregame := false) -> void:
 		b.add_theme_color_override("font_color", FieldView.COLORS[t].lightened(0.4))
 		sides.add_child(b)
 	var t: int = _teams_side
-	_section(box, "Coach")
+	_section(box, "Offense (coach)")
 	var cur: String = main.coaches[t]
 	_chips(box, Library.names("coach"), cur, func(n):
 		main.coaches[t] = n
 		if t == 1 and Career.loaded:
 			Career.team(1)["coach"] = n
 			Career.save()
+		elif t == 0 and Career.loaded:
+			Career.set_my_schemes(n, main.defenses[0])
+		main.library_changed()
 		open_teams(pregame))
 	var c: Coach = Library.coach(cur)
 	if c != null:
 		box.add_child(_label(c.about, fs - 1, Color(0.8, 0.82, 0.85)))
+	# the defensive scheme: calls the defenses and picks the defensive brains
+	_section(box, "Defense")
+	var dcur: String = main.defenses[t]
+	var dnames: Array = ["(the coach's own)"] + Library.names("defense")
+	_chips(box, dnames, dcur if dcur != "" else dnames[0], func(n):
+		var dn: String = "" if n == dnames[0] else n
+		main.defenses[t] = dn
+		if t == 1 and Career.loaded:
+			Career.team(1)["defense"] = dn
+			Career.save()
+		elif t == 0 and Career.loaded:
+			Career.set_my_schemes(main.coaches[0], dn)
+		main.library_changed()
+		open_teams(pregame))
+	var dco: Coach = Library.defense(dcur)
+	box.add_child(_label(dco.about if dco != null else "Uses the defense rules and defensive lineup in %s's coach file." % cur, fs - 1, Color(0.8, 0.82, 0.85)))
 	var cf := HFlowContainer.new()
 	if lab:
 		cf.visible = false
@@ -713,7 +732,7 @@ func open_editor(kind := "", name := "") -> void:
 	var kinds := HFlowContainer.new()
 	kinds.add_theme_constant_override("h_separation", 6)
 	box.add_child(kinds)
-	for k in ["ai", "coach", "play"]:
+	for k in ["ai", "coach", "defense", "play"]:
 		var b := _button(KIND_LABEL[k], func(): _ed_kind = k; _ed_name = ""; open_editor(), true)
 		b.button_pressed = _ed_kind == k
 		kinds.add_child(b)
@@ -823,6 +842,8 @@ func _fill_words() -> void:
 	var ex := ""
 	if _ed_kind == "ai":
 		ex = "e.g.  when with the ball and one man to beat -> juke\n      when before the throw and pressure and checkdown open -> check down"
+	elif _ed_kind == "defense":
+		ex = "e.g.  when third down and to go over 7 -> call \"Cover 2\" or \"Cover 3\"\n      when they run over 60% -> call \"Run Blitz\""
 	elif _ed_kind == "coach":
 		ex = "e.g.  when third down and to go over 7 -> call \"Smash\" or \"Four Verticals\"\n      when \"Power\" averaging over 5 and chance 50% -> call \"Power\""
 	_ed_example.text = ex
@@ -886,7 +907,7 @@ func _save() -> bool:
 
 func _copy_as_new() -> void:
 	var text := _ed_text.text
-	var head: String = {"ai": "ai ", "coach": "coach ", "play": "play "}[_ed_kind]
+	var head: String = {"ai": "ai ", "coach": "coach ", "defense": "coach ", "play": "play "}[_ed_kind]
 	var lines := text.split("\n")
 	for i in lines.size():
 		if lines[i].strip_edges().to_lower().begins_with(head):
@@ -1438,7 +1459,7 @@ func open_next() -> void:
 	var ovr := 0.0
 	for s0 in opp["starters"]:
 		ovr += Robot.overall(opp["starters"][s0])
-	box.add_child(_label("%s · coach %s · record %s · starters average %d" % [opp["name"], opp["coach"], Career._rec_text(opp.get("rec", {"w": 0, "l": 0, "t": 0})), int(ovr / 22.0)], fs, Color(0.9, 0.93, 1.0)))
+	box.add_child(_label("%s · %s · record %s · starters average %d" % [opp["name"], Career.schemes_text(opp), Career._rec_text(opp.get("rec", {"w": 0, "l": 0, "t": 0})), int(ovr / 22.0)], fs, Color(0.9, 0.93, 1.0)))
 	var my := 0.0
 	for s1 in me["starters"]:
 		my += Robot.overall(me["starters"][s1])
@@ -1545,7 +1566,7 @@ func _final_extras(box: Control, g: Game) -> void:
 		ds.append("%s: %d plays, %d yds, %s" % [Team.NAMES[int(d["team"])], int(d["plays"]), int(round(float(d["yards"]))), d["result"]])
 	box.add_child(_label("\n".join(ds), fs - 2))
 	var bt: Array = g.get_meta("brain_tally", [{}, {}])
-	_rules_section(box, bt, g.coach_tally, [g.teams[0]["coach"], g.teams[1]["coach"]])
+	_rules_section(box, bt, g.coach_tally, [g.teams[0]["coach"], g.teams[1]["coach"]], [g.teams[0].get("dcoach", g.teams[0]["coach"]), g.teams[1].get("dcoach", g.teams[1]["coach"])])
 
 
 func _calls_line(calls: Dictionary, who: String) -> String:
@@ -1601,7 +1622,7 @@ func _rate(s: Dictionary, a: String, b: String) -> String:
 
 
 ## The rules that did the work, per side: the coach's and the busiest brain rules.
-func _rules_section(box: Control, brain_tally: Array, coach_tally: Array, coaches: Array) -> void:
+func _rules_section(box: Control, brain_tally: Array, coach_tally: Array, coaches: Array, dcoaches: Array = []) -> void:
 	_section(box, "Rules that decided (most used)")
 	for t in 2:
 		var c: Coach = coaches[t]
@@ -1610,7 +1631,9 @@ func _rules_section(box: Control, brain_tally: Array, coach_tally: Array, coache
 		var cl := ct.keys()
 		cl.sort_custom(func(a, b): return ct[a] > ct[b])
 		for ln in cl.slice(0, 4):
-			lines.append("  %d× %s" % [ct[ln], _coach_rule(c, int(ln))])
+			var dln := String(str(ln)).begins_with("d")
+			var rc: Coach = (dcoaches[t] if dcoaches.size() > t else c) if dln else c
+			lines.append("  %d× %s" % [ct[ln], _coach_rule(rc, int(String(str(ln)).trim_prefix("d")))])
 		var bt: Dictionary = brain_tally[t]
 		var flat := []
 		for bn in bt:
@@ -1620,7 +1643,8 @@ func _rules_section(box: Control, brain_tally: Array, coach_tally: Array, coache
 		for f in flat.slice(0, 8):
 			var b: Brain = Library.brain(f[1])
 			lines.append("  %d× %s: %s" % [f[0], f[1], b.rule_text(f[2]) if b != null else str(f[2])])
-		var l := _label("%s (%s)\n%s" % [Team.NAMES[t], c.name, "\n".join(lines)], fs - 2)
+		var dname := (dcoaches[t] as Coach).name if dcoaches.size() > t and dcoaches[t] != null and dcoaches[t] != c else ""
+		var l := _label("%s (%s%s)\n%s" % [Team.NAMES[t], c.name, (" / " + dname) if dname != "" else "", "\n".join(lines)], fs - 2)
 		box.add_child(l)
 
 
@@ -1650,7 +1674,7 @@ func show_batch(agg: Dictionary, names: Array) -> void:
 	box.add_child(tabs)
 	var holder := VBoxContainer.new()
 	holder.add_theme_constant_override("separation", 8)
-	var teams_now := [Team.build(0, main.coaches[0], main.picks[0]), Team.build(1, main.coaches[1], main.picks[1])]
+	var teams_now := [Team.build(0, main.coaches[0], main.picks[0], "coach", main.defenses[0]), Team.build(1, main.coaches[1], main.picks[1], "coach", main.defenses[1])]
 	var fill := func(tab: String) -> void:
 		for ch in holder.get_children():
 			ch.queue_free()
@@ -1670,7 +1694,9 @@ func show_batch(agg: Dictionary, names: Array) -> void:
 	_section(box, "Play calls (calls · yards a call)")
 	for t in 2:
 		box.add_child(_label(_calls_line(agg["calls"][t], Team.NAMES[t]), fs - 2))
-	_rules_section(box, agg["brain_tally"], agg["coach_tally"], [main.game.teams[0]["coach"], main.game.teams[1]["coach"]] if main.game != null else [Library.coach(main.coaches[0]), Library.coach(main.coaches[1])])
+	var dcs: Array = [Library.defense(main.defenses[0]), Library.defense(main.defenses[1])]
+	var ocs: Array = [main.game.teams[0]["coach"], main.game.teams[1]["coach"]] if main.game != null else [Library.coach(main.coaches[0]), Library.coach(main.coaches[1])]
+	_rules_section(box, agg["brain_tally"], agg["coach_tally"], ocs, [dcs[0] if dcs[0] != null else ocs[0], dcs[1] if dcs[1] != null else ocs[1]])
 	var row := HFlowContainer.new()
 	box.add_child(row)
 	row.add_child(_button("Teams", func(): open_teams()))
@@ -1692,7 +1718,7 @@ func open_menu() -> void:
 		line = "Season over - champions: %s. Your record %s. Next: a new season with $2,000." % [sn.get("champion", "?"), rec]
 	else:
 		var opp: Dictionary = sn["clubs"][int(sn.get("opp", 0))]
-		line = "%s · %s %s · purse $%d · next: %s (%s)" % [Career.week_label(), you["name"], rec, int(Career.data["money"][0]), opp["name"], opp["coach"]]
+		line = "%s · %s %s · purse $%d · next: %s (%s)" % [Career.week_label(), you["name"], rec, int(Career.data["money"][0]), opp["name"], Career.schemes_text(opp)]
 	box.add_child(_label(line, fs, Color(0.9, 0.93, 1.0)))
 	box.add_child(_label("Six weeks against three rival clubs. Your robots, money and damage carry from week to week; you are paid for wins and what you do in each game.", fs - 2, Color(0.75, 0.8, 0.85)))
 	var sr := HFlowContainer.new()
@@ -1735,7 +1761,7 @@ func show_sim(games: Array) -> void:
 	for g: Game in games:
 		var o: Dictionary = g.get_meta("opp", {})
 		var res := "W" if g.score[0] > g.score[1] else ("L" if g.score[0] < g.score[1] else "T")
-		box.add_child(_label("   %s %d-%d  vs %s (%s)" % [res, g.score[0], g.score[1], o.get("name", "?"), o.get("coach", "?")], fs - 1,
+		box.add_child(_label("   %s %d-%d  vs %s (%s)" % [res, g.score[0], g.score[1], o.get("name", "?"), Career.schemes_text(o)], fs - 1,
 			Color(0.5, 0.95, 0.6) if res == "W" else (Color(1.0, 0.5, 0.5) if res == "L" else Color(0.9, 0.9, 0.9))))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)

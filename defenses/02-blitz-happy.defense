@@ -1,0 +1,14 @@
+coach "Blitz Happy"
+about "Send pressure on every down and dare them to beat it before the rush gets home."
+
+defense:
+  when third down and to go over 10 -> call "Cover 1" or "Cover 3"
+  when third down -> call "Cover 0 Blitz" or "Cover 0 Blitz" or "Cover 1"
+  when they run over 55% -> call "Run Blitz" or "Cover 0 Blitz"
+  otherwise -> call "Cover 0 Blitz" or "Run Blitz" or "Cover 1"
+
+lineup:
+  DL "Speed Rusher"
+  LB "Thumper"
+  CB "Shutdown Corner"
+  S "Enforcer"

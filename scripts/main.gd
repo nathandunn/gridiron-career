@@ -16,6 +16,7 @@ var _slowmo := 0.0           # real seconds of slow motion left (a part just cam
 var red_coach := "Balanced"
 var blue_coach := "Air Raid"
 var coaches := ["Balanced", "Air Raid"]
+var defenses := ["", ""]                 # each side's defensive scheme ("" = its coach's own defense)
 var picks := [{}, {}]
 var calling := ["pick", "coach"]   # Red: you pick from a hand of new plays; Blue: its coach
 var _choice := {}                  # the person's picks for the coming snap
@@ -506,11 +507,15 @@ func new_game(start := true) -> void:
 		Career.new_season()     # the season is done: the next one starts now, with $2,000 to spend before kickoff
 	if Career.loaded:
 		coaches[1] = Career.opponent_coach()     # this week's rival club (or the exhibition side)
+		defenses[1] = Career.opponent_defense()
+		var mine := Career.my_schemes()
+		coaches[0] = mine[0]
+		defenses[0] = mine[1]
 		if start:
 			Career.note_kickoff()
 	game = Game.new()
 	var seed_v := randi()
-	game.setup(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, seed_v)
+	game.setup(Team.build(0, coaches[0], picks[0], calling[0], defenses[0]), Team.build(1, coaches[1], picks[1], calling[1], defenses[1]), qlen, seed_v)
 	sim = null
 	_skip_drive = false
 	_seen_q = 0
@@ -532,8 +537,9 @@ func library_changed() -> void:
 	if game == null:
 		return
 	for t in 2:
-		var nt := Team.build(t, coaches[t], picks[t], calling[t])
+		var nt := Team.build(t, coaches[t], picks[t], calling[t], defenses[t])
 		game.teams[t]["coach"] = nt["coach"]
+		game.teams[t]["dcoach"] = nt["dcoach"]
 		game.teams[t]["brains"] = nt["brains"]
 		game.teams[t]["calling"] = nt["calling"]
 		if nt.has("roster"):
@@ -1052,8 +1058,8 @@ func _sim_step() -> void:
 	var i := _batch_games.size()
 	Career.set_sim_opponent(i)
 	var opp: Dictionary = Career.team(1)
-	var g := Batch.play_game(_copies(Team.build(0, coaches[0], picks[0], "coach")), _copies(Team.build(1, String(opp["coach"]), {}, "coach")), qlen, _batch_seed + i)
-	g.set_meta("opp", {"name": String(opp["name"]), "coach": String(opp["coach"])})
+	var g := Batch.play_game(_copies(Team.build(0, coaches[0], picks[0], "coach", defenses[0])), _copies(Team.build(1, String(opp["coach"]), {}, "coach", String(opp.get("defense", "")))), qlen, _batch_seed + i)
+	g.set_meta("opp", {"name": String(opp["name"]), "coach": String(opp["coach"]), "defense": String(opp.get("defense", ""))})
 	_batch_games.append(g)
 	_batch_left -= 1
 	hud.set_progress("Simulating game %d of %d..." % [_batch_games.size() + 1, Career.SIM_OPPONENTS] if _batch_left > 0 else "")
@@ -1089,7 +1095,7 @@ func _batch_step() -> void:
 		_sim_step()
 		return
 	var i := _batch_games.size()
-	var g := Batch.play_game(Team.build(0, coaches[0], picks[0], calling[0]), Team.build(1, coaches[1], picks[1], calling[1]), qlen, _batch_seed + i)
+	var g := Batch.play_game(Team.build(0, coaches[0], picks[0], calling[0], defenses[0]), Team.build(1, coaches[1], picks[1], calling[1], defenses[1]), qlen, _batch_seed + i)
 	_batch_games.append(g)
 	_batch_left -= 1
 	hud.set_progress("Simulating... %d / %d" % [_batch_games.size(), _batch_games.size() + _batch_left])

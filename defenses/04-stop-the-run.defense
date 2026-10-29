@@ -1,0 +1,13 @@
+coach "Stop the Run"
+about "Eight in the box until they prove they can throw it."
+
+defense:
+  when they pass over 60% -> call "Cover 3" or "Cover 1"
+  when third down and to go over 7 -> call "Cover 3" or "Cover 2"
+  otherwise -> call "Run Blitz" or "Run Blitz" or "Cover 1"
+
+lineup:
+  DL "Bull Rusher"
+  LB "Thumper"
+  CB "Shutdown Corner"
+  S "Enforcer"

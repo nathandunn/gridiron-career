@@ -278,7 +278,7 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 	if not return_due.is_empty():
 		return _return_snap(String(choice.get("return", coach_return())))
 	var oc: Coach = offense()["coach"]
-	var dc: Coach = defense()["coach"]
+	var dc: Coach = defense().get("dcoach", defense()["coach"])
 	var od := _coach_call(oc, true, poss)
 	var dd := _coach_call(dc, false, 1 - poss)
 	if calling_for(true) == "pick" and (choice.has("off") or choice.has("kick")):
@@ -603,7 +603,13 @@ func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictio
 		return false
 	var sense := func(id: String, a: Array) -> bool:
 		return _coach_sense(id, a, team, on_offense)
-	out["line"] = Dsl.run(rules, sense, act, {}, 0.0, Coach.MODIFIERS, coach_tally[team] if count else {})
+	# offense rule lines are counted as "12", the defense's as "d12" (it may be another file)
+	var tal := {}
+	out["line"] = Dsl.run(rules, sense, act, {}, 0.0, Coach.MODIFIERS, tal)
+	if count:
+		for k in tal:
+			var key := str(k) if on_offense else "d%s" % str(k)
+			coach_tally[team][key] = int(coach_tally[team].get(key, 0)) + int(tal[k])
 	if out["kind"] == "":
 		var opts := Library.plays_for("offense" if on_offense else "defense")
 		out["kind"] = "play"
@@ -615,7 +621,7 @@ func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictio
 ## the closest play in the hand. {index, call} - call is the playbook play he had in mind.
 func coach_suggest(on_offense: bool, hand: Array) -> Dictionary:
 	var team := poss if on_offense else 1 - poss
-	var c: Coach = (offense() if on_offense else defense())["coach"]
+	var c: Coach = offense()["coach"] if on_offense else defense().get("dcoach", defense()["coach"])
 	var d := _coach_call(c, on_offense, team, false)
 	if String(d.get("kind", "")) == "punt":
 		return {"index": -1, "call": "punt", "why": _rule_text(c, on_offense, int(d.get("line", -1)))}

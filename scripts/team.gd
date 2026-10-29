@@ -8,14 +8,19 @@ const NAMES := ["Red", "Blue"]
 const COLORS := [Color(0.82, 0.16, 0.14), Color(0.16, 0.36, 0.86)]
 
 
-static func build(index: int, coach_name: String, picks: Dictionary = {}, calling := "coach") -> Dictionary:
+## `defense_name` is the side's defensive scheme: it calls the defenses and picks the
+## defensive brains. Empty: the coach's own defense rules and lineup do.
+static func build(index: int, coach_name: String, picks: Dictionary = {}, calling := "coach", defense_name := "") -> Dictionary:
 	var c: Coach = Library.coach(coach_name)
 	if c == null:
 		c = Library.coach(Library.names("coach")[0])
+	var dc: Coach = Library.defense(defense_name)
 	var brains := {}
-	for s in Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS:
+	for s in Play.OFFENSE_SLOTS:
 		brains[s] = brain_for(c, s, picks)
-	var d := {"index": index, "name": NAMES[index], "coach": c, "brains": brains, "picks": picks.duplicate(), "calling": calling}
+	for s in Play.DEFENSE_SLOTS:
+		brains[s] = brain_for(c, s, picks, dc)
+	var d := {"index": index, "name": NAMES[index], "coach": c, "dcoach": dc if dc != null else c, "brains": brains, "picks": picks.duplicate(), "calling": calling}
 	if Career.loaded:
 		# the career's rated robots play (unless "Fair bodies" is on)
 		d["roster"] = Career.roster(index)
@@ -26,9 +31,12 @@ static func build(index: int, coach_name: String, picks: Dictionary = {}, callin
 	return d
 
 
-static func brain_for(c: Coach, slot: String, picks: Dictionary) -> Brain:
+static func brain_for(c: Coach, slot: String, picks: Dictionary, dc: Coach = null) -> Brain:
 	var g: String = Play.SLOT_GROUP[slot]
-	for n in [picks.get(slot, ""), picks.get(g, ""), c.lineup.get(slot, ""), c.lineup.get(g, "")]:
+	var want := [picks.get(slot, ""), picks.get(g, "")]
+	if dc != null:
+		want += [dc.lineup.get(slot, ""), dc.lineup.get(g, "")]
+	for n in want + [c.lineup.get(slot, ""), c.lineup.get(g, "")]:
 		if n != "":
 			var b: Brain = Library.brain(n)
 			if b != null and b.group == g:

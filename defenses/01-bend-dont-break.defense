@@ -1,0 +1,14 @@
+coach "Bend Don't Break"
+about "Zone with everything kept in front: give up the short stuff, tackle it, and tighten up near the goal."
+
+defense:
+  when game ending and leading -> call "Prevent"
+  when goal line within 5 -> call "Cover 1" or "Run Blitz"
+  when third down and to go over 7 -> call "Cover 2" or "Prevent" or "Cover 3"
+  otherwise -> call "Cover 3" or "Cover 2" or "Cover 3"
+
+lineup:
+  DL "Bull Rusher"
+  LB "Coverage LB"
+  CB "Ball Hawk"
+  S "Center Fielder"

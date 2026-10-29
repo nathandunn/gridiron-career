@@ -85,6 +85,7 @@ static func ensure() -> void:
 				_season_around_current()      # saves from before seasons: this becomes week 1 of one
 				data["money"][0] = maxi(int(data["money"][0]), STARTER_BUDGET)   # and a season starts with $2,000
 				save()
+			_give_defenses()
 			return
 	Robot.used_names = {}
 	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season", "pos_ratings": true}
@@ -926,6 +927,7 @@ static func new_sim_opponents() -> void:
 		var tm := new_team(1)
 		tm["name"] = String(names[i % names.size()]) + ("" if i < names.size() else " II")
 		tm["coach"] = _random_coach()
+		tm["defense"] = _random_defense()
 		opps.append(tm)
 	data["sim"]["opps"] = opps
 	data["sim"]["idx"] = 0
@@ -945,10 +947,45 @@ static func new_exhibition() -> void:
 	data["exhibition"] = {"teams": [new_team(0, -1, false), new_team(1, -1, false)], "money": [EXHIBITION_BUDGET, EXHIBITION_BUDGET]}
 	data["exhibition"]["teams"][1]["name"] = RIVAL_NAMES[randi() % RIVAL_NAMES.size()]
 	data["exhibition"]["teams"][1]["coach"] = _random_coach()
+	data["exhibition"]["teams"][1]["defense"] = _random_defense()
 	var was := String(data.get("mode", "season"))
 	data["mode"] = "exhibition"
 	coach_spend(1, true, 0)
 	data["mode"] = was
+	save()
+
+
+## A random defensive scheme for a rival.
+static func _random_defense() -> String:
+	var names := Library.names("defense")
+	return names[randi() % names.size()] if not names.is_empty() else ""
+
+
+## Every rival without a defensive scheme gets one (old saves, and new teams).
+static func _give_defenses() -> void:
+	var sides: Array = []
+	if data.has("teams"):
+		sides.append(data["teams"][1])
+	for c in data.get("season", {}).get("clubs", []):
+		sides.append(c)
+	for c in data.get("sim", {}).get("opps", []):
+		sides.append(c)
+	var ex: Dictionary = data.get("exhibition", {})
+	if ex.has("teams"):
+		sides.append(ex["teams"][1])
+	for tm in sides:
+		if tm is Dictionary and String(tm.get("defense", "")) == "":
+			tm["defense"] = _random_defense()
+
+
+## Your own schemes, kept with the career: [offense coach, defensive scheme].
+static func my_schemes() -> Array:
+	return [String(data.get("coach0", "Balanced")), String(data.get("defense0", ""))]
+
+
+static func set_my_schemes(coach_name: String, defense_name: String) -> void:
+	data["coach0"] = coach_name
+	data["defense0"] = defense_name
 	save()
 
 
@@ -961,6 +998,7 @@ static func _new_club(name: String) -> Dictionary:
 	var tm := new_team(1)
 	tm["name"] = name
 	tm["coach"] = _random_coach()
+	tm["defense"] = _random_defense()
 	tm["money"] = START_MONEY + int(tm.get("leftover", 0))
 	tm["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
 	return tm
@@ -973,6 +1011,7 @@ static func _season_around_current() -> void:
 	var first: Dictionary = data["teams"][1]
 	first["name"] = names[0]
 	first["coach"] = _random_coach()
+	first["defense"] = _random_defense()
 	first["money"] = int(data.get("money", [START_MONEY, START_MONEY])[1])
 	first["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
 	data["season"] = {"week": 1, "clubs": [first, _new_club(names[1]), _new_club(names[2])],
@@ -1038,6 +1077,16 @@ static func opponent_coach() -> String:
 	return String(team(1).get("coach", "Balanced"))
 
 
+static func opponent_defense() -> String:
+	return String(team(1).get("defense", ""))
+
+
+## "Balanced / Blitz Happy": a side's offense and defense schemes.
+static func schemes_text(tm: Dictionary) -> String:
+	var dn := String(tm.get("defense", ""))
+	return String(tm.get("coach", "?")) + (" / " + dn if dn != "" else "")
+
+
 static func _record(rec: Dictionary, us: int, them: int) -> void:
 	rec["pf"] = int(rec["pf"]) + us
 	rec["pa"] = int(rec["pa"]) + them
@@ -1080,10 +1129,10 @@ static func finish_week(g: Game) -> Array:
 			continue
 		var a: Dictionary = sn["clubs"][int(pair[0]) - 1]
 		var b: Dictionary = sn["clubs"][int(pair[1]) - 1]
-		var ta := Team.build(0, String(a["coach"]))
+		var ta := Team.build(0, String(a["coach"]), {}, "coach", String(a.get("defense", "")))
 		ta["roster"] = a["starters"]
 		ta["bench"] = a["bench"]
-		var tb := Team.build(1, String(b["coach"]))
+		var tb := Team.build(1, String(b["coach"]), {}, "coach", String(b.get("defense", "")))
 		tb["roster"] = b["starters"]
 		tb["bench"] = b["bench"]
 		var og := Batch.play_game(ta, tb, g.qlen, randi())
@@ -1154,7 +1203,7 @@ static func _club_index(name: String) -> int:
 
 
 static func _club_side(side: int, club: Dictionary) -> Dictionary:
-	var tm := Team.build(side, String(club["coach"]))
+	var tm := Team.build(side, String(club["coach"]), {}, "coach", String(club.get("defense", "")))
 	tm["roster"] = club["starters"]
 	tm["bench"] = club["bench"]
 	tm["club"] = String(club["name"])
@@ -1166,7 +1215,7 @@ static func _club_side(side: int, club: Dictionary) -> Dictionary:
 static func _overtime(a: int, b: int) -> int:
 	var sn := season()
 	for i in 3:
-		var ta: Dictionary = Team.build(0, String(data.get("coach0", "Balanced"))) if a < 0 else _club_side(0, sn["clubs"][a])
+		var ta: Dictionary = Team.build(0, String(data.get("coach0", "Balanced")), {}, "coach", String(data.get("defense0", ""))) if a < 0 else _club_side(0, sn["clubs"][a])
 		var tb: Dictionary = _club_side(1, sn["clubs"][b])
 		var og := Batch.play_game(ta, tb, 120.0, randi())
 		if og.score[0] != og.score[1]:

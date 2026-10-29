@@ -1,0 +1,13 @@
+coach "Man Press"
+about "Corners in their faces, man across the board with one safety deep."
+
+defense:
+  when game ending and leading -> call "Cover 3"
+  when third down and to go under 4 -> call "Cover 0 Blitz" or "Cover 1"
+  otherwise -> call "Cover 1" or "Cover 1" or "Cover 2"
+
+lineup:
+  DL "Bull Rusher"
+  LB "Coverage LB"
+  CB "Shutdown Corner"
+  S "Center Fielder"

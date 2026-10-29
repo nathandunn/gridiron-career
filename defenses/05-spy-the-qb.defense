@@ -1,0 +1,12 @@
+coach "Spy the QB"
+about "A linebacker shadows the quarterback; everyone else plays it safe."
+
+defense:
+  when third down and to go over 8 -> call "Cover 3" or "Cover 1 Spy"
+  otherwise -> call "Cover 1 Spy" or "Cover 3" or "Cover 1 Spy"
+
+lineup:
+  DL "Speed Rusher"
+  LB "Coverage LB"
+  CB "Shutdown Corner"
+  S "Center Fielder"

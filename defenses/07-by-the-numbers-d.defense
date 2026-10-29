@@ -1,0 +1,11 @@
+coach "By the Numbers D"
+about "Calls whichever defense the numbers say stops this down and distance best."
+
+defense:
+  otherwise -> call the best defense
+
+lineup:
+  DL "Speed Rusher"
+  LB "Coverage LB"
+  CB "Ball Hawk"
+  S "Center Fielder"

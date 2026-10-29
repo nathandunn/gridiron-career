@@ -3,7 +3,7 @@ extends RefCounted
 ## Gridiron's rule files on top of the Rulebook addon: coaches, plays and position brains, and
 ## the cross-checks between them (a coach may only call plays and pick brains that exist).
 
-const KINDS := ["coach", "play", "ai"]
+const KINDS := ["coach", "defense", "play", "ai"]
 static var _registered := false
 
 
@@ -12,6 +12,8 @@ static func ensure() -> void:
 		_registered = true
 		RuleLibrary.EDITS = "user://gridiron_career_edits.json"
 		RuleLibrary.register("coach", "res://coaches", ".coach", Coach.parse, _check_coach)
+		# defensive schemes: a coach file with only a defense: block (and defensive lineup)
+		RuleLibrary.register("defense", "res://defenses", ".defense", Coach.parse, _check_coach)
 		RuleLibrary.register("play", "res://plays", ".play", Play.parse)
 		RuleLibrary.register("ai", "res://ai", ".ai", Brain.parse)
 	RuleLibrary.ensure()
@@ -43,6 +45,11 @@ static func get_obj(kind: String, n: String) -> Variant:
 
 static func coach(n: String) -> Coach:
 	return get_obj("coach", n)
+
+
+## A defensive scheme by name (null for none: the offensive coach's own defense calls).
+static func defense(n: String) -> Coach:
+	return get_obj("defense", n) if n != "" else null
 
 
 static func play(n: String) -> Play:
@@ -89,6 +96,6 @@ static func is_edited(kind: String, n: String) -> bool:
 ## The pattern tables behind a kind of file, for the editor's word list.
 static func tables(kind: String) -> Dictionary:
 	match kind:
-		"coach": return {"conditions": Coach.CONDITIONS, "actions": Coach.ACTIONS}
+		"coach", "defense": return {"conditions": Coach.CONDITIONS, "actions": Coach.ACTIONS}
 		"ai": return {"conditions": Brain.CONDITIONS, "actions": Brain.ACTIONS}
 	return {}

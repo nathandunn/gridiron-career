@@ -1,0 +1,16 @@
+coach "Adaptive D"
+about "Defends whatever the other side keeps doing, and keeps calling what has been working."
+
+defense:
+  when they run over 60% -> call "Run Blitz" or "Cover 1"
+  when they pass over 60% and third down -> call "Cover 2" or "Cover 3"
+  when they pass over 60% -> call "Cover 1" or "Cover 0 Blitz" or "Cover 3"
+  when "Cover 3" averaging under 3 and chance 50% -> call "Cover 3"
+  when "Cover 1" averaging under 3 and chance 50% -> call "Cover 1"
+  otherwise -> call "Cover 3" or "Cover 2" or "Cover 1"
+
+lineup:
+  DL "Bull Rusher"
+  LB "Coverage LB"
+  CB "Shutdown Corner"
+  S "Center Fielder"
