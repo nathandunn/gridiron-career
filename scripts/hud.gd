@@ -60,6 +60,28 @@ Header: play "Name" · about "..." · side offense|defense · kind pass|run|man|
         formation shotgun|under center|pistol|empty · front even|press|off|goal line"""
 
 
+## Version and build time, always on top in the top-right corner.
+func _build_watermark() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 120
+	add_child(layer)
+	var wm := Label.new()
+	wm.text = "%s  ·  %s" % [BuildInfo.VERSION, BuildInfo.BUILT]
+	wm.anchor_left = 0.0
+	wm.anchor_right = 1.0
+	wm.offset_left = 6
+	wm.offset_right = -6
+	wm.offset_top = 1
+	wm.offset_bottom = 16
+	wm.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	wm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	wm.add_theme_font_size_override("font_size", 11)
+	wm.add_theme_color_override("font_color", Color(1, 1, 1, 0.45))
+	wm.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.5))
+	wm.add_theme_constant_override("outline_size", 3)
+	layer.add_child(wm)
+
+
 func setup(m: Node) -> void:
 	main = m
 	var vp := get_viewport().get_visible_rect().size
@@ -71,6 +93,7 @@ func setup(m: Node) -> void:
 	add_child(_root)
 	_build_scoreboard()
 	_build_controls()
+	_build_watermark()
 	_toast = Label.new()
 	_toast.set_anchors_preset(Control.PRESET_CENTER)
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

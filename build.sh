@@ -22,6 +22,14 @@ command -v "$GODOT" >/dev/null || { echo "godot not on PATH - run hub-orchestrat
 echo "engine: $($GODOT --headless --version)"
 
 rm -rf dist build
+
+# stamp the on-screen watermark: v1.<commit count> (<sha>) and the build time
+cat > scripts/build_info.gd <<EOF
+class_name BuildInfo
+## Written by build.sh - do not edit.
+const VERSION := "v1.$(git rev-list --count HEAD) ($(git rev-parse --short HEAD))"
+const BUILT := "updated $(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
+EOF
 mkdir -p dist
 
 # .godot/ has to exist and be current or the export writes a pack with stale
