@@ -127,6 +127,20 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"navtest":
+				hud.open_roster(0)
+				await get_tree().create_timer(0.5).timeout
+				var row: Button = null
+				var stack: Array = [hud]
+				while not stack.is_empty() and row == null:
+					var nd: Node = stack.pop_back()
+					if nd is Button and (nd as Button).text.begins_with("#") and (nd as Button).text.find("OVR") >= 0:
+						row = nd
+					stack.append_array(nd.get_children())
+				row.pressed.emit()
+				await get_tree().create_timer(0.5).timeout
+				hud.close_overlay()
+				await get_tree().create_timer(0.5).timeout
 			"defpick":
 				hud.close_overlay(false)
 				game.kick_due = {}

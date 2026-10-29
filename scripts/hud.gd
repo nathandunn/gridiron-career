@@ -1663,8 +1663,10 @@ func open_roster(t := -1) -> void:
 		_roster_team = t
 	Career.ensure()
 	var tm := Career.team(_roster_team)
+	var keep_back := _back        # refreshing the roster (a purchase, a tab) keeps where Close goes
 	var box := _open("Roster · %s · purse $%d%s" % [tm["name"], Career.money(_roster_team),
 		("  ·  credit $%d" % Career.credit(_roster_team)) if Career.credit(_roster_team) > 0 else ""])
+	_back = keep_back
 	_spend_row(box, _roster_team, func(): open_roster())
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
@@ -1683,14 +1685,14 @@ func open_roster(t := -1) -> void:
 		_section(box, sg[0])
 		for g in sg[1]:
 			for s in Play.GROUP_SLOTS.get(g, [g]):
-				box.add_child(_robot_row(starters[s], s))
+				box.add_child(_robot_row(starters[s], s, true))
 	_section(box, "Special teams")
 	var sp := Career.special(_roster_team)
 	for s in ["K", "P"]:
-		box.add_child(_robot_row(sp[s], s))
+		box.add_child(_robot_row(sp[s], s, true))
 	_section(box, "Bench")
 	for r in tm["bench"]:
-		box.add_child(_robot_row(r, ""))
+		box.add_child(_robot_row(r, "", true))
 	var row := HFlowContainer.new()
 	box.add_child(row)
 	var draft := _button("Are you sure? Tap again to scrap this team" if _draft_armed else "Draft a whole new team", func():
@@ -1704,7 +1706,7 @@ func open_roster(t := -1) -> void:
 	row.add_child(draft)
 
 
-func _robot_row(r: Dictionary, slot: String) -> Button:
+func _robot_row(r: Dictionary, slot: String, from_roster := false) -> Button:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
 	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -1725,7 +1727,14 @@ func _robot_row(r: Dictionary, slot: String) -> Button:
 	if not lost.is_empty():
 		b.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
 	var id := String(r["id"])
-	b.pressed.connect(func(): open_robot(id))
+	if from_roster:
+		# Close on his page comes back to the roster (and Close there goes where it went before)
+		b.pressed.connect(func():
+			var roster_back := _back
+			open_robot(id)
+			_back = func(): open_roster(); _back = roster_back)
+	else:
+		b.pressed.connect(func(): open_robot(id))
 	return b
 
 
@@ -1737,7 +1746,9 @@ func open_robot(id: String) -> void:
 	var r: Dictionary = f["robot"]
 	var t: int = f["team"]
 	var slot: String = f["slot"]
+	var keep_back := _back        # buying a part reopens the page: keep where Close goes
 	var box := _open("#%d %s" % [int(r["number"]), r["name"]])
+	_back = keep_back
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 12)
 	box.add_child(top)
@@ -1899,7 +1910,11 @@ func open_robot(id: String) -> void:
 			row2.add_child(b2)
 	var back := HFlowContainer.new()
 	box.add_child(back)
-	back.add_child(_button("Back to the roster", func(): open_roster(t)))
+	back.add_child(_button("Back to the roster", func():
+		if _back.is_valid():
+			close_overlay()
+		else:
+			open_roster(t)))
 
 
 
