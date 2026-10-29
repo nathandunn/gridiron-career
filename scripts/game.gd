@@ -182,19 +182,17 @@ func _do_kickoff(kind: String) -> Dictionary:
 	ball_x = 0.0
 	match kind:
 		"onside":
-			var got := rng.randf() < 0.22
-			if got:
-				poss = kicker
-				yl = 47.0
-				text = "%s ONSIDE KICK - and %s RECOVER at the %s!" % [k, teams[kicker]["name"], _spot_text(47.0, kicker)]
-			else:
-				yl = 53.0
-				text = "%s onside kick - %s fall on it at the %s." % [k, who, _spot_text(53.0, receiver)]
+			# played out on the field: a big hop ten-odd yards, both sides diving for it
+			yl = 45.0
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": 40.0, "from_los": 25.0, "back": 0.5,
+				"ground": "onside", "roll": rng.randf_range(11.0, 14.0), "aim_x": rng.randf_range(8.0, 16.0) * (1.0 if rng.randf() < 0.5 else -1.0)}
+			text = "%s tries the ONSIDE KICK..." % k
 			_new_drive()
 		"squib":
 			var c := clampf(roundf(rng.randfn(22.0, 5.0)), 10.0, 34.0)
 			yl = c
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 1.9, "low": true}
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5,
+				"ground": "squib", "roll": rng.randf_range(32.0, 44.0), "aim_x": rng.randf_range(-7.0, 7.0)}
 			text = "%s squibs it along the ground." % k
 			_new_drive()
 		_:
@@ -320,7 +318,10 @@ func make_sim() -> PlaySim:
 			dfn = dfn.duplicate()
 			dfn["roster"] = _special_unit(1 - poss, "cover", {})
 	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
-	if pending.has("return"):
+	if pending.has("return") and pending["return"].has("ground"):
+		var gd: Dictionary = pending["return"]
+		sim.start_ground_kick(Vector2(0.0, float(gd["from_y"])), String(gd["ground"]), float(gd["roll"]), float(gd["aim_x"]))
+	elif pending.has("return"):
 		var rd: Dictionary = pending["return"]
 		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)))
 	return sim
@@ -384,13 +385,15 @@ var return_due := {}       # set by a kickoff or punt that is fielded: the next 
 func _return_snap(call := "middle") -> Dictionary:
 	var rd := return_due
 	return_due = {}
+	if rd.has("ground") and call == "fair":
+		call = "middle"            # no fair catch on a ball bouncing along the ground
 	rd["call"] = call
 	rd["fair"] = call == "fair"
 	var catch_y := float(rd["catch"])
 	var depth := float(rd["from_los"])
 	var los := catch_y + depth
 	rd["from_y"] = minf(float(rd.get("back", 0.5)), 99.5 - los)
-	var kr := PlayGen.kick_return(rng, depth, 1.0, call, "punt" if String(rd["kind"]) == "punt" else "kickoff")
+	var kr := PlayGen.kick_return(rng, depth, 1.0, call, "punt" if String(rd["kind"]) == "punt" else ("onside" if String(rd.get("ground", "")) == "onside" else "kickoff"))
 	yl = los
 	down = 1
 	to_go = 10.0
@@ -401,6 +404,42 @@ func _return_snap(call := "middle") -> Dictionary:
 	return pending
 
 
+## A squib or onside kick that nobody on the receiving side ran back: the kicking side fell on
+## it, it rolled out of bounds (their ball at the 40) or it died on the turf (their ball there).
+## Empty when the receiving side fielded it and the return goes on as usual.
+func _ground_kick_end(sim: PlaySim, rd: Dictionary) -> Dictionary:
+	var r: Dictionary = sim.result
+	var why := String(r["why"])
+	var team := poss
+	var kicker := 1 - team
+	var spot := clampf(yl + float(r["y"]), 1.0, 99.0)
+	var kind := "Onside kick" if String(rd["ground"]) == "onside" else "Squib kick"
+	var e := {"kind": "play", "team": team, "off": kind, "def": "Coverage", "gain": 0.0, "why": why, "return": true,
+		"down": 1, "to_go": 10.0, "yl": spot}
+	_tick(float(r["t"]), true)
+	if why == "kick_recovered":
+		var st: Dictionary = stats[team]
+		st["turnovers"] = int(st["turnovers"]) + 1
+		drive["result"] = "onside" if kind == "Onside kick" else "muffed kick"
+		ball_x = clampf(float(r["x"]), -HASH, HASH)
+		_take_over(spot)
+		e["text"] = "%s - and %s RECOVER it at the %s!" % [kind, teams[kicker]["name"], _spot_text(yl, poss)]
+	elif why == "kick_out" or (why in ["kick_dead", "whistle"] and r["carrier"] == ""):
+		yl = 40.0 if why == "kick_out" else maxf(spot, 1.0)
+		down = 1
+		to_go = 10.0
+		ball_x = clampf(float(r["x"]), -HASH, HASH)
+		e["text"] = "%s %s - %s ball at the %s." % [kind, "rolls out of bounds" if why == "kick_out" else "dies on the turf",
+			teams[team]["name"], _spot_text(yl, team)]
+	else:
+		return {}
+	e["down_event"] = ""
+	_say(String(e["text"]))
+	_log_play(e)
+	pending = {}
+	return e
+
+
 func _finish_return(sim: PlaySim) -> Dictionary:
 	var r: Dictionary = sim.result
 	var rd: Dictionary = pending["return"]
@@ -408,6 +447,11 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 	var st: Dictionary = stats[team]
 	var catch_y := float(rd["catch"])
 	var spot := yl + float(r["y"])
+	if rd.has("ground"):
+		var gr := _ground_kick_end(sim, rd)
+		if not gr.is_empty():
+			return gr
+		catch_y = yl + float((r["stat"] as Dictionary).get("field_y", r["y"]))
 	var ret_yds := spot - catch_y
 	if String(r["why"]) == "fair" or (spot <= 0.0 and r["turnover"] == ""):
 		# a fair catch, a knee in the end zone, or downed in it: no return
@@ -427,6 +471,13 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		return e0
 	var who := _who(_returner(team), teams[team]["name"])
 	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
+	if rd.has("ground"):
+		# whoever fell on the bouncing ball runs it back
+		var fs := String((r["stat"] as Dictionary).get("fielder", ""))
+		if fs != "" and sim.by_slot.has("o:" + fs):
+			who = _who(sim.by_slot["o:" + fs].robot, who)
+		nm = "Onside kick" if String(rd["ground"]) == "onside" else "Squib kick"
+		who += " fields it on the bounce and"
 	if String(rd.get("call", "middle")) in ["left", "right"]:
 		nm += " (%s)" % rd["call"]
 	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
@@ -456,7 +507,7 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		down = 1
 		to_go = minf(10.0, 100.0 - yl)
 		ball_x = clampf(float(r["x"]), -HASH, HASH)
-		e["text"] = "%s: %s brings it back %d yards to the %s." % [nm, who, int(round(ret_yds)), _spot_text(yl, team)]
+		e["text"] = "%s: %s brings it %s %d yards to the %s." % [nm, who, "back" if ret_yds >= 0.0 else "BACKWARDS", int(round(absf(ret_yds))), _spot_text(yl, team)]
 		if ret_yds >= 20.0:
 			st["explosive"] = int(st["explosive"]) + 1
 		_tick(elapsed, true)

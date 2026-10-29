@@ -1119,8 +1119,8 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		var k: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
 		var leg := Robot.eff(k, "leg") if not k.is_empty() else 60.0
 		var subs := {"deep": "%s, leg %d: as deep as he can - a touchback or a long return" % [_who_txt(k, "Your kicker"), int(leg)],
-			"squib": "Low and bouncing to their 20-30: no touchback, a short return",
-			"onside": "Short, for your side to recover: about 1 in 5, otherwise they start near midfield"}
+			"squib": "Driven into the turf, bouncing to their 25-40: no long return, and now and then it squirts away from them",
+			"onside": "Short and hopping, both sides diving for it: you get it about 1 in 8, otherwise they start near midfield"}
 		for c in Game.KICKS:
 			grid.add_child(_text_card(cw, Game.KICKS[c], subs[c], c == coach_pick, func(): main.pick_made("kickoff", c)))
 	else:
@@ -1135,7 +1135,11 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		box.add_child(_label("%s is coming: the ball comes down around the %s." % ["The kickoff" if String(rd.get("kind", "")) == "kickoff" else "The punt",
 			"end zone" if deep else g._spot_text(maxf(float(rd.get("catch", 20.0)), 1.0), team)], fs - 1, Color(0.85, 0.88, 0.92)))
 		box.move_child(box.get_child(box.get_child_count() - 1), grid.get_index())
+		if rd.has("ground"):
+			box.get_child(grid.get_index() - 1).text = "%s is coming along the ground - field it on the bounce, then run it back." % ("An onside kick" if String(rd["ground"]) == "onside" else "A squib kick")
 		for c in Game.RETURNS:
+			if c == "fair" and rd.has("ground"):
+				continue
 			var title := "Take a knee" if c == "fair" and deep else ("Fair catch" if c == "fair" else String(Game.RETURNS[c]))
 			grid.add_child(_text_card(cw, title, subs[c], c == coach_pick, func(): main.pick_made("return", c)))
 

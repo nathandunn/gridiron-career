@@ -161,6 +161,16 @@ func _ready() -> void:
 				_choice = {"kick": "punt"}
 				_phase = "after"
 				_next()
+			"squib", "onside":
+				# a ground kick under way: --at lands mid-bounce
+				hud.close_overlay(false)
+				for tt in 2:
+					game.teams[tt]["calling"] = "coach"
+				game.return_due = {}
+				game._kickoff(0)
+				_choice = {"kickoff": String(args["panel"])}
+				_phase = "after"
+				_next()
 			"kickpick":
 				game.kick_due = {"receiver": 1}
 				_open_special("kickoff", 0)

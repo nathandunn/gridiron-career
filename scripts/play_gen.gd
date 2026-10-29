@@ -346,6 +346,16 @@ static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, c
 		var order := ["WR1", "TE", "LT", "LG", "C", "RG", "RT", "QB", "WR3", "WR2"]
 		for i in order.size():
 			wall[order[i]] = Vector2(-19.0 + 38.0 * float(i) / float(order.size() - 1), -1.2)
+	elif kind == "onside":
+		# the hands team: two lines close up, the returner back in case it goes long
+		var front := ["LT", "LG", "C", "RG", "RT"]
+		for i in front.size():
+			wall[front[i]] = Vector2(-18.0 + 36.0 * float(i) / 4.0, -11.0)
+		wall["TE"] = Vector2(-12.0, -16.0)
+		wall["QB"] = Vector2(12.0, -16.0)
+		wall["WR3"] = Vector2(0.0, -17.0)
+		wall["WR1"] = Vector2(-20.0, -14.0)
+		wall["WR2"] = Vector2(20.0, -14.0)
 	else:
 		# kickoff: a front line 12 yards off the ball, two more lines back towards him
 		var front := ["LT", "LG", "C", "RG", "RT"]

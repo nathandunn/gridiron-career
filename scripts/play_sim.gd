@@ -251,6 +251,9 @@ var read_t := 0.0
 var pass_play := true
 var carry_slot := ""
 var air_target: P = null
+var ball_vel := Vector2.ZERO   # a ball bouncing along the ground: its run across the turf
+var ball_vz := 0.0             # ... and how fast it is going up (yards a second)
+var ground_kick := ""          # "squib" / "onside" while a kick is played along the ground
 var stat := {}               # for the box score
 var tally := {}              # "team:brain" -> {line: count}
 
@@ -536,6 +539,140 @@ func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void
 			air["contain_r"] = e.idx
 	_say("the kick is away")
 	_fx("kick", null, qb, qb.pos)
+
+
+## A squib or an onside kick: driven into the turf from `from`, the ball bounces and skitters
+## along it - each hop a little off line, a football being the shape it is - roughly `dist`
+## yards toward `aim_x`, until somebody falls on it. The receiving side may field it anywhere
+## and run it back; the kicking side may only recover it once it has gone ten yards.
+func start_ground_kick(from: Vector2, kind: String, dist: float, aim_x: float) -> void:
+	start_kick(from, 1.0, false, true)
+	ground_kick = kind
+	ball_state = "bounce"
+	air["ground"] = true
+	air["kick_from"] = from
+	ball_h = 0.15
+	var dir := (Vector2(aim_x, from.y - dist) - from).normalized()
+	if kind == "onside":
+		# kicked down into the turf: one big hop over the front line's heads, then it skitters
+		ball_vz = rng.randf_range(4.0, 6.5)
+		ball_vel = dir * sqrt(2.0 * GROUND_DRAG * dist) * rng.randf_range(0.6, 0.75)
+	else:
+		# a low liner that skips along
+		ball_vz = rng.randf_range(1.5, 3.0)
+		ball_vel = dir * sqrt(2.0 * GROUND_DRAG * dist) * rng.randf_range(1.0, 1.15) * float(K.get("squib_pace", 1.0))
+	_say("%s kick, bouncing along the ground" % kind)
+
+
+const GROUND_DRAG := 5.0       # yards a second, each second, a ball rolling on the turf loses
+const GRAVITY := 10.7          # yards a second, each second
+
+
+func _bounce_ball() -> void:
+	ball_pos += ball_vel * DT
+	if ball_h > 0.16 or ball_vz > 0.0:
+		ball_vz -= GRAVITY * DT
+		ball_h += ball_vz * DT
+		if ball_h <= 0.15:
+			ball_h = 0.15
+			var hit := -ball_vz
+			ball_vz = 0.0
+			if hit > 1.2:
+				# a football comes off the turf any which way: up, short, off to one side
+				ball_vz = hit * rng.randf_range(0.3, 0.7)
+				ball_vel = ball_vel.rotated(rng.randfn(0.0, 0.25)) * rng.randf_range(0.78, 0.95)
+	else:
+		var sp := maxf(0.0, ball_vel.length() - GROUND_DRAG * DT)
+		ball_vel = ball_vel.normalized() * sp if sp > 0.0 else Vector2.ZERO
+		# it catches a point and hops up again
+		if sp > 3.0 and rng.randf() < 1.2 * DT:
+			ball_vz = rng.randf_range(1.5, 3.5)
+			ball_vel = ball_vel.rotated(rng.randfn(0.0, 0.3))
+	if absf(ball_pos.x) > SIDELINE:
+		ball_pos.x = signf(ball_pos.x) * SIDELINE
+		_say("the kick rolls out of bounds")
+		_end("kick_out", ball_pos)
+		return
+	# somebody gets to it and tries to fall on it; a miss can knock it on again
+	var kf: Vector2 = air.get("kick_from", Vector2.ZERO)
+	var gone := kf.y - ball_pos.y
+	for p: P in players:
+		if p.down or ball_h > 1.7 or p.pos.distance_to(ball_pos) > 0.9:
+			continue
+		if p.side == 1 and gone < 10.0:
+			continue                # the kicking side may not touch it before ten yards
+		var hop := clampf(ball_h / 1.5, 0.0, 1.0)
+		var speed := ball_vel.length()
+		var chance := clampf(0.3 + 0.12 * _skill(p, "hands"), 0.1, 0.6) * (1.0 - 0.6 * hop) * clampf(1.0 - speed / 18.0, 0.15, 1.0)
+		if _front_man(p) and speed > 5.0:
+			chance *= 0.3            # turned to block, not looking for it
+		for q: P in _enemies(p):
+			if not q.down and q.pos.distance_to(ball_pos) < 1.6:
+				chance *= 0.5        # somebody is diving in on it too
+				break
+		if p.side == 1 and ground_kick == "onside":
+			chance *= float(K.get("onside_dive", 1.8))
+		if rng.randf() < chance:
+			_field_ground(p)
+			return
+		if rng.randf() < 0.08 + 0.15 * hop + speed * 0.01:
+			# he gets a hand to it and it squirts away
+			ball_vel = (ball_pos - p.pos).normalized() * rng.randf_range(2.0, 5.0)
+			ball_vz = rng.randf_range(1.0, 2.5)
+			_fx("drop", p, null, ball_pos)
+	if t > 9.0:
+		_end("kick_dead", ball_pos)
+
+
+## `p` falls on the bouncing kick: his side runs it back, theirs has recovered it.
+func _field_ground(p: P) -> void:
+	_fx("recover", p, null, ball_pos)
+	stat["field_y"] = ball_pos.y
+	carrier = p
+	ball_state = "held"
+	handed = true
+	handoff_t = t
+	ground_kick = ""
+	if p.side == 0:
+		air_target = p
+		carry_slot = p.slot
+		stat["fielder"] = p.slot
+		_say("%s fields it on the bounce" % p.slot)
+	else:
+		stat["kick_rec"] = p.slot
+		_say("THE KICKING TEAM RECOVERS (%s)" % p.slot)
+		_end("kick_recovered", p.pos)
+
+
+## One of the receiving side's front line on a kickoff (the linemen's spots).
+func _front_man(p: P) -> bool:
+	return p.side == 0 and p.slot in ["LT", "LG", "C", "RG", "RT"]
+
+
+## Who goes for a bouncing kick: the receiving side's two nearest field it and the rest block;
+## the kicking side's nearest four go for the ball and the rest keep their lanes beyond it.
+func _drive_bounce(p: P) -> void:
+	var lead := ball_pos + ball_vel * 0.35
+	var mine := 0
+	var d := p.pos.distance_to(lead)
+	var skip_front := ground_kick == "squib" and ball_vel.length() > 5.0
+	for q: P in (off if p.side == 0 else dfn):
+		if q != p and not q.down and q.pos.distance_to(lead) < d and not (skip_front and _front_man(q)):
+			mine += 1
+	var fielders := 2 if p.side == 0 else 4
+	if skip_front and _front_man(p):
+		fielders = 0                # the front line turns and blocks; the ball skips past them
+	if mine < fielders:
+		_toward(p, lead, 1.0, 0.0)
+		return
+	if p.side == 0:
+		if p.block_target != null:
+			var tgt := p.block_target
+			_toward(p, tgt.pos + (ball_pos - tgt.pos).normalized() * 1.0, 0.85, 0.0)
+		else:
+			_toward(p, ball_pos + Vector2((p.pos.x - ball_pos.x) * 0.6, -3.0), 0.6, 0.0)
+		return
+	_toward(p, ball_pos + Vector2((p.pos.x - ball_pos.x) * 0.6, -4.0), 1.0, 0.0)
 
 
 func run_to_end() -> Dictionary:
@@ -1272,6 +1409,9 @@ func _drive(p: P) -> void:
 	var frac := 1.0
 	if ball_state == "dead":
 		p.mem["_want"] = Vector2.ZERO
+		return
+	if ball_state == "bounce":
+		_drive_bounce(p)
 		return
 	if ball_state == "loose":
 		want = (ball_pos - p.pos)
@@ -2471,6 +2611,8 @@ func _ball() -> void:
 			ball_h = 1.9 + 4.0 * apex * u * (1.0 - u) - 0.6 * u
 			if u >= 1.0:
 				_arrive()
+		"bounce":
+			_bounce_ball()
 		"loose":
 			ball_h = 0.2
 			for p: P in players:
