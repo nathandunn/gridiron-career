@@ -9,6 +9,27 @@ extends RefCounted
 
 const BASE := 60.0
 const CORE := ["speed", "strength", "toughness", "iq"]
+## What an average robot at each position rates in the core qualities: a corner is quick and
+## light, a lineman strong and slow. The engine reads each rating against his position's
+## average (so an average lineman still plays like an average lineman); the position skills
+## average 60 everywhere.
+const POS_MEAN := {
+	"QB": {"speed": 55, "strength": 50, "toughness": 55, "iq": 72},
+	"RB": {"speed": 72, "strength": 62, "toughness": 64, "iq": 58},
+	"WR": {"speed": 76, "strength": 46, "toughness": 54, "iq": 58},
+	"TE": {"speed": 60, "strength": 68, "toughness": 64, "iq": 58},
+	"OL": {"speed": 40, "strength": 80, "toughness": 68, "iq": 62},
+	"DL": {"speed": 50, "strength": 78, "toughness": 68, "iq": 56},
+	"LB": {"speed": 62, "strength": 68, "toughness": 66, "iq": 62},
+	"CB": {"speed": 78, "strength": 46, "toughness": 54, "iq": 58},
+	"S": {"speed": 70, "strength": 56, "toughness": 60, "iq": 62},
+	"K": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58},
+	"P": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58},
+}
+
+
+static func mean_for(group: String, k: String) -> float:
+	return float((POS_MEAN.get(group, {}) as Dictionary).get(k, BASE))
 ## The skills that matter for each position group.
 const SKILLS := {
 	"QB": ["arm", "accuracy"], "RB": ["hands", "elusiveness"], "WR": ["hands", "routes"],
@@ -41,21 +62,43 @@ const RATING_HELP := {
 
 const FIRST := ["Rivet", "Torque", "Sprocket", "Gizmo", "Piston", "Bolt", "Widget", "Ratchet", "Cog",
 	"Servo", "Diode", "Flux", "Gasket", "Axle", "Chrome", "Turbo", "Volt", "Clank", "Socket", "Drive",
-	"Cam", "Crank", "Spark", "Ohm", "Pixel", "Byte", "Rotor", "Tesla", "Ampere", "Hex"]
+	"Cam", "Crank", "Spark", "Ohm", "Pixel", "Byte", "Rotor", "Tesla", "Ampere", "Hex", "Nitro", "Cable",
+	"Lever", "Gauge", "Dynamo", "Coil", "Valve", "Flange", "Sensor", "Laser", "Turret", "Rocket", "Bearing",
+	"Joule", "Watt", "Kilo", "Mega", "Giga", "Nano", "Quark", "Photon", "Magnet", "Plunger", "Spindle",
+	"Gimbal", "Pulley", "Hinge", "Static", "Solder", "Fuse"]
 const LAST := ["McGrease", "Steelhead", "Ironside", "Boltman", "Wrenchley", "O'Rust", "Copperfield",
 	"Gearhart", "Sparkplug", "Von Chassis", "Tinbottom", "Ampsworth", "Cranky", "Nutsby", "Oilcan",
-	"Framewell", "Weldmore", "Hydro", "Magnetti", "Circuitson"]
+	"Framewell", "Weldmore", "Hydro", "Magnetti", "Circuitson", "Brassington", "Cogsworth", "Leadbelly",
+	"Chromeworth", "Hammerfist", "Titanski", "Voltaire", "Rustbucket", "Gearbox", "Pistonberg", "Kilowatt",
+	"Diesel", "Turbocharge", "Steamwright", "Ironhide", "Nickelby", "Zincworth", "Cobalt", "Platinum",
+	"Alloyson", "Socketeer", "Riveter", "Grindstone", "Sparksworth", "Lugnut", "Crankshaft", "Flywheel",
+	"Overdrive", "Mainframe", "Motherboard"]
+
+
+## Every robot's name is his own: names in use are kept here (Career fills it from the save).
+static var used_names := {}
+
+
+static func unique_name(rng: RandomNumberGenerator) -> String:
+	for i in 400:
+		var n := "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]]
+		if not used_names.has(n):
+			used_names[n] = true
+			return n
+	var n2 := "%s %s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()], ["II", "III", "IV", "Jr.", "Sr."][rng.randi() % 5]]
+	used_names[n2] = true
+	return n2
 
 
 static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String, mixed_parts := false) -> Dictionary:
 	var g: String = Play.SLOT_GROUP.get(slot, slot)
 	var r := {}
 	for k in CORE + (SKILLS[g] as Array):
-		# most robots are about average; a few stand out either way
-		r[k] = int(clampf(roundf(rng.randfn(BASE, 12.0)), 25.0, 97.0))
+		# most robots are about average for their position; a few stand out either way
+		r[k] = int(clampf(roundf(rng.randfn(mean_for(g, k), 12.0)), 20.0, 99.0))
 	# toughness varies the most: some robots are tanks, some are glass
-	r["toughness"] = int(clampf(roundf(rng.randfn(BASE, 18.0)), 20.0, 99.0))
-	var robot := {"id": id, "name": "%s %s" % [FIRST[rng.randi() % FIRST.size()], LAST[rng.randi() % LAST.size()]],
+	r["toughness"] = int(clampf(roundf(rng.randfn(mean_for(g, "toughness"), 18.0)), 15.0, 99.0))
+	var robot := {"id": id, "name": unique_name(rng),
 		"number": number, "slot": slot, "group": g, "ratings": r}
 	ensure_parts(robot)
 	if mixed_parts:
@@ -77,15 +120,18 @@ static func rating(robot: Dictionary, k: String) -> float:
 
 ## One number for the robot: the mean of his ratings.
 static func overall(robot: Dictionary) -> int:
+	# each rating against his position's average, so an average robot is a 60 anywhere
 	var ks := keys(robot)
+	var g := String(robot.get("group", ""))
 	var s := 0.0
 	for k in ks:
-		s += eff(robot, k)
+		s += eff(robot, k) - mean_for(g, k) + BASE
 	return int(roundf(s / ks.size()))
 
 
 static func _f(robot: Dictionary, k: String) -> float:
-	return (eff(robot, k) - BASE) / 40.0      # -0.9 at 25, 0 at 60, +0.9 at 96
+	# how far above or below an average robot of his position (-0.9 .. +0.9 for 35 points)
+	return (eff(robot, k) - mean_for(String(robot.get("group", "")), k)) / 40.0
 
 
 ## ---- upgraded parts add to the ratings they carry ------------------------------------------------
@@ -245,7 +291,9 @@ static func overall_at(robot: Dictionary, group: String) -> int:
 	var own := keys(robot)
 	var s := 0.0
 	for k in ks:
-		s += eff(robot, k) if own.has(k) else 35.0 + bonus(robot, k)
+		# his own qualities measured against what that position needs (a corner is quick but
+		# nowhere near strong enough for the line); a skill he was never built for counts as 35
+		s += (eff(robot, k) - mean_for(group, k) + BASE) if own.has(k) else 35.0 + bonus(robot, k)
 	var o := s / ks.size()
 	return int(roundf(o - (float(overall(robot)) - effective_overall(robot))))
 

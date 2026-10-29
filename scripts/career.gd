@@ -15,6 +15,45 @@ static var data := {}          # {version, fair, teams: [{name, starters: {slot:
 static var loaded := false
 
 
+## Every robot in the save, wherever he is (teams, rival clubs, the exhibition and sim-lab
+## teams, the market, special teams, benches).
+static func _all_robots() -> Array:
+	var out: Array = []
+	var visit: Array = [data]
+	while not visit.is_empty():
+		var v: Variant = visit.pop_back()
+		if v is Dictionary:
+			var d: Dictionary = v
+			if d.has("ratings") and d.has("group") and d.has("name"):
+				out.append(d)
+				continue
+			for k in d:
+				visit.append(d[k])
+		elif v is Array:
+			visit.append_array(v)
+	return out
+
+
+static func _register_names() -> void:
+	Robot.used_names = {}
+	for r in _all_robots():
+		Robot.used_names[String(r["name"])] = true
+
+
+## Saves from before ratings had position averages: shift each robot's core ratings by his
+## position's average, so he plays exactly as before (a 60-speed lineman becomes a 40).
+static func _position_ratings() -> void:
+	if bool(data.get("pos_ratings", false)):
+		return
+	for r in _all_robots():
+		var g := String(r["group"])
+		for k in Robot.CORE:
+			if (r["ratings"] as Dictionary).has(k):
+				r["ratings"][k] = int(clampf(float(r["ratings"][k]) + Robot.mean_for(g, k) - Robot.BASE, 5.0, 99.0))
+	data["pos_ratings"] = true
+	save()
+
+
 static func ensure() -> void:
 	if loaded:
 		return
@@ -40,12 +79,15 @@ static func ensure() -> void:
 				add_money(0, STARTER_BUDGET)          # yours goes in the purse, to spend as you like
 				data["starter_upgrades"] = true
 				save()
+			_position_ratings()
+			_register_names()
 			if not data.has("season"):
 				_season_around_current()      # saves from before seasons: this becomes week 1 of one
 				data["money"][0] = maxi(int(data["money"][0]), STARTER_BUDGET)   # and a season starts with $2,000
 				save()
 			return
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season"}
+	Robot.used_names = {}
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season", "pos_ratings": true}
 	data["money"] = [STARTER_BUDGET, START_MONEY + int(data["teams"][1].get("leftover", 0))]   # you start with $2,000 to spend
 	_season_around_current()
 	save()
@@ -285,7 +327,10 @@ static func coach_fix(starters: Dictionary, bench: Array, slot: String) -> Strin
 	var t := team_of(r)
 	# an empty purse buys nothing: he plays on without it if he can, or the best robot on the
 	# bench from any position comes in; only if neither is possible is a junk spare found for him
-	if t >= 0 and money(t) < JUNK_PRICE:
+	var junk_all := 0
+	for k0 in lost:
+		junk_all += junk_price(k0)
+	if t >= 0 and money(t) < junk_all:
 		if Robot.can_play(r):
 			return "%s plays on without his %s (no money)." % [r["name"], " or ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))]
 		var any := {}
@@ -385,16 +430,22 @@ static func repair_all_cost(robot: Dictionary) -> int:
 	return c
 
 
-## A junk spare costs $25 - or whatever is left in the purse, so a side can always field a robot.
-const JUNK_PRICE := 25
+## Junk spares are priced by part (JUNK_PRICES).
+const JUNK_PRICE := 25        # the cheapest junk spare (an arm); the rest are priced by part
+## A junk spare costs about a tenth of a new Stock part of the same kind.
+const JUNK_PRICES := {"head": 20, "core": 25, "larm": 12, "rarm": 12, "lleg": 15, "rleg": 15}
+
+
+static func junk_price(k: String) -> int:
+	return int(JUNK_PRICES.get(k, JUNK_PRICE))
 
 
 ## A junk spare costs $25: with less in the purse there is none (unless `emergency`, when the
 ## side could not otherwise field a robot there). A simulated copy (t < 0) always gets one.
 static func buy_junk(t: int, robot: Dictionary, k: String, emergency := false) -> bool:
 	if t >= 0:
-		if money(t) >= JUNK_PRICE:
-			add_money(t, -JUNK_PRICE)
+		if money(t) >= junk_price(k):
+			add_money(t, -junk_price(k))
 		elif not emergency:
 			return false
 		save()

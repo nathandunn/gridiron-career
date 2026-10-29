@@ -4,7 +4,7 @@ func _init() -> void:
 	Career.loaded = false
 	Career.ensure()
 	Career.spend(0, 1750)
-	Career.season()["week"] = Career.WEEKS + 1
+	Career.season()["week"] = Career.WEEKS + 2
 	Career.season()["champion"] = "Iron Hogs"
 	assert(Career.season_over())
 	Career.new_season()

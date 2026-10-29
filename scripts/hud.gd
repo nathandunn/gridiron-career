@@ -1679,7 +1679,7 @@ func open_roster(t := -1) -> void:
 		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
 	fair.button_pressed = Career.fair()
 	tabs.add_child(fair)
-	box.add_child(_label("Tap a robot for his details. Ratings run 1-100; 60 plays like the equal bodies of Gridiron Bots. ARMOUR is his toughness (with what his core adds): how well he stands up to hits; then his parts by tier. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Tap a robot for his details. Ratings run 1-100 and suit the position: corners are quick but light, linemen slow but strong. OVR is measured against his position, so 60 is an average one of his kind. ARMOUR is his toughness (with what his core adds): how well he stands up to hits; then his parts by tier. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
 	var starters: Dictionary = tm["starters"]
 	for sg in SIDE_GROUPS:
 		_section(box, sg[0])
@@ -1923,7 +1923,7 @@ func open_robot(id: String) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots")
-	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Each choice shows what his overall would be; a junk spare costs $25.", fs - 2, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Each choice shows what his overall would be; junk spares run $12 (an arm) to $25 (a core).", fs - 2, Color(0.8, 0.83, 0.88)))
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
 	box.add_child(top)
@@ -1936,6 +1936,9 @@ func open_injuries(slots: Array) -> void:
 		var r: Dictionary = tm["roster"][s]
 		var lost := Robot.lost_parts(r)
 		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
+		var junk_cost := 0
+		for k in lost:
+			junk_cost += Career.junk_price(k)
 		var o_full := Robot.overall_if(r, "healthy")
 		var o_now := Robot.overall_if(r, "now")
 		var o_junk := Robot.overall_if(r, "junk")
@@ -1949,10 +1952,10 @@ func open_injuries(slots: Array) -> void:
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
 		box.add_child(row)
-		var jb := _button("Bolt on junk %s ($%d) - OVR %d" % [" and ".join(names), Career.JUNK_PRICE * lost.size(), o_junk], func(): main.injury_choice(s, "junk"))
-		jb.disabled = Career.money(0) < Career.JUNK_PRICE * lost.size()
+		var jb := _button("Bolt on junk %s ($%d) - OVR %d" % [" and ".join(names), junk_cost, o_junk], func(): main.injury_choice(s, "junk"))
+		jb.disabled = Career.money(0) < junk_cost
 		row.add_child(jb)
-		if Career.money(0) < Career.JUNK_PRICE and not Robot.can_play(r):
+		if Career.money(0) < junk_cost and not Robot.can_play(r):
 			var any_sub := false
 			for bb in Career.team(0)["bench"]:
 				if Robot.can_play(bb) and Career.fits(bb, s):
@@ -2010,8 +2013,8 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			line.add_child(gl)
-			var jk := _button("Junk $%d" % Career.JUNK_PRICE, func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id))
-			jk.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.JUNK_PRICE
+			var jk := _button("Junk $%d" % Career.junk_price(k), func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id))
+			jk.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.junk_price(k)
 			line.add_child(jk)
 			var nb := _button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id))
 			nb.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.repair_cost(r, k)
