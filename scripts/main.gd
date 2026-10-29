@@ -884,6 +884,8 @@ func _next() -> void:
 			else:
 				hud.slips = Career.pay_game(game)     # the final whistle pays both sides
 				hud.season_lines = Career.finish_week(game)
+		if _phase != "over":
+			Ux.ev("final", {"score": game.score, "mode": Career.mode() if Career.loaded else "quick"})
 		_phase = "over"
 		hud.show_result("Final")
 		hud.show_game_over(game)

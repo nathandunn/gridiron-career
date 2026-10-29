@@ -94,6 +94,7 @@ func setup(m: Node) -> void:
 	_build_scoreboard()
 	_build_controls()
 	_build_watermark()
+	Ux.start(self)
 	_toast = Label.new()
 	_toast.set_anchors_preset(Control.PRESET_CENTER)
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -438,6 +439,7 @@ func close_overlay(follow_back := true) -> void:
 	if any_overlay():
 		_overlay.queue_free()
 	_overlay = null
+	Ux.panel("field")
 	main.overlay_changed(false)
 	if follow_back and _back.is_valid():
 		var b := _back
@@ -448,6 +450,7 @@ func close_overlay(follow_back := true) -> void:
 ## A panel over the field: returns its content box.
 func _open(title: String) -> VBoxContainer:
 	close_overlay(false)
+	Ux.panel(title)
 	_back = Callable()
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
@@ -1203,8 +1206,8 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 			_box_score(box, stats, [1, 1], names)
 		"p0", "p1":
 			var t := int(_stats_tab.substr(1))
-			_player_tables(box, pstats[t], 1, g.teams[t])
 			g._track_ovr(false)
+			_player_tables(box, pstats[t], 1, g.teams[t], g.ovr_track)
 			_condition_table(box, g.teams[t], g.ovr_track)
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
@@ -1276,7 +1279,7 @@ func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
 
 
 ## Passing, rushing, receiving and defense for one side. `per` divides (games in a batch).
-func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) -> void:
+func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, track: Dictionary = {}) -> void:
 	var v := func(slot: String, k: String) -> float: return float(ps[slot][k]) / float(per)
 	var fmt := func(x: float) -> String: return str(int(round(x))) if per == 1 else "%.1f" % x
 	var who := func(slot: String) -> String:
@@ -1286,7 +1289,9 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) ->
 			var nm := String(rb.get("name", slot))
 			var parts := nm.split(" ")
 			var short := ("%s. %s" % [parts[0].substr(0, 1), " ".join(parts.slice(1))]) if parts.size() > 1 else nm
-			return "#%d %s (%s)" % [int(rb.get("number", 0)), short, slot]
+			if per == 1:
+				return "%s (%s)  %s" % [short, slot, ovr_change_text(rb, track)[0]]
+			return "%s (%s)" % [short, slot]
 		var b: Brain = (team.get("brains", {}) as Dictionary).get(slot, null)
 		return slot if b == null else "%s %s" % [slot, b.name.split(" ")[0]]
 	if per > 1:
@@ -1332,6 +1337,25 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary) ->
 				grid.add_child(l)
 
 
+## "80 -3 +2 = 79": his overall at kickoff, what the hits took, what repairs gave back, and
+## where that leaves him; just "80" when nothing changed. Second value: did he take damage.
+static func ovr_change_text(r: Dictionary, track: Dictionary) -> Array:
+	var tr: Dictionary = track.get(String(r.get("id", "")), {})
+	if tr.is_empty():
+		return [str(Robot.overall_if(r, "now")), false]
+	var st := int(roundf(float(tr["start"])))
+	var dm := int(roundf(float(tr["dmg"])))
+	var up := int(roundf(float(tr["upg"])))
+	var txt := "%d" % st
+	if dm > 0:
+		txt += " -%d" % dm
+	if up > 0:
+		txt += " +%d" % up
+	if dm > 0 or up > 0:
+		txt += " = %d" % int(roundf(float(tr["last"])))
+	return [txt, dm > 0]
+
+
 ## Every robot on the side: his overall at kickoff, minus what the hits took, plus what
 ## repairs gave back, equals where he is now; then how worn each of his parts is.
 func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void:
@@ -1354,28 +1378,15 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		var r: Dictionary = row[1]
 		if r.is_empty():
 			continue
-		var tr: Dictionary = track.get(String(r.get("id", "")), {})
 		var nm := String(r.get("name", ""))
 		var bits := nm.split(" ")
 		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
-		var nl := _label("#%d %s (%s)" % [int(r.get("number", 0)), short, row[0]], fs - 2, Color(0.85, 0.9, 1))
+		var nl := _label("%s (%s)" % [short, row[0]], fs - 2, Color(0.85, 0.9, 1))
 		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
 		grid.add_child(nl)
-		var o_txt := str(Robot.overall_if(r, "now"))
-		var hit := false
-		if not tr.is_empty():
-			var st := int(roundf(float(tr["start"])))
-			var dm := int(roundf(float(tr["dmg"])))
-			var up := int(roundf(float(tr["upg"])))
-			var now := int(roundf(float(tr["last"])))
-			o_txt = "%d" % st
-			if dm > 0:
-				o_txt += " -%d" % dm
-			if up > 0:
-				o_txt += " +%d" % up
-			if dm > 0 or up > 0:
-				o_txt += " = %d" % now
-			hit = dm > 0
+		var oc := ovr_change_text(r, track)
+		var o_txt: String = oc[0]
+		var hit: bool = oc[1]
 		var ol := _label(o_txt, fs - 2, Color(1.0, 0.55, 0.5) if hit else Color(0.85, 0.88, 0.92))
 		ol.autowrap_mode = TextServer.AUTOWRAP_OFF
 		grid.add_child(ol)

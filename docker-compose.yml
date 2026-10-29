@@ -1,0 +1,13 @@
+# The static game behind nginx, plus a host folder for the usage-tracking log so it
+# survives redeploys (see nginx.conf and scripts/ux.gd).
+services:
+  web:
+    build: .
+    container_name: gridiron-career
+    restart: unless-stopped
+    volumes:
+      - /workspace/data/gridiron-career-ux:/var/log/ux
+    networks: [web]
+networks:
+  web:
+    external: true
