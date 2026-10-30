@@ -338,6 +338,23 @@ func clear_caption() -> void:
 var _resume: Button
 
 
+var _aud_btn: Button = null
+
+
+## The pre-snap "Audible?" button (only while there is time to check out of the call).
+func show_audible_button(on: bool) -> void:
+	if _aud_btn == null:
+		_aud_btn = _button("Audible?", func(): main.audible_pressed())
+		_aud_btn.add_theme_font_size_override("font_size", fs + 6)
+		_aud_btn.add_theme_color_override("font_color", YELLOW)
+		_root.add_child(_aud_btn)
+	_aud_btn.visible = on
+	if on:
+		_aud_btn.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_aud_btn.position = Vector2((vp.x - _aud_btn.size.x) * 0.5, vp.y * 0.62)
+
+
 func show_resume(on: bool, text: String) -> void:
 	if _resume == null:
 		_resume = _button("", func(): main.resume_panel())
@@ -470,7 +487,7 @@ func _refresh_nav() -> void:
 		_close_btn.text = "« Back to %s" % _crumbs[-2]
 	elif _back.is_valid():
 		_close_btn.text = "« Back"
-	elif main != null and main._phase in ["picking", "special", "qbreak", "injury", "pregame"]:
+	elif main != null and main._phase in ["picking", "special", "qbreak", "injury", "pregame", "audible"]:
 		_close_btn.text = "Hide"     # the game waits on this panel: Resume brings it back
 	else:
 		_close_btn.text = "× Close"
@@ -1189,6 +1206,49 @@ func _punt_cards(g: Game, team: int, cw: float, coach_pick: bool) -> Array:
 
 
 ## Kickoffs and returns: the kicking side picks the kick, the receiving side the return.
+## Pre-snap: both calls, any check the other side made, and the person's one audible - keep the
+## call or check into one of three fresh plays.
+func open_audible(g: Game, team: int, side: String, snap: Dictionary, hand: Array, coach: Dictionary) -> void:
+	var mine_key := "off_name" if side == "offense" else "def_name"
+	var theirs_key := "def_name" if side == "offense" else "off_name"
+	var box := _open("Audible? %s" % ("on offense" if side == "offense" else "on defense"))
+	box.add_child(_label("Time on the play clock: you may check out of your call once, after seeing how they line up.", fs - 1, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("Your call:  %s" % String(snap[mine_key]), fs + 2, YELLOW))
+	var theirs := String(snap[theirs_key])
+	box.add_child(_label("Their look:  %s" % theirs, fs + 2, CYAN))
+	for a in snap.get("audibles", []):
+		if int(a["team"]) != team:
+			box.add_child(_label("They audibled: out of %s into %s (%s)" % [a["from"], a["to"], a["why"]], fs, MAGENTA))
+	var vp := get_viewport().get_visible_rect().size
+	var inner := minf(vp.x - 16.0, 900.0) - 40.0
+	var cols := 2
+	var cw := floorf((inner - 8.0 * (cols - 1)) / cols)
+	var grid := GridContainer.new()
+	grid.columns = cols
+	grid.add_theme_constant_override("h_separation", 8)
+	grid.add_theme_constant_override("v_separation", 8)
+	box.add_child(grid)
+	grid.add_child(_text_card(cw, "Keep it: %s" % String(snap[mine_key]), "Run the play you called.", false, func(): main.audible_made({})))
+	for i in hand.size():
+		var card: Dictionary = hand[i]
+		var p: Play = card["play"]
+		grid.add_child(_text_card(cw, "Check to: %s" % p.name, _play_subline(p), int(coach.get("index", -1)) == i, func(): main.audible_made(card)))
+	if int(coach.get("index", -1)) >= 0:
+		box.add_child(_label("The marked card is the one the coach would pick.", fs - 2, MAGENTA))
+
+
+## A check the computer made, shown clearly before the snap: who, what they had, what they went to.
+func show_audibles(g: Game, list: Array) -> void:
+	var lines: Array = []
+	for a in list:
+		var nm: String = g.teams[int(a["team"])].get("club", Team.NAMES[int(a["team"])])
+		lines.append("%s: %s  ->  %s" % [nm, a["from"], a["to"]])
+	toast("AUDIBLE!\n" + "\n".join(lines), 2.6)
+	for a in list:
+		var nm2: String = g.teams[int(a["team"])].get("club", Team.NAMES[int(a["team"])])
+		caption("%s audible (%s): out of %s into %s - %s" % [nm2, a["side"], a["from"], a["to"], a["why"]], false, Color(1.0, 0.85, 0.3))
+
+
 func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 	var tname := String(g.teams[team].get("club", g.teams[team]["name"]))
 	var box := _open(("%s kick off" if kind == "kickoff" else "%s return") % tname)

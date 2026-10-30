@@ -327,6 +327,7 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 	dp = aud["dp"]
 	if not (aud["notes"] as Array).is_empty():
 		pending["audible"] = aud["notes"]
+		pending["audibles"] = aud["list"]
 		pending["set_edge"] = aud["set_edge"]
 		if aud["op_changed"]:
 			pending["off_text"] = ""
@@ -386,10 +387,8 @@ func _iq_eye(t: int, slot: String) -> float:
 
 
 func _audibles(op: Play, dp: Play, off_locked: bool, def_locked: bool) -> Dictionary:
-	var out := {"op": op, "dp": dp, "notes": [], "set_edge": false, "op_changed": false, "dp_changed": false}
-	# no time: the hurry-up at the end of a half
-	var trailing: bool = score[poss] <= score[1 - poss]
-	if quarter in [2, 4] and clock < 120.0 and trailing:
+	var out := {"op": op, "dp": dp, "notes": [], "list": [], "set_edge": false, "op_changed": false, "dp_changed": false}
+	if not has_time():
 		return out
 	var need := need_yards()
 	var names: Array = [teams[poss].get("club", Team.NAMES[poss]), teams[1 - poss].get("club", Team.NAMES[1 - poss])]
@@ -408,6 +407,7 @@ func _audibles(op: Play, dp: Play, off_locked: bool, def_locked: bool) -> Dictio
 		if best != "" and cur >= 0.0 and bp - cur >= float(PlaySim.K.get("audible_gap", 0.2)):
 			out["op"] = Library.play(best)
 			out["op_changed"] = true
+			(out["list"] as Array).append({"team": poss, "side": "offense", "from": op.name, "to": best, "why": "against the %s look" % dl})
 			(out["notes"] as Array).append("%s audible: out of %s into %s against the %s look" % [names[0], op.name, best, dl])
 	# the defense reads the formation and the trend
 	var dt := 1 - poss
@@ -443,6 +443,7 @@ func _audibles(op: Play, dp: Play, off_locked: bool, def_locked: bool) -> Dictio
 		if best_d != "" and bs - cur_d >= float(PlaySim.K.get("audible_gap", 0.2)) * 0.7:
 			out["dp"] = Library.play(best_d)
 			out["dp_changed"] = true
+			(out["list"] as Array).append({"team": dt, "side": "defense", "from": dp.name, "to": best_d, "why": "%s look" % ("a run" if run_p >= 0.55 else ("a pass" if run_p <= 0.45 else "a mixed"))})
 			(out["notes"] as Array).append("%s check: out of %s into %s (%s look)" % [names[1], dp.name, best_d, "run" if run_p >= 0.55 else ("pass" if run_p <= 0.45 else "mixed")])
 	return out
 
@@ -455,6 +456,30 @@ func _near_best(scored: Array) -> Array:
 		top = maxf(top, float(sc[0]))
 	var near: Array = scored.filter(func(sc): return float(sc[0]) >= top - 0.05)
 	return near[rng.randi() % near.size()] if not near.is_empty() else [top, ""]
+
+
+## Is there time on the play clock to check out of a call? (Not in the hurry-up at the end of a
+## half, when the side with the ball is level or behind.)
+func has_time() -> bool:
+	var trailing: bool = score[poss] <= score[1 - poss]
+	return not (quarter in [2, 4] and clock < 120.0 and trailing)
+
+
+## The person checks out of their call: `side` "offense"/"defense", into `card` ({play, text}).
+func user_audible(team: int, side: String, card: Dictionary) -> void:
+	var key := "off" if side == "offense" else "def"
+	var was: Play = pending[key]
+	var np: Play = card["play"]
+	pending[key] = np
+	pending[key + "_name"] = np.name
+	pending[key + "_text"] = String(card.get("text", ""))
+	var nm: String = teams[team].get("club", Team.NAMES[team])
+	var notes: Array = pending.get("audible", [])
+	notes.append("%s audible: out of %s into %s" % [nm, was.name, np.name])
+	pending["audible"] = notes
+	var lst: Array = pending.get("audibles", [])
+	lst.append({"team": team, "side": side, "from": was.name, "to": np.name, "why": "your call"})
+	pending["audibles"] = lst
 
 
 ## Chance a defense stops the measured plays short of `need`, runs weighted by `run_p`.

@@ -129,6 +129,22 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"audible":
+				# the audible screen, with a made-up computer check shown on it
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				calling = ["pick", "coach"]
+				game.teams[0]["calling"] = "pick"
+				game.teams[1]["calling"] = "coach"
+				game.poss = 0
+				var snap0 := game.next_snap({"off": PlayGen.hand(game.rng, "offense", 1, 10.0)[0]})
+				snap0["audibles"] = [{"team": 1, "side": "defense", "from": "Cover 2", "to": "Cover 0 Blitz", "why": "a pass look"}]
+				_aud_ready = _offer_audible(snap0) or true
+				_aud_snap = snap0
+				_start_snap(snap0)
+				if String(args.get("show", "panel")) == "panel":
+					audible_pressed()
 			"nav3":
 				# Teams -> Roster -> a robot: the trail and the Back labels
 				hud.open_teams()
@@ -606,6 +622,55 @@ func _open_special(kind: String, team: int) -> void:
 
 ## From the picker: kind is "off" / "def" (value: a generated {text, play}), "kick" ("punt" /
 ## "field_goal"), or "coach_off" / "coach_def" (let the coach call this one).
+## Before the snap, with time on the clock: the side the person calls may check out of its play
+## once. The panel shows both calls and any check the other side made.
+var _aud_snap := {}
+var _aud_hand: Array = []
+var _aud_side := ""
+var _aud_team := -1
+var _aud_ready := false
+const AUDIBLE_WINDOW := 2.6
+
+
+## Is the person's side allowed an audible this snap (time on the clock, and they call plays)?
+func _offer_audible(snap: Dictionary) -> bool:
+	if not game.has_time():
+		return false
+	var u := -1
+	for t in 2:
+		if String(game.teams[t].get("calling", "coach")) == "pick":
+			u = t
+	if u < 0:
+		return false
+	_aud_team = u
+	_aud_side = "offense" if game.poss == u else "defense"
+	_aud_snap = snap
+	_aud_hand = PlayGen.hand(game.rng, _aud_side, 3, game.to_go)
+	return not OS.get_cmdline_user_args().has("--autopick")
+
+
+## The "Audible?" button during the pre-snap pause: stop and show the audible screen.
+func audible_pressed() -> void:
+	if _phase != "presnap" or not _aud_ready:
+		return
+	hud.show_audible_button(false)
+	_phase = "audible"
+	hud.open_audible(game, _aud_team, _aud_side, _aud_snap, _aud_hand, game.coach_suggest(_aud_side == "offense", _aud_hand))
+
+
+## The person's answer: `card` to check into it, or {} to keep the call.
+func audible_made(card: Dictionary) -> void:
+	hud.show_resume(false, "")
+	hud.close_overlay(false)
+	_aud_ready = false
+	if not card.is_empty():
+		game.user_audible(_aud_team, _aud_side, card)
+		_start_snap(game.pending)       # line up again in the new play
+	else:
+		_phase = "presnap"
+		_wait = 0.4
+
+
 func pick_made(kind: String, value: Variant) -> void:
 	hud.show_resume(false, "")
 	_choice[kind] = value
@@ -834,6 +899,8 @@ func _resume_label() -> String:
 			return "Fix broken robots"
 		"pregame":
 			return "Set up the game"
+		"audible":
+			return "Audible or keep the call"
 	return ""
 
 
@@ -848,6 +915,8 @@ func resume_panel() -> void:
 			hud.show_stats(game, "quarter", game.quarter_ends[_seen_q - 1])
 		"pregame":
 			hud.open_teams(true)
+		"audible":
+			hud.open_audible(game, _aud_team, _aud_side, _aud_snap, _aud_hand, game.coach_suggest(_aud_side == "offense", _aud_hand))
 		"injury":
 			if _broken_mine().is_empty():
 				_next()
@@ -932,6 +1001,7 @@ func _next() -> void:
 	var poss_before := game.poss
 	var snap := game.next_snap(_choice)
 	_choice = {}
+	_aud_ready = snap["kind"] == "play" and not snap.has("return") and _offer_audible(snap)
 	if snap["kind"] != "play":
 		hud.show_call("")
 		hud.show_result(String(snap.get("text", "")))
@@ -948,6 +1018,11 @@ func _next() -> void:
 		view.set_play(null, game.poss, game.yl, game.to_go)
 		hud.show_state(game)
 		return
+	_start_snap(snap)
+
+
+## The calls are in (and any audibles): line up and go.
+func _start_snap(snap: Dictionary) -> void:
 	sim = game.make_sim()
 	var team: String = Team.NAMES[game.poss]
 	view.set_play(sim, game.poss, game.yl, game.to_go)
@@ -956,13 +1031,16 @@ func _next() -> void:
 		hud.show_call("%s · %s receive" % [String(snap["off_name"]), String(game.teams[game.poss].get("club", team))])
 	else:
 		hud.show_call("%s: %s   vs   %s" % [team, snap["off_name"], snap["def_name"]])
-		if snap.has("audible"):
-			hud.toast("AUDIBLE!", 1.2)
-			for note in snap["audible"]:
-				hud.caption(String(note), false, Color(1.0, 0.85, 0.3))
+		if snap.has("audibles"):
+			hud.show_audibles(game, snap["audibles"])
 		announcer.presnap(game, String(snap["off_name"]), String(snap["def_name"]))
 	_phase = "presnap"
 	_wait = PRESNAP
+	if snap.has("audibles"):
+		_wait = maxf(_wait, 2.2)         # time to read the check
+	if _aud_ready:
+		_wait = maxf(_wait, AUDIBLE_WINDOW)
+		hud.show_audible_button(true)
 
 
 func _process(delta: float) -> void:
@@ -972,7 +1050,7 @@ func _process(delta: float) -> void:
 		_batch_step()
 		return
 	# a panel that is waiting on you was closed: nothing happens until you come back to it
-	if _phase in ["picking", "special", "qbreak", "injury", "pregame"]:
+	if _phase in ["picking", "special", "qbreak", "injury", "pregame", "audible"]:
 		hud.show_resume(not hud.any_overlay(), _resume_label())
 		return
 	if paused or hud.any_overlay() and _phase != "over":
@@ -989,6 +1067,8 @@ func _process(delta: float) -> void:
 			if _wait <= 0.0:
 				_phase = "live"
 				_acc = 0.0
+				_aud_ready = false
+				hud.show_audible_button(false)
 				hud.show_board(false)   # the scoreboard steps aside while the ball is live
 		"live":
 			_acc += minf(d, 10.0)
