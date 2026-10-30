@@ -2504,6 +2504,8 @@ func _resolve_blocks() -> void:
 			continue
 		if b.pos.distance_to(e.pos) < ENGAGE_R + (0.35 if b.group == "OL" else 0.0):
 			b.engaged = e
+			if e.blockers.is_empty():
+				e.mem["_eng_t"] = t      # the block starts: it can only be held so long
 			if e.engaged == null:
 				e.engaged = b
 			e.blockers.append(b)
@@ -2575,6 +2577,14 @@ func _resolve_blocks() -> void:
 			# the runner is right there: worth letting go of the block, unless the blocker has him sealed
 			var seal := (carrier.pos - e.pos).normalized().dot((b.pos - e.pos).normalized())
 			sh += (0.5 + 0.4 * e.d("aggression")) * (0.3 if seal > 0.3 else 1.0) * float(K.get("near_shed", 1.0)) * (0.6 if rate < 0.0 else 1.0)
+		# no block holds for ever: past what this blocker can hold against this man, it gets
+		# easier and easier to get off - sooner for a stronger, craftier defender, later for a
+		# stronger, better blocker (a double team holds longer)
+		var held := t - float(e.mem.get("_eng_t", t))
+		var edge := (epow - bpow) * 1.5 + (eskill - bskill) * 0.5
+		var hold := float(K.get("block_hold", 2.0)) * clampf(1.0 - edge, 0.4, 1.5) * (1.4 if double else 1.0)
+		if held > hold:
+			sh += (held - hold) * float(K.get("block_tire", 3.0)) * clampf(1.0 + edge, 0.8, 2.5)
 		if double:
 			sh *= 0.35
 		if run_block:
