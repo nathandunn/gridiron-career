@@ -2195,6 +2195,46 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 
 
 ## Upgrade money: spend it yourself on the robot pages, or let the coach spend it.
+## The coach's plan before he spends: each robot he would upgrade, which parts, what it does
+## to his overall and what it costs; then buy it or go back.
+func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
+	var seed := randi() % 1000000 + 1
+	var plan := Career.coach_plan(t, purse, 400, focus, seed)
+	var what := "the credit" if not purse else String(Career.FOCUS[focus]["label"])
+	var box := _open("Coach's plan: %s" % what)
+	var rows: Array = plan["rows"]
+	var cost := int(plan["cost"])
+	var from_credit := mini(Career.credit(t), cost)
+	box.add_child(_label("He has $%d to spend%s. This would cost $%d%s, leaving $%d in the purse." % [int(plan["budget"]),
+		" (keeping $400 back)" if purse else "", cost, (" ($%d of it credit)" % from_credit) if from_credit > 0 else "",
+		Career.money(t) - (cost - from_credit)], fs, YELLOW))
+	if rows.is_empty():
+		box.add_child(_label("Nothing he can buy with that: every part he'd look at is maxed out or costs more than he has.", fs - 1, Color(0.85, 0.88, 0.92)))
+	var gain := 0
+	for r in rows:
+		gain += int(r["after"]) - int(r["before"])
+		var nm := String(r["name"])
+		var bits := nm.split(" ")
+		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
+		box.add_child(_label("%s (%s)   OVR %d -> %d (%+d)   $%d" % [short, r["slot"], int(r["before"]), int(r["after"]), int(r["after"]) - int(r["before"]), int(r["cost"])], fs, Color(0.85, 0.95, 1.0)))
+		box.add_child(_label("    " + ", ".join(r["parts"]), fs - 2, Color(0.75, 0.8, 0.88)))
+		if not (r.get("gains", []) as Array).is_empty():
+			box.add_child(_label("    " + ", ".join(r["gains"]), fs - 2, Color(0.55, 0.95, 0.6)))
+	if not rows.is_empty():
+		box.add_child(_label("In all: %d robots, %+d overall between them, $%d." % [rows.size(), gain, cost], fs - 1, CYAN))
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	box.add_child(row)
+	if not rows.is_empty():
+		var buy := _button("Buy it ($%d)" % cost, func():
+			var news := Career.coach_spend(t, purse, 400, focus, seed)
+			refresh.call()
+			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4))
+		buy.add_theme_font_size_override("font_size", fs + 2)
+		row.add_child(buy)
+	row.add_child(_button("Back", func(): refresh.call()))
+
+
 func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 	var cr := Career.credit(t)
 	if cr > 0:
@@ -2204,12 +2244,7 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	if cr > 0:
-		row.add_child(_button("Coach spends the credit", func():
-			var news := Career.coach_spend(t, false)
-			refresh.call()
-			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
-			for n in news.slice(1):
-				caption("Coach bought: " + n, false, YELLOW)))
+		row.add_child(_button("Coach spends the credit", func(): _open_plan(t, false, "", refresh)))
 	if Career.money(t) > 400:
 		if cr <= 0:
 			box.move_child(row, box.get_child_count() - 1)
@@ -2223,9 +2258,4 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 		box.add_child(fr)
 		for fk in Career.FOCUS:
 			var fkey: String = fk
-			fr.add_child(_button(String(Career.FOCUS[fkey]["label"]), func():
-				var news := Career.coach_spend(t, true, 400, fkey)
-				refresh.call()
-				toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)
-				for n in news.slice(1):
-					caption("Coach bought: " + n, false, YELLOW)))
+			fr.add_child(_button(String(Career.FOCUS[fkey]["label"]), func(): _open_plan(t, true, fkey, refresh)))

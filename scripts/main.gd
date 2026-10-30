@@ -105,6 +105,7 @@ func _ready() -> void:
 			"toast": hud.toast(String(args.get("text", "TURNOVER ON DOWNS\nBlue ball")).replace("|", "\n"), 5.0)
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
 			"roster": hud.open_roster(0)
+			"plan": hud._open_plan(0, true, String(args.get("focus", "db")), func(): hud.open_roster(0))
 			"closepick": hud.close_overlay()
 			"lineup":
 				# every position side by side, for checking how they look

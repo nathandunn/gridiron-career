@@ -661,13 +661,16 @@ const FOCUS := {
 ## Spend `budget` on one group: round after round, the cheapest next tier among its robots'
 ## parts, so the whole group gets better together, up to Prototype. Returns what it cost.
 static func focus_upgrades(t: int, focus: String, budget: int) -> int:
+	return _focus_on(team(t)["starters"], special(t), focus, budget)
+
+
+static func _focus_on(starters: Dictionary, specials: Dictionary, focus: String, budget: int) -> int:
 	var f: Dictionary = FOCUS[focus]
-	var tm := team(t)
 	var robots: Array = []
 	for s in f["slots"]:
-		var r: Dictionary = tm["starters"].get(s, {})
-		if r.is_empty() and tm.has("special"):
-			r = tm["special"].get(s, {})
+		var r: Dictionary = starters.get(s, {})
+		if r.is_empty():
+			r = specials.get(s, {})
 		if not r.is_empty():
 			robots.append(r)
 	var left := budget
@@ -698,7 +701,56 @@ static func focus_upgrades(t: int, focus: String, budget: int) -> int:
 	return budget - left
 
 
-static func coach_spend(t: int, purse: bool, reserve := 400, focus := "") -> Array:
+## What the coach WOULD buy with coach_spend(t, purse, reserve, focus, seed), worked out on
+## copies so nothing changes: {budget, cost, rows: [{slot, name, before, after, cost, parts}]},
+## one row per robot he would upgrade (parts: ["left leg Stock -> Mk II", ...]).
+static func coach_plan(t: int, purse: bool, reserve := 400, focus := "", seed := 1) -> Dictionary:
+	var budget := credit(t) + (maxi(money(t) - reserve, 0) if purse else 0)
+	var out := {"budget": budget, "cost": 0, "rows": []}
+	if budget <= 0:
+		return out
+	var real: Dictionary = (team(t)["starters"] as Dictionary).duplicate()
+	var sp: Dictionary = special(t)
+	var copy := {"starters": (team(t)["starters"] as Dictionary).duplicate(true)}
+	var sp_copy := sp.duplicate(true)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed
+	out["cost"] = upgrades_with(copy, budget, rng) if focus == "" else _focus_on(copy["starters"], sp_copy, focus, budget)
+	for s in real:
+		_plan_row(out["rows"], s, real[s], copy["starters"][s])
+	for s in sp:
+		_plan_row(out["rows"], s, sp[s], sp_copy[s])
+	return out
+
+
+static func _plan_row(rows: Array, slot: String, was: Dictionary, now: Dictionary) -> void:
+	var parts: Array = []
+	var cost := 0
+	for k in Robot.PARTS:
+		var a := String(Robot.ensure_parts(was)[k]["tier"])
+		var b := String(Robot.ensure_parts(now)[k]["tier"])
+		if a == b:
+			continue
+		parts.append("%s %s -> %s" % [String(Robot.PART_LABEL[k]).to_lower(), a, b])
+		var probe := {"parts": {k: {"tier": a, "hp": 1}}}
+		for guard in 5:
+			var nt := next_tier(probe, k)
+			if nt == "" or Robot.TIERS.find(nt) > Robot.TIERS.find(b):
+				break
+			cost += upgrade_price(k, nt)
+			probe["parts"][k]["tier"] = nt
+	if parts.is_empty():
+		return
+	var gains: Array = []
+	for rk in Robot.keys(was):
+		var d := int(roundf(Robot.eff(now, rk) - Robot.eff(was, rk)))
+		if d != 0:
+			gains.append("%s %+d" % [String(Robot.LABEL.get(rk, rk)).to_lower(), d])
+	rows.append({"slot": slot, "name": String(was.get("name", slot)), "before": Robot.overall_if(was, "now"),
+		"after": Robot.overall_if(now, "now"), "cost": cost, "parts": parts, "gains": gains})
+
+
+static func coach_spend(t: int, purse: bool, reserve := 400, focus := "", seed := 0) -> Array:
 	var news: Array = []
 	var budget := credit(t) + (maxi(money(t) - reserve, 0) if purse else 0)
 	if budget <= 0:
@@ -710,7 +762,11 @@ static func coach_spend(t: int, purse: bool, reserve := 400, focus := "") -> Arr
 	for s in st:
 		for k in Robot.PARTS:
 			before[s + k] = String(Robot.ensure_parts(st[s])[k]["tier"])
-	var spent := upgrades_with(team(t), budget) if focus == "" else focus_upgrades(t, focus, budget)
+	var rng: RandomNumberGenerator = null
+	if seed != 0:
+		rng = RandomNumberGenerator.new()
+		rng.seed = seed            # the same draw coach_plan showed
+	var spent := upgrades_with(team(t), budget, rng) if focus == "" else focus_upgrades(t, focus, budget)
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))
