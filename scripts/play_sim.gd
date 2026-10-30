@@ -1254,7 +1254,16 @@ func _open(qb: P, r: P) -> float:
 	return margin
 
 
-func _best_read(qb: P, need: float, min_depth := -99.0, max_depth := 99.0) -> Dictionary:
+## How wrong a quarterback's read of "how open is he" can be: a low-IQ passer sees men open
+## who aren't (and the other way round); a sharp one sees the field as it is.
+func _misread(qb: P) -> float:
+	if qb.slot != "QB":
+		return 0.0
+	var sig := float(K.get("misread", 1.4)) * maxf(1.2 - clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4), 0.0)
+	return rng.randfn(0.0, sig) if sig > 0.0 else 0.0
+
+
+func _best_read(qb: P, need: float, min_depth := -99.0, max_depth := 99.0, value := false) -> Dictionary:
 	var best: P = null
 	var bs := -1e9
 	var order: Array = reads if not reads.is_empty() else ["WR1", "WR2", "WR3", "TE", "RB"]
@@ -1263,11 +1272,14 @@ func _best_read(qb: P, need: float, min_depth := -99.0, max_depth := 99.0) -> Di
 		var depth := _predict(r, 0.8).y
 		if depth < min_depth or depth > max_depth:
 			continue
-		var o := _open(qb, r)
+		var o := _open(qb, r) + _misread(qb)
 		if o < need:
 			continue
 		# reads earlier in the order and further downfield are worth a little more
 		var s := minf(o, 4.0) * (0.6 + 0.4 * qb.d("vision")) - i * 0.35 + clampf(depth, -3.0, 25.0) * (0.04 + 0.07 * qb.d("risk"))
+		if value:
+			# what a smart passer weighs: where the catch is, plus the room to run after it
+			s = clampf(depth, -3.0, 30.0) + float(K.get("qb_room", 1.5)) * minf(o, 4.0) - i * 0.2
 		if s > bs:
 			bs = s
 			best = r
@@ -1634,7 +1646,10 @@ func _qb_default(p: P) -> void:
 	if reads.is_empty():
 		reads = ["WR1", "WR2", "WR3", "TE", "RB"]
 	var need := 1.2 - 1.2 * p.d("risk")
-	var per_read := 0.45 + 0.35 * p.d("patience")
+	# IQ: how fast he gets through his reads, how much of the field he takes in, and how
+	# often he picks the best of what is open rather than the first thing that is
+	var qiq := clampf(float(p.body.get("iq", 1.0)), 0.6, 1.4)
+	var per_read := (0.45 + 0.35 * float(p.dial.get("patience", 0.5))) / qiq
 	if t - read_t > per_read:
 		read_t = t
 		read_idx = mini(read_idx + 1, reads.size() - 1)
@@ -1644,16 +1659,23 @@ func _qb_default(p: P) -> void:
 	# he reads the rush a beat late (how late depends on his IQ): a rusher who has just beaten
 	# his man is on him before he reacts, so a beaten block costs sacks, not just a hurried throw
 	# vision lets him see an open man who isn't his current read
-	if _open(p, cur) > need:
+	var smart := clampf((qiq - 0.7) * float(K.get("qb_smart", 1.4)), 0.05, 0.8)
+	if _open(p, cur) + _misread(p) > need:
+		if rng.randf() < smart:
+			# a look at the whole field first: someone clearly better?
+			var bb := _best_read(p, need, -99.0, 99.0, true)
+			if bb["r"] != null and bb["r"] != cur and float(bb["s"]) > clampf(_predict(cur, 0.8).y, -3.0, 30.0) + float(K.get("qb_room", 1.5)) * minf(_open(p, cur), 4.0) + 2.0:
+				_throw(p, bb["r"])
+				return
 		_throw(p, cur)
 		return
-	if p.d("vision") > 0.0 and rng.randf() < p.d("vision") * 0.35:
-		# a quick look back across the reads he has already been through
-		for k in read_idx:
-			var r: P = by_slot["o:" + reads[k]]
-			if _open(p, r) > need + 0.3:
-				_throw(p, r)
-				return
+	var look := clampf(0.25 * float(p.dial.get("vision", 0.5)) + float(K.get("qb_look", 0.6)) * (qiq - 0.8), 0.05, 0.6)
+	if rng.randf() < look:
+		# he takes in the field beyond his current read: a man open anywhere gets it
+		var bv := _best_read(p, need + 0.3 - 0.3 * (qiq - 1.0), 2.0, 99.0, true)
+		if bv["r"] != null:
+			_throw(p, bv["r"])
+			return
 	var limit := 2.6 + 1.6 * p.d("patience")
 	# a blitzer coming free: get it out to the hot read before he arrives
 	if pressure < float(K.get("hot_read", 3.2)) and pressure >= 1.6 and since > 0.35:
@@ -2019,12 +2041,23 @@ func _cover_man(p: P) -> void:
 	if m.pos.y < p.pos.y and m.vel.y > 1.0:
 		aim.y = maxf(aim.y, p.pos.y + clampf(m.vel.y * 0.12, 0.0, 1.2) * (1.0 if p.pos.y - m.pos.y < cushion + 2.0 else 0.0))
 	if m.pos.y > p.pos.y - 0.5 and m.pos.y > 4.0:
-		# he's even or past me: run with him, in phase, on his inside hip
-		aim = m.pos + m.vel * 0.45 + Vector2(inside * 0.6, 0.6)
+		# he's even or past me: run with him, in phase, on his inside hip - going by where he
+		# was a beat ago, so a sharp cut gains the receiver a step
+		var k0 := maxi(m.hist.size() - 1 - n - 3, 0)
+		var lag_v: Vector2 = (seen - (m.hist[k0] as Vector2)) / maxf(float(m.hist.size() - 1 - n - k0) * DT, DT)
+		aim = seen + lag_v * 0.45 + Vector2(inside * 0.6, 0.6)
 	if m.slot == "RB" and m.route.is_empty() and not handed:
 		# back stays in to block: sit on him / spy
 		aim = Vector2(m.pos.x, maxf(m.pos.y + 4.0, 3.0))
+	_plant_if_past(p, aim)
 	_toward(p, aim, 1.0, 0.3)
+
+
+## A defender carrying on past where he wants to be (his man cut, or stopped) plants and
+## drives back: he brakes harder than he speeds up - more so the quicker he is.
+func _plant_if_past(p: P, aim: Vector2) -> void:
+	if p.vel.length() > 2.0 and (aim - p.pos).dot(p.vel) < 0.3 * p.vel.length():
+		p.mem["_plant_until"] = t + DT * 2.0
 
 
 func _cover_zone(p: P) -> void:
@@ -2047,6 +2080,7 @@ func _cover_zone(p: P) -> void:
 		else:
 			aim = aim + Vector2(0, 0.8)
 	var frac := 0.85 if p.pos.distance_to(aim) > 4.0 else 1.0
+	_plant_if_past(p, aim)
 	_toward(p, aim, frac, 0.5)
 
 
@@ -2554,6 +2588,8 @@ func _move_all() -> void:
 				acc *= 1.6
 			if p == air_target and ball_state == "air":
 				acc *= 1.8   # breaking on the ball
+			if t < float(p.mem.get("_plant_until", -1.0)):
+				acc *= float(K.get("plant", 1.6)) * (0.75 + 0.5 * float(p.body.get("agility", 0.5)))
 			p.vel = p.vel.move_toward(want, acc * DT * (2.5 if want.length() < p.vel.length() - 0.5 else 1.0))
 		p.pos += p.vel * DT
 		if p.vel.length() > 0.5:
