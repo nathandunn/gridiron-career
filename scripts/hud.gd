@@ -447,7 +447,7 @@ static func _crumb(title: String) -> String:
 	if title.begins_with("Week ") or title.begins_with("Championship") or title.begins_with("Season over") or title.begins_with("Exhibition:"):
 		return "Game setup"
 	var c := title.get_slice(" · ", 0).get_slice(": ", 0)
-	return c if c.length() <= 26 else c.substr(0, 24) + "…"
+	return c if c.length() <= 26 else c.substr(0, 24) + "..."
 
 
 ## After a panel is built (and its caller has set _back): name where Close goes, and the trail.
@@ -467,15 +467,15 @@ func _refresh_nav() -> void:
 	else:
 		_crumbs = [me]
 	if _back.is_valid() and _crumbs.size() >= 2:
-		_close_btn.text = "← Back to %s" % _crumbs[-2]
+		_close_btn.text = "« Back to %s" % _crumbs[-2]
 	elif _back.is_valid():
-		_close_btn.text = "← Back"
+		_close_btn.text = "« Back"
 	elif main != null and main._phase in ["picking", "special", "qbreak", "injury", "pregame"]:
-		_close_btn.text = "▾ Hide"     # the game waits on this panel: Resume brings it back
+		_close_btn.text = "Hide"     # the game waits on this panel: Resume brings it back
 	else:
 		_close_btn.text = "× Close"
 	if _crumb_lbl != null and is_instance_valid(_crumb_lbl):
-		_crumb_lbl.text = "  ›  ".join(_crumbs)
+		_crumb_lbl.text = "  »  ".join(_crumbs)
 		_crumb_lbl.visible = _crumbs.size() >= 2
 	for b in _back_buttons:
 		if is_instance_valid(b):
@@ -1271,7 +1271,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 	var box := _open(title)
 	_back = back
 	if back.is_valid():
-		var bk := _button("← Back", func(): close_overlay())
+		var bk := _button("« Back", func(): close_overlay())
 		box.add_child(bk)
 		_back_buttons.append(bk)
 	if mode == "final":
@@ -2101,7 +2101,7 @@ func open_robot(id: String) -> void:
 			row2.add_child(b2)
 	var back := HFlowContainer.new()
 	box.add_child(back)
-	back.add_child(_button("← Back to Roster", func():
+	back.add_child(_button("« Back to Roster", func():
 		if _back.is_valid():
 			close_overlay()
 		else:

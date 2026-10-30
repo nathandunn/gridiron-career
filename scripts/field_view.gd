@@ -816,7 +816,7 @@ func _trash(who: String, p: PlaySim.P, chance: float) -> void:
 
 func _say_line(p: PlaySim.P, line: String) -> void:
 	var lab := Label3D.new()
-	lab.text = "“%s”" % line
+	lab.text = "\"%s\"" % line
 	lab.font_size = 60
 	lab.pixel_size = 0.015
 	lab.outline_size = 16
