@@ -585,11 +585,14 @@ func _process(delta: float) -> void:
 		bp = a2.lerp(b2, clampf(alpha, 0.0, 1.0)) + sim.carrier.face * 0.4
 		h = 1.25 if not sim.carrier.down else 0.25
 	_ball.position = world(bp, h)
-	if not _ball_fx.is_empty() and sim.ball_state != "held" and sim.ball_state != "air" and sim.ball_state != "bounce":
+	if not _ball_fx.is_empty() and sim.ball_state != "held" and sim.ball_state != "air" and sim.ball_state != "bounce" and sim.ball_state != "tip":
 		_ball.position = _ball_fx_pos()
 		_ball.rotation.x += delta * 9.0
 	if sim.ball_state == "air":
 		_ball.rotation.y += delta * 12.0
+	elif sim.ball_state == "tip":
+		_ball.rotation.x += delta * 14.0
+		_ball.rotation.z += delta * 9.0
 	elif sim.ball_state == "bounce":
 		# end over end and wobbling, faster the faster it goes
 		var spin := sim.ball_vel.length()

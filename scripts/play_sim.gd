@@ -1501,6 +1501,13 @@ func _drive(p: P) -> void:
 	if ball_state == "bounce":
 		_drive_bounce(p)
 		return
+	if ball_state == "tip":
+		# a loose ball in the air: the men around it go for it, the rest ease up
+		if p.pos.distance_to(ball_pos) < 7.0:
+			_toward(p, ball_pos + ball_vel * 0.3, 1.0, 0.0)
+		else:
+			_set_want(p, p.vel * 0.8)
+		return
 	if ball_state == "loose":
 		want = (ball_pos - p.pos)
 		p.mem["_want"] = want.normalized() * p.spd()
@@ -2790,8 +2797,19 @@ func _ball() -> void:
 			ball_pos = from.lerp(to, u)
 			var apex := 2.0 + float(air["dist"]) * (0.18 if air["lob"] else 0.08)
 			ball_h = 1.9 + 4.0 * apex * u * (1.0 - u) - 0.6 * u
+			if not air.get("kick", false) and not air.get("away", false) and u > 0.12 and u < 1.0:
+				# the ball meets a defender's body on its way: it can't go on to the receiver
+				for e: P in dfn:
+					if e.down:
+						continue
+					var hr := float(K.get("reach_h", 2.3)) + (0.4 if e.intent in ["play_ball", "jump_route"] else 0.0)
+					if ball_h < hr and e.pos.distance_to(ball_pos) < BODY_R + float(K.get("hit_r", 0.35)):
+						_ball_hits(e)
+						return
 			if u >= 1.0:
 				_arrive()
+		"tip":
+			_tip_ball()
 		"bounce":
 			_bounce_ball()
 		"loose":
@@ -2837,6 +2855,9 @@ func _arrive() -> void:
 			od = d
 			best_o = p
 	stat["def_d"] = dd if best_d != null else _nearest_def(to)
+	if best_d != null and dd < BODY_R + float(K.get("hit_r", 0.35)) and (best_o == null or dd < od):
+		_ball_hits(best_d)       # it comes down on him, not his man
+		return
 	if best_d != null:
 		var q := 1.0 - dd / REACH
 		var p_int := float(best_d.body["hands"]) * 0.42 * q * _placement(true)
@@ -2897,6 +2918,57 @@ func _placement(for_defense: bool) -> float:
 	if for_defense:
 		return clampf(1.0 - float(K.get("place_def", 1.3)) * q, 0.45, 1.6)
 	return clampf(1.0 + float(K.get("place_catch", 0.3)) * q, 0.85, 1.15)
+
+
+## The thrown ball meets defender `e`: he may catch it (an interception); if not, it comes off
+## him - up and away, a loose ball anyone can catch until it hits the ground.
+func _ball_hits(e: P) -> void:
+	var p_int := float(e.body["hands"]) * float(K.get("hit_int", 0.22)) * _placement(true)
+	if e.intent in ["play_ball", "jump_route"]:
+		p_int *= 1.3
+	if rng.randf() < p_int:
+		_intercept(e)
+		return
+	var from: Vector2 = air.get("from", ball_pos)
+	var dir := (ball_pos - from).normalized()
+	ball_vel = dir.rotated(rng.randfn(0.0, 1.1)) * rng.randf_range(1.0, 4.0)
+	ball_vz = rng.randf_range(1.0, 4.5)
+	ball_h = maxf(ball_h, 0.8)
+	ball_state = "tip"
+	air["tip_t"] = t
+	air["tipper"] = e.idx
+	stat["tipped_by"] = e.slot
+	stat["pbu_by"] = e.slot
+	_say("tipped by %s" % e.slot)
+	_fx("pbu", e, air_target, ball_pos)
+
+
+## A tipped ball in the air: it falls; whoever gets hands on it may catch it.
+func _tip_ball() -> void:
+	ball_pos += ball_vel * DT
+	ball_vz -= GRAVITY * DT
+	ball_h += ball_vz * DT
+	if ball_h <= 0.15:
+		ball_h = 0.15
+		air["to"] = ball_pos
+		_incomplete("broken up")
+		return
+	if ball_h > 2.5:
+		return
+	for p: P in players:
+		if p.down or p.slot == "QB" or (p.idx == int(air.get("tipper", -1)) and t - float(air.get("tip_t", 0.0)) < 0.3):
+			continue
+		if p.pos.distance_to(ball_pos) > 0.9:
+			continue
+		var pc := float(p.body["hands"]) * float(K.get("tip_catch", 0.06))
+		if rng.randf() < pc:
+			air["to"] = ball_pos
+			if p.side == 0:
+				_say("caught off the deflection by %s" % p.slot)
+				_catch(p)
+			else:
+				_intercept(p)
+			return
 
 
 func _nearest_def(to: Vector2) -> float:

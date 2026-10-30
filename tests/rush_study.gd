@@ -66,10 +66,15 @@ func _init() -> void:
 					st["net"] += float(res["y"])
 				if res["turnover"] == "int":
 					st["int"] += 1
+				if s.stat.has("tipped_by"):
+					st["tip"] = int(st.get("tip", 0)) + 1
+					var tk := "tip-int" if res["turnover"] == "int" else ("tip-catch" if not res["incomplete"] else "tip-down")
+					st[tk] = int(st.get(tk, 0)) + 1
 		var N := float(st["n"])
 		print("D-line %-7s pressure %3.0f%%  sacks %4.1f%%  throw-aways %3.0f%%  time to throw %.2fs  comp %3.0f%%  %4.1f yds/att  net %4.1f yds/dropback  INT %3.1f%%" % [dl,
 			100.0 * st["press"] / N, 100.0 * st["sack"] / N, 100.0 * st["away"] / N, st["tt"] / maxf(st["thr"], 1), 100.0 * st["comp"] / maxf(st["att"], 1),
 			st["yds"] / maxf(st["att"], 1), st["net"] / N, 100.0 * st["int"] / maxf(st["att"], 1)])
 		print("      sacks by: ", st.get("by", {}))
+		print("      ball hit a defender on %d of %d passes: picked off %d, caught off the deflection %d, fell incomplete %d" % [int(st.get("tip", 0)) + 0, st["att"], int(st.get("tip-int", 0)), int(st.get("tip-catch", 0)), int(st.get("tip-down", 0))])
 	print("OK")
 	quit()
