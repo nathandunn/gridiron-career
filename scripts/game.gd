@@ -322,11 +322,158 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 			var g := PlayGen.defense(rng)
 			dp = g["play"]
 			pending["def_text"] = g["text"]
+	var aud := _audibles(op, dp, off_mode == "" and calling_for(true) == "pick" and choice.has("off"), def_mode == "" and calling_for(false) == "pick" and choice.has("def"))
+	op = aud["op"]
+	dp = aud["dp"]
+	if not (aud["notes"] as Array).is_empty():
+		pending["audible"] = aud["notes"]
+		pending["set_edge"] = aud["set_edge"]
+		if aud["op_changed"]:
+			pending["off_text"] = ""
+		if aud["dp_changed"]:
+			pending["def_text"] = ""
 	pending["off"] = op
 	pending["def"] = dp
 	pending["off_name"] = op.name
 	pending["def_name"] = dp.name
 	return pending
+
+
+## ---- audibles --------------------------------------------------------------------------------
+## With time on the play clock each side may check out of its call once. The offense goes
+## first: the quarterback sees the defense's look and, if the numbers say his play is a bad
+## match for it, checks to a better one. Then the defense, which sees only the formation, the
+## down and distance and what has been working for the offense this game: if sweeps keep
+## hurting it, it sets the edge; if its call is a bad match for what is likely coming, it checks.
+## How often each notices goes with the IQ of whoever makes the call (QB / middle linebacker).
+## A side whose play a person picked keeps it.
+
+var trend := [{}, {}]      # offense team -> kind of play ("sweep", "inside run", "deep pass"...) -> [times, yards]
+
+
+static func bucket_of(op: Play) -> String:
+	var f := Play.features(op)
+	if float(f.get("run", 0.0)) > 0.5:
+		if float(f.get("qb_run", 0.0)) > 0.5:
+			return "QB run"
+		var x := absf(float(f.get("run_x", 0.0)))
+		return "sweep" if x >= 6.0 else ("outside run" if x >= 2.5 else "inside run")
+	return "deep pass" if float(f.get("deep", 0.0)) >= 14.0 else "short pass"
+
+
+## The playbook play that looks most like `p` (itself, if it is one).
+static func _like(p: Play) -> String:
+	var names := Library.plays_for(p.side)
+	if names.has(p.name):
+		return p.name
+	var f := Play.features(p)
+	var best := ""
+	var bd := INF
+	for n in names:
+		var d := Play.feature_distance(f, Play.features(Library.play(n)))
+		if d < bd:
+			bd = d
+			best = n
+	return best
+
+
+func _iq_eye(t: int, slot: String) -> float:
+	var r: Dictionary = (teams[t].get("roster", {}) as Dictionary).get(slot, {})
+	if r.is_empty():
+		return float(PlaySim.K.get("audible_eye", 0.2))
+	var g := String(r.get("group", "QB"))
+	return clampf(float(PlaySim.K.get("audible_eye", 0.2)) + (Robot.eff(r, "iq") - Robot.mean_for(g, "iq")) / 60.0, 0.05, 0.7)
+
+
+func _audibles(op: Play, dp: Play, off_locked: bool, def_locked: bool) -> Dictionary:
+	var out := {"op": op, "dp": dp, "notes": [], "set_edge": false, "op_changed": false, "dp_changed": false}
+	# no time: the hurry-up at the end of a half
+	var trailing: bool = score[poss] <= score[1 - poss]
+	if quarter in [2, 4] and clock < 120.0 and trailing:
+		return out
+	var need := need_yards()
+	var names: Array = [teams[poss].get("club", Team.NAMES[poss]), teams[1 - poss].get("club", Team.NAMES[1 - poss])]
+	# the offense reads the defense's look
+	if not off_locked and rng.randf() < _iq_eye(poss, "QB"):
+		var dl := _like(dp)
+		var cur := PlayStats.pair_success(_like(op), dl, need)
+		var scored: Array = []
+		for n in Library.plays_for("offense"):
+			if n == "QB Sneak" and need > 1.5:
+				continue
+			scored.append([PlayStats.pair_success(n, dl, need), n])
+		var pick := _near_best(scored)
+		var best: String = pick[1]
+		var bp: float = pick[0]
+		if best != "" and cur >= 0.0 and bp - cur >= float(PlaySim.K.get("audible_gap", 0.2)):
+			out["op"] = Library.play(best)
+			out["op_changed"] = true
+			(out["notes"] as Array).append("%s audible: out of %s into %s against the %s look" % [names[0], op.name, best, dl])
+	# the defense reads the formation and the trend
+	var dt := 1 - poss
+	if not def_locked and rng.randf() < _iq_eye(dt, "MLB"):
+		var tr: Dictionary = trend[poss]
+		var sw: Array = tr.get("sweep", [0, 0.0])
+		if int(sw[0]) >= 2 and float(sw[1]) / float(sw[0]) >= 5.0:
+			out["set_edge"] = true
+			(out["notes"] as Array).append("%s set the edge: the sweeps have been hurting them (%d for %.0f a carry)" % [names[1], int(sw[0]), float(sw[1]) / float(sw[0])])
+		# how likely a run is, from what they can see
+		var run_p := 0.5
+		run_p += 0.2 if op.formation == "under center" else -0.1
+		if to_go <= 3.0:
+			run_p += 0.2
+		elif to_go >= 8.0:
+			run_p -= 0.25
+		var runs := 0
+		var all := 0
+		for k in tr:
+			all += int(tr[k][0])
+			if String(k).ends_with("run") or k == "sweep":
+				runs += int(tr[k][0])
+		if all >= 4:
+			run_p = lerpf(run_p, float(runs) / all, 0.4)
+		run_p = clampf(run_p, 0.1, 0.9)
+		var cur_d := _stop_vs(_like(dp), run_p, need)
+		var scored_d: Array = []
+		for n in Library.plays_for("defense"):
+			scored_d.append([_stop_vs(n, run_p, need), n])
+		var pick_d := _near_best(scored_d)
+		var best_d: String = pick_d[1]
+		var bs: float = pick_d[0]
+		if best_d != "" and bs - cur_d >= float(PlaySim.K.get("audible_gap", 0.2)) * 0.7:
+			out["dp"] = Library.play(best_d)
+			out["dp_changed"] = true
+			(out["notes"] as Array).append("%s check: out of %s into %s (%s look)" % [names[1], dp.name, best_d, "run" if run_p >= 0.55 else ("pass" if run_p <= 0.45 else "mixed")])
+	return out
+
+
+## One of the options within a few points of the best, at random (so a check is not always to
+## the same play). [score, name]
+func _near_best(scored: Array) -> Array:
+	var top := -1e9
+	for sc in scored:
+		top = maxf(top, float(sc[0]))
+	var near: Array = scored.filter(func(sc): return float(sc[0]) >= top - 0.05)
+	return near[rng.randi() % near.size()] if not near.is_empty() else [top, ""]
+
+
+## Chance a defense stops the measured plays short of `need`, runs weighted by `run_p`.
+func _stop_vs(dn: String, run_p: float, need: float) -> float:
+	var rs := 0.0
+	var rn := 0
+	var ps := 0.0
+	var pn := 0
+	for n in Library.plays_for("offense"):
+		var p := PlayStats.pair_success(n, dn, need)
+		if p < 0.0:
+			continue
+		if (Library.play(n) as Play).kind == "run":
+			rs += 1.0 - p
+			rn += 1
+		else:
+			ps += 1.0 - p
+			pn += 1
+	return run_p * rs / maxf(rn, 1) + (1.0 - run_p) * ps / maxf(pn, 1)
 
 
 ## A PlaySim for the pending call.
@@ -348,6 +495,7 @@ func make_sim() -> PlaySim:
 		if dfn.has("roster"):
 			dfn = dfn.duplicate()
 			dfn["roster"] = _special_unit(1 - poss, "cover", {})
+	ctx["set_edge"] = bool(pending.get("set_edge", false))
 	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
 	if pending.has("return") and pending["return"].has("ground"):
 		var gd: Dictionary = pending["return"]
@@ -771,6 +919,9 @@ func _kneel() -> Dictionary:
 
 
 func _log_play(e: Dictionary) -> void:
+	if pending.has("audible") and String(e.get("kind", "")) == "play" and not e.get("return", false) and not e.has("audible"):
+		e["audible"] = pending["audible"]
+		e["text"] = "(%s) %s" % ["; ".join(pending["audible"]), String(e.get("text", ""))]
 	e["q"] = quarter
 	e["clock"] = clock
 	e["score"] = score.duplicate()
@@ -837,6 +988,9 @@ func finish(sim: PlaySim) -> Dictionary:
 	last_call[1 - team] = dp.name
 	var c: Array = calls[team].get(op.name, [0, 0.0])
 	calls[team][op.name] = [int(c[0]) + 1, float(c[1]) + (gain if r["turnover"] == "" else -20.0)]
+	var bk := bucket_of(op)
+	var tb: Array = trend[team].get(bk, [0, 0.0])
+	trend[team][bk] = [int(tb[0]) + 1, float(tb[1]) + (gain if r["turnover"] == "" else -20.0)]
 	var dc: Array = calls[1 - team].get(dp.name, [0, 0.0])
 	calls[1 - team][dp.name] = [int(dc[0]) + 1, float(dc[1]) + (gain if r["turnover"] == "" else -20.0)]
 	if was_down == 3:

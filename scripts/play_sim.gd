@@ -809,16 +809,20 @@ func _act(id: String, a: Array, p: P) -> bool:
 		"throw_open":
 			if not qb_live:
 				return false
-			var b := _best_read(p, 1.6 - 1.0 * p.d("risk"))
+			var b := _best_read(p, 1.6 - 1.0 * p.d("risk"), -99.0, 99.0, _smart_roll(p))
+			if b["r"] != null and _smart_wait(p, b["r"]):
+				return false
 			return b["r"] != null and _throw(p, b["r"])
 		"throw_first":
 			if not qb_live or reads.is_empty():
+				return false
+			if _smart_wait(p, by_slot["o:" + reads[0]]):
 				return false
 			return _throw(p, by_slot["o:" + reads[0]])
 		"throw_best":
 			if not qb_live:
 				return false
-			var b := _best_read(p, -99.0)
+			var b := _best_read(p, -99.0, -99.0, 99.0, _smart_roll(p))
 			return b["r"] != null and _throw(p, b["r"])
 		"throw_deep":
 			if not qb_live:
@@ -1026,6 +1030,8 @@ func _is_runner(p: P) -> bool:
 
 
 func _run_read(p: P) -> bool:
+	if handed and bool(ctx.get("set_edge", false)):
+		return true            # keyed on the back: they have seen this before
 	if handed and t - handoff_t > 0.35 - 0.2 * p.d("vision"):
 		return true
 	if qb_runner or (carrier != null and carrier.side == 0 and carrier.pos.y > 0.5):
@@ -1254,12 +1260,48 @@ func _open(qb: P, r: P) -> float:
 	return margin
 
 
+## How often this quarterback thinks it through (IQ): the chance he weighs his options.
+func _smart_roll(p: P) -> bool:
+	var qiq := clampf(float(p.body.get("iq", 1.0)), 0.6, 1.4)
+	return rng.randf() < clampf((qiq - 0.7) * float(K.get("qb_smart", 1.4)), 0.05, 0.8)
+
+
+## A dump-off this early, with the rush not on him yet: a sharp passer lets the deeper routes
+## develop instead of taking it.
+func _smart_wait(p: P, r: P) -> bool:
+	if p.slot != "QB" or r == null:
+		return false
+	var qiq := clampf(float(p.body.get("iq", 1.0)), 0.6, 1.4)
+	if t - 0.3 > float(K.get("qb_wait", 1.9)) * qiq or _rusher_d_seen(p) < float(K.get("qb_calm", 2.6)):
+		return false
+	if _throw_value(_predict(r, 0.8).y, _open(p, r)) >= float(K.get("qb_dump", 0.0)):
+		return false
+	return _smart_roll(p)
+
+
+## What a smart passer weighs: the yards (where the catch is, plus room to run after it) times
+## the chance it is completed - a tight window downfield is worth less than an open man short.
+func _throw_value(depth: float, o: float) -> float:
+	var yards := clampf(depth, -3.0, 30.0) + float(K.get("qb_room", 1.5)) * clampf(o, 0.0, 4.0)
+	return yards * clampf(0.35 + float(K.get("qb_safe", 0.22)) * o, 0.05, 1.0)
+
+
+## A sharp passer wants a bigger window the longer the ball will hang in the air (the defense
+## breaks on it); a dull one throws it as if the window will stay open.
+func _care(qb: P, r: P) -> float:
+	if qb.slot != "QB" or r == null:
+		return 0.0
+	var qiq := clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4)
+	var T: float = _lead(qb, r)[1]
+	return maxf(qiq - 0.8, 0.0) * float(K.get("qb_care", 0.0)) * maxf(T - 0.9, 0.0)
+
+
 ## How wrong a quarterback's read of "how open is he" can be: a low-IQ passer sees men open
 ## who aren't (and the other way round); a sharp one sees the field as it is.
 func _misread(qb: P) -> float:
 	if qb.slot != "QB":
 		return 0.0
-	var sig := float(K.get("misread", 1.4)) * maxf(1.2 - clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4), 0.0)
+	var sig := float(K.get("misread", 0.9)) * maxf(1.2 - clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4), 0.0)
 	return rng.randfn(0.0, sig) if sig > 0.0 else 0.0
 
 
@@ -1272,14 +1314,14 @@ func _best_read(qb: P, need: float, min_depth := -99.0, max_depth := 99.0, value
 		var depth := _predict(r, 0.8).y
 		if depth < min_depth or depth > max_depth:
 			continue
-		var o := _open(qb, r) + _misread(qb)
+		var o := _open(qb, r) + _misread(qb) - _care(qb, r)
 		if o < need:
 			continue
 		# reads earlier in the order and further downfield are worth a little more
 		var s := minf(o, 4.0) * (0.6 + 0.4 * qb.d("vision")) - i * 0.35 + clampf(depth, -3.0, 25.0) * (0.04 + 0.07 * qb.d("risk"))
 		if value:
 			# what a smart passer weighs: where the catch is, plus the room to run after it
-			s = clampf(depth, -3.0, 30.0) + float(K.get("qb_room", 1.5)) * minf(o, 4.0) - i * 0.2
+			s = _throw_value(depth, o) - i * 0.2
 		if s > bs:
 			bs = s
 			best = r
@@ -1350,10 +1392,21 @@ func _deepest_receiver_y() -> float:
 func _throw(qb: P, r: P) -> bool:
 	if r == null or r == qb:
 		return false
+	# a sharp passer sees the window close as he winds up and pulls it down (twice a play at
+	# most, and not with a rusher on him); a dull one lets it go
+	if qb.slot == "QB" and qb.side == 0 and int(qb.mem.get("_pulled", 0)) < 2 and _rusher_d(qb) > 2.0:
+		var qiq := clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4)
+		if _open(qb, r) < float(K.get("pull_margin", -0.3)) and rng.randf() < clampf((qiq - 0.75) * float(K.get("pull", 1.6)), 0.0, 0.85):
+			qb.mem["_pulled"] = int(qb.mem.get("_pulled", 0)) + 1
+			qb.mem["_next_qb"] = t + 0.25
+			stat.erase("path")
+			return false
+	stat["throw_open"] = _open(qb, r)
 	var lc := _lead(qb, r)
 	var c: Vector2 = lc[0]
 	var T: float = lc[1]
 	var dist := qb.pos.distance_to(c)
+	stat["throw_depth"] = c.y
 	var sigma := (0.25 + 0.012 * dist + 0.0009 * dist * dist) * (1.3 - float(qb.body.get("acc", QB_ACC))) * float(K["throw_err"])
 	if _rusher_d(qb) < 2.0:
 		sigma *= float(K.get("hurry_err", 2.3))   # hit as he throws: it sails
@@ -1649,7 +1702,7 @@ func _qb_default(p: P) -> void:
 	# IQ: how fast he gets through his reads, how much of the field he takes in, and how
 	# often he picks the best of what is open rather than the first thing that is
 	var qiq := clampf(float(p.body.get("iq", 1.0)), 0.6, 1.4)
-	var per_read := (0.45 + 0.35 * float(p.dial.get("patience", 0.5))) / qiq
+	var per_read := (0.45 + 0.35 * float(p.dial.get("patience", 0.5))) / pow(qiq, float(K.get("read_iq", 1.0)))
 	if t - read_t > per_read:
 		read_t = t
 		read_idx = mini(read_idx + 1, reads.size() - 1)
@@ -1660,13 +1713,17 @@ func _qb_default(p: P) -> void:
 	# his man is on him before he reacts, so a beaten block costs sacks, not just a hurried throw
 	# vision lets him see an open man who isn't his current read
 	var smart := clampf((qiq - 0.7) * float(K.get("qb_smart", 1.4)), 0.05, 0.8)
-	if _open(p, cur) + _misread(p) > need:
+	if _open(p, cur) + _misread(p) - _care(p, cur) > need:
+		if _smart_wait(p, cur):
+			return
 		if rng.randf() < smart:
 			# a look at the whole field first: someone clearly better?
 			var bb := _best_read(p, need, -99.0, 99.0, true)
-			if bb["r"] != null and bb["r"] != cur and float(bb["s"]) > clampf(_predict(cur, 0.8).y, -3.0, 30.0) + float(K.get("qb_room", 1.5)) * minf(_open(p, cur), 4.0) + 2.0:
+			if bb["r"] != null and bb["r"] != cur and float(bb["s"]) > _throw_value(_predict(cur, 0.8).y, _open(p, cur)) + 1.5:
+				stat["path"] = "qb1"
 				_throw(p, bb["r"])
 				return
+		stat["path"] = "qb2"
 		_throw(p, cur)
 		return
 	var look := clampf(0.25 * float(p.dial.get("vision", 0.5)) + float(K.get("qb_look", 0.6)) * (qiq - 0.8), 0.05, 0.6)
@@ -1674,6 +1731,7 @@ func _qb_default(p: P) -> void:
 		# he takes in the field beyond his current read: a man open anywhere gets it
 		var bv := _best_read(p, need + 0.3 - 0.3 * (qiq - 1.0), 2.0, 99.0, true)
 		if bv["r"] != null:
+			stat["path"] = "qb3"
 			_throw(p, bv["r"])
 			return
 	var limit := 2.6 + 1.6 * p.d("patience")
@@ -1681,15 +1739,18 @@ func _qb_default(p: P) -> void:
 	if pressure < float(K.get("hot_read", 3.2)) and pressure >= 1.6 and since > 0.35:
 		var hb := _best_read(p, need - 0.6 - 0.6 * p.d("risk"), -99.0, 9.0)
 		if hb["r"] != null:
+			stat["path"] = "qb4"
 			_throw(p, hb["r"])
 			return
 	if pressure < 1.6 or since > limit:
 		var b := _best_read(p, need - 1.2 - 0.8 * p.d("risk"))
 		if b["r"] != null:
+			stat["path"] = "qb5"
 			_throw(p, b["r"])
 			return
 		var cd := _checkdown(p)
 		if cd != null:
+			stat["path"] = "qb6"
 			_throw(p, cd)
 			return
 		if pressure < 1.6 and rng.randf() < 0.3 + 0.4 * (1.0 - p.d("discipline")):
@@ -1926,6 +1987,12 @@ func _pursue(p: P) -> void:
 		# keep leverage: match him across the field, stay between him and the goal, close in
 		var lead := d / p.spd()
 		aim = Vector2(c.pos.x + c.vel.x * lead, c.pos.y + dir * clampf(d * 0.35, 1.0, 5.0))
+	# a deep defender coming down on a runner keeps the top: never gets beneath him (he'd turn
+	# upfield over him) until he is close enough to make the tackle
+	if p.group in ["S", "CB"] and (p.pos.y - c.pos.y) * dir > 1.0 and d > 2.5 and float(K.get("leverage", 1.0)) > 0.0:
+		var floor_y := c.pos.y + dir * clampf(d * 0.3, 1.0, 4.0)
+		if (aim.y - floor_y) * dir < 0.0:
+			aim.y = floor_y
 	# break down as he closes, rather than overrun the runner and let him cut back past
 	_toward(p, aim, float(K.get("breakdown", 0.92)) if d < 4.5 and d > 1.6 and air.get("kick", false) else 1.0, 0.0)
 
@@ -2038,8 +2105,10 @@ func _cover_man(p: P) -> void:
 		cushion = 0.6 + 0.8 * (1.0 - p.d("aggression"))
 	var aim := seen + seen_v * 0.25 + Vector2(inside, cushion)
 	# off coverage: give ground, never come up to meet a man who is still coming at you
-	if m.pos.y < p.pos.y and m.vel.y > 1.0:
-		aim.y = maxf(aim.y, p.pos.y + clampf(m.vel.y * 0.12, 0.0, 1.2) * (1.0 if p.pos.y - m.pos.y < cushion + 2.0 else 0.0))
+	# (only to a man still running at speed: one slowing into his break is about to stop or
+	# come back, and backpedalling on carries the corner right past it)
+	if m.pos.y < p.pos.y and m.vel.y > float(K.get("give_ground_v", 5.0)):
+		aim.y = maxf(aim.y, p.pos.y + clampf(m.vel.y * 0.08, 0.0, 0.8) * (1.0 if p.pos.y - m.pos.y < cushion + 1.0 else 0.0))
 	if m.pos.y > p.pos.y - 0.5 and m.pos.y > 4.0:
 		# he's even or past me: run with him, in phase, on his inside hip - going by where he
 		# was a beat ago, so a sharp cut gains the receiver a step
@@ -2101,10 +2170,40 @@ func _drive_defense_run(p: P) -> void:
 			_toward(p, Vector2(carrier.pos.x + o * 2.0, carrier.pos.y + 1.0), 1.0, 0.0)
 			return
 	# deep defenders hold their depth a moment (play action)
-	if p.group in ["CB", "S"] and t - handoff_t < 0.5 * p.d("discipline") and handed:
+	if p.group in ["CB", "S"] and t - handoff_t < 0.5 * p.d("discipline") and handed and not bool(ctx.get("set_edge", false)):
 		_set_want(p, Vector2.ZERO)
 		return
+	if _forcing(p):
+		# the run is going wide and he is the edge: get outside him and turn him back in
+		var o2 := signf(carrier.pos.x - ball_x)
+		_toward(p, Vector2(carrier.pos.x + o2 * 1.6, carrier.pos.y + 1.5) + carrier.vel * 0.25, 1.0, 0.0)
+		return
 	_pursue(p)
+
+
+## Is `p` the defender who sets the edge on a run heading wide: the outermost one on that
+## side who is still ahead of the carrier and free? (On a "set the edge" call - the defense
+## has seen the sweeps - the two outermost on each side play it.)
+func _forcing(p: P) -> bool:
+	if carrier == null or carrier.side != 0 or p.engaged != null or p.down or float(K.get("force", 0.0)) <= 0.0:
+		return false
+	var o := signf(carrier.pos.x - ball_x)
+	var wide := absf(carrier.pos.x - ball_x) > 2.5 and carrier.vel.x * o > 2.0
+	if not wide or (p.pos.x - ball_x) * o < 0.0 or p.pos.y < carrier.pos.y - 0.5:
+		return false
+	var outer := 0
+	for q: P in dfn:
+		if q != p and not q.down and q.engaged == null and (q.pos.x - ball_x) * o > (p.pos.x - ball_x) * o and q.pos.y > carrier.pos.y - 0.5:
+			outer += 1
+	return outer < (2 if bool(ctx.get("set_edge", false)) else 1)
+
+
+## How long a defender takes to pick up a thrown ball and break on it: quicker with vision and
+## IQ, quickest for one already jumping the route or playing the ball.
+func _ball_react(p: P) -> float:
+	if p.intent in ["play_ball", "jump_route"] or (p.cover != null and p.cover == air_target):
+		return 0.05            # jumping it, or on the very man it's thrown to: he reacts with him
+	return clampf(float(K.get("air_react", 0.3)) - 0.25 * p.d("vision"), 0.08, 0.5)
 
 
 func _drive_air(p: P) -> void:
@@ -2137,6 +2236,10 @@ func _drive_air(p: P) -> void:
 		var dy := absf(p.pos.y - to.y)
 		var lane_x := lerpf(p.pos.x, to.x, clampf(1.0 - (dy - 6.0) / 25.0, 0.04, 1.0) * 0.25)
 		_toward(p, Vector2(lane_x, to.y + 4.0), 1.0)
+		return
+	if p.side == 1 and not air.get("away", false) and t - float(air["t0"]) < _ball_react(p):
+		# he hasn't picked up the ball yet: still playing his man / his zone as he was
+		_set_want(p, p.vel)
 		return
 	if p.side == 1:
 		var reachable := p.pos.distance_to(to) - REACH < p.spd() * (left + 0.25)
@@ -2476,6 +2579,8 @@ func _resolve_blocks() -> void:
 			sh *= 0.35
 		if run_block:
 			sh *= float(K.get("run_shed", 0.6))   # a drive block on a run is harder to get off than a pass set
+		if bool(ctx.get("set_edge", false)) and e.group in ["CB", "LB", "S"] and carrier != null and absf(carrier.pos.x - ball_x) > 2.5:
+			sh += float(K.get("edge_shed", 0.6))   # told to set the edge: fight off the perimeter block
 		if not e_on_d:
 			sh = 0.4
 		if rng.randf() < maxf(sh, 0.01) * DT * float(K["shed"]):
@@ -2694,7 +2799,7 @@ func _arrive() -> void:
 	stat["def_d"] = dd if best_d != null else _nearest_def(to)
 	if best_d != null:
 		var q := 1.0 - dd / REACH
-		var p_int := float(best_d.body["hands"]) * 0.42 * q
+		var p_int := float(best_d.body["hands"]) * 0.42 * q * _placement(true)
 		if best_d.intent in ["play_ball", "jump_route"]:
 			p_int *= 1.35
 		if best_o == null:
@@ -2702,7 +2807,7 @@ func _arrive() -> void:
 		if rng.randf() < p_int:
 			_intercept(best_d)
 			return
-		var p_pbu := 0.45 * q * (0.5 + float(best_d.body["agility"]) * 0.6)
+		var p_pbu := 0.45 * q * (0.5 + float(best_d.body["agility"]) * 0.6) * _placement(true)
 		if best_o == null or rng.randf() < p_pbu * (0.7 if best_o.manner.get("high_point", false) else 1.0):
 			_say("broken up by %s" % best_d.slot)
 			_fx("pbu", best_d, best_o, to)
@@ -2716,7 +2821,7 @@ func _arrive() -> void:
 			miss_info = {"slot": tr.slot, "down": tr.down, "intent": tr.intent, "eng": tr.engaged != null, "kind": String(tr.assign.get("kind", "")), "d": tr.pos.distance_to(to), "spd": tr.vel.length(), "d0": float(air.get("d0", -1)), "T": float(air["T"]), "max": float(air.get("spd0", 0)) * float(air["T"])}
 	if best_o != null:
 		var q := 1.0 - od / REACH
-		var pc := (0.86 + 0.12 * float(best_o.body["hands"])) * (0.7 + 0.3 * q) * float(K["catch"])
+		var pc := (0.86 + 0.12 * float(best_o.body["hands"])) * (0.7 + 0.3 * q) * float(K["catch"]) * _placement(false)
 		# a covered ball is a fight: a defender close to where it comes down (even a step outside
 		# his reach) gets a hand in or rattles him; and a long ball is harder to bring in
 		var cd := float(stat.get("def_d", 99.0))
@@ -2739,6 +2844,19 @@ func _arrive() -> void:
 		_say("dropped by %s" % best_o.slot)
 		_fx("drop", best_o, null, to)
 	_incomplete("incomplete")
+
+
+## The passer's ball placement (his IQ): a sharp one puts it where only his man can get it -
+## fewer picks and break-ups, more catches; a dull one leaves it up for grabs.
+## `for_defense`: the factor on the defender's chances, else on the receiver's.
+func _placement(for_defense: bool) -> float:
+	var qb: P = by_slot.get("o:QB", null)
+	if qb == null or qb.robot.is_empty():
+		return 1.0
+	var q := clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4) - 1.0
+	if for_defense:
+		return clampf(1.0 - float(K.get("place_def", 1.3)) * q, 0.45, 1.6)
+	return clampf(1.0 + float(K.get("place_catch", 0.3)) * q, 0.85, 1.15)
 
 
 func _nearest_def(to: Vector2) -> float:

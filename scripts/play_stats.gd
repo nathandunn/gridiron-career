@@ -29,6 +29,27 @@ static func ensure() -> bool:
 	return not _pairs.is_empty()
 
 
+static var _fast := {}
+
+
+## Chance `off` makes `need` yards against `def`, from the measured pair (-1 if not measured).
+## Cached: the audibles ask this many times a snap.
+static func pair_success(off: String, def: String, need: float) -> float:
+	var key := "%s|%s|%d" % [off, def, int(need)]
+	if _fast.has(key):
+		return float(_fast[key])
+	var v := -1.0
+	if ensure() and _pairs.has(off + "|" + def):
+		var gs: Array = _pairs[off + "|" + def]
+		var hit := 0
+		for g in gs:
+			if float(g) >= need:
+				hit += 1
+		v = float(hit) / maxf(gs.size(), 1)
+	_fast[key] = v
+	return v
+
+
 static func has(off: String, def: String) -> bool:
 	return ensure() and _pairs.has(off + "|" + def)
 

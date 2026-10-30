@@ -77,6 +77,22 @@ func _init() -> void:
 			var res := s.result
 			st["plays"] += 1
 			st["ints"] = int(st.get("ints", 0)) + (1 if res["turnover"] == "int" else 0)
+			if bool(res["pass"]) and not s.air.get("away", false) and s.stat.has("throw_open"):
+				var mo := float(s.stat["throw_open"])
+				var dep := float(s.stat["throw_depth"])
+				var mb := "covered(<0)" if mo < 0.0 else ("tight(0-1.5)" if mo < 1.5 else "open(1.5+)")
+				var db := "short(<10)" if dep < 10.0 else "deep(10+)"
+				var bk := db + " " + mb
+				var md: Dictionary = st.get("mb", {})
+				var ma: Array = md.get(bk, [0, 0, 0, 0.0])
+				md[bk] = [int(ma[0]) + 1, int(ma[1]) + (1 if not res["incomplete"] and res["turnover"] == "" else 0), int(ma[2]) + (1 if res["turnover"] == "int" else 0), float(ma[3]) + (float(res["y"]) if not res["incomplete"] and res["turnover"] == "" else 0.0)]
+				st["mb"] = md
+			if bool(res["pass"]) and not s.air.get("away", false):
+				var pk := String(s.stat.get("path", "rule"))
+				var pd: Dictionary = st.get("paths", {})
+				var pa: Array = pd.get(pk, [0, 0, 0.0])
+				pd[pk] = [int(pa[0]) + 1, int(pa[1]) + (1 if res["turnover"] == "int" else 0), float(pa[2]) + (float(res["y"]) if not res["incomplete"] and res["turnover"] == "" else 0.0)]
+				st["paths"] = pd
 			if res["sack"]:
 				st["sack"] += 1
 			if bool(res["pass"]):
@@ -112,7 +128,13 @@ func _init() -> void:
 		print("QB IQ %d: comp %.0f%% (%d/%d) %.1f y/att, sacks %.0f%%, throwaways %d | plays with a man wide open %d: threw to him %d, missed %d %s" % [iq,
 			100.0 * st["comp"] / maxf(st["att"], 1), st["comp"], st["att"], st["yds"] / maxf(st["att"], 1), 100.0 * st["sack"] / st["plays"], st["away"],
 			st["open_win"], st["threw_open"], st["missed"], st["miss_why"]])
-		print("   interceptions %d" % int(st.get("ints", 0)))
+		var mbs: Dictionary = st.get("mb", {})
+		var ks := mbs.keys()
+		ks.sort()
+		for k2 in ks:
+			var a2: Array = mbs[k2]
+			print("     %-24s %4d throws  comp %3.0f%%  int %4.1f%%  %5.1f yds/throw" % [k2, a2[0], 100.0 * a2[1] / a2[0], 100.0 * a2[2] / a2[0], a2[3] / a2[0]])
+		print("   interceptions %d, by path [throws, ints, yds]: %s" % [int(st.get("ints", 0)), st.get("paths", {})])
 		for tag in ["man", "zone"]:
 			var nn := float(st.get("%s_n" % tag, 0))
 			print("   corners (%s) at a cut, %d cuts: carry on past him %.1f yds avg, >3 yds %.0f%%, worst separation in the next second %.1f" % [tag, int(nn),
