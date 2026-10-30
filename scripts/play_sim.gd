@@ -1401,6 +1401,29 @@ func _throw(qb: P, r: P) -> bool:
 			qb.mem["_next_qb"] = t + 0.25
 			stat.erase("path")
 			return false
+	# the throwing motion takes a moment: a free rusher arriving in it, or one who has walked
+	# his blocker into the quarterback's lap, can get him before the ball is out
+	if qb.slot == "QB" and qb.side == 0 and not handed and not scrambling and qb.pos.y < 0.0:
+		var rel := float(K.get("release_r", 2.8))
+		for e: P in dfn:
+			if e.down:
+				continue
+			var de := e.pos.distance_to(qb.pos)
+			var free_rush := e.engaged == null and e.pos.y < -0.3
+			var caving := e.engaged != null and float(e.mem.get("_rate", 0.0)) > 0.5 and de < rel * 0.8
+			if not (free_rush or caving) or de > rel:
+				continue
+			var ps := float(K.get("release_sack", 0.8)) * (1.0 - de / rel) * (1.0 + 0.5 * _skill(e, "rush")) * (0.6 if caving else 1.0)
+			if rng.randf() < ps:
+				stat["tackler"] = e.slot
+				stat["sack_by"] = e.group
+				stat["sack_how"] = "release"
+				_fx("sack", e, qb)
+				_knock_down(qb, 99.0)
+				_bump("sack", e)
+				_end("sack", qb.pos)
+				return true
+			break
 	stat["throw_open"] = _open(qb, r)
 	var lc := _lead(qb, r)
 	var c: Vector2 = lc[0]
@@ -2553,7 +2576,12 @@ func _resolve_blocks() -> void:
 			rate -= 0.5
 		if double:
 			rate -= 0.6
-		rate = clampf(rate, -1.6, 1.8)
+		if not run_block and rate > 0.0:
+			rate *= float(K.get("collapse", 2.0))   # a pass rusher winning walks his man back into the pocket
+		elif not run_block and rate < 0.0 and e.pos.y > float(K.get("pass_set_depth", 1.5)):
+			rate = 0.0     # a pass blocker who has won holds his ground: he doesn't drive his man off downfield
+		rate = clampf(rate, -1.6, 2.2)
+		e.mem["_rate"] = rate
 		if rate < 0.0 and run_block and carrier != null and e.side == 1:
 			# the blocker is winning: he turns his man away from the hole and opens it
 			var hole := carrier.pos.x
@@ -2614,7 +2642,7 @@ func _blitz_pickup() -> void:
 		if b.engaged == null or b.down:
 			continue
 		var free: P = null
-		var fd := 3.0
+		var fd := 3.0 if float(b.engaged.mem.get("_rate", 0.0)) >= -0.3 else 4.5
 		for e: P in dfn:
 			if e.down or e.engaged != null or not _rushing(e):
 				continue
@@ -2627,7 +2655,9 @@ func _blitz_pickup() -> void:
 		var cur := b.engaged
 		var shared := cur.blockers.size() >= 2
 		var worse := free.pos.distance_to(qb.pos) + 1.5 < cur.pos.distance_to(qb.pos)
-		if not (shared or worse):
+		# a blocker who has his own man beaten can let him go for the blitzer
+		var winning := float(cur.mem.get("_rate", 0.0)) < -0.3
+		if not (shared or worse or winning):
 			continue
 		var see := (0.8 + 2.2 * clampf(_skill(b, "blocking") + 0.5, 0.0, 1.5)) * float(K.get("pickup", 1.0))
 		stat["pickup_chances"] = int(stat.get("pickup_chances", 0)) + 1
@@ -2941,7 +2971,9 @@ func _contacts() -> void:
 			continue
 		var d := e.pos.distance_to(c.pos)
 		var dive := false
-		if e.engaged != null and d > float(K.get("eng_reach", 0.9)):
+		# a rusher who has walked his blocker back into the quarterback's lap can get him down
+		var collapsing := e.engaged != null and c.slot == "QB" and not handed and float(e.mem.get("_rate", 0.0)) > 0.5 and d < float(K.get("collapse_reach", 2.2))
+		if e.engaged != null and d > float(K.get("eng_reach", 0.9)) and not collapsing:
 			continue   # a blocked man can only reach out an arm
 		if d > TACKLE_R:
 			# a diving tackle: closing on him and nearly there
@@ -2951,7 +2983,9 @@ func _contacts() -> void:
 				continue
 		e.tackle_cd = t + 0.55
 		var p := float(K["tackle"]) + (float(e.body["tackle"]) - 0.6) * 0.7 + (float(e.body["power"]) - float(c.body["power"])) * 0.25 - float(c.body["agility"]) * 0.1
-		if e.engaged != null:
+		if collapsing:
+			p *= float(K.get("collapse_tackle", 0.8)) * clampf(float(e.mem.get("_rate", 0.0)) / 1.5, 0.3, 1.0)
+		elif e.engaged != null:
 			p *= float(K.get("eng_tackle", 0.3))
 		if e.manner.get("wrap_up", false):
 			p += 0.12
@@ -2999,6 +3033,8 @@ func _contacts() -> void:
 			_knock_down(c, 99.0)
 			if c.slot == "QB" and c.side == 0 and not handed and not thrown and c.pos.y < 0.0 and String(c.assign.get("kind", "")) == "pass":
 				_bump("sack", e)
+				stat["sack_by"] = e.group
+				stat["sack_how"] = "collapse" if e.engaged != null else ("free" if not e.mem.has("_shed_t") else "shed")
 				_end("sack", spot)
 			else:
 				_end("tackle", spot)

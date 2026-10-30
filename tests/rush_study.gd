@@ -46,6 +46,11 @@ func _init() -> void:
 				st["press"] += 1
 			if res["sack"]:
 				st["sack"] += 1
+				var sk := "%s/%s at %.1fs" % [s.stat.get("sack_by", "?"), s.stat.get("sack_how", "?"), snappedf(float(res["t"]), 0.5)]
+				var sb: Dictionary = st.get("by", {})
+				var key := "%s/%s" % [s.stat.get("sack_by", "?"), s.stat.get("sack_how", "?")]
+				sb[key] = int(sb.get(key, 0)) + 1
+				st["by"] = sb
 				st["net"] += float(res["y"])
 			elif bool(res["pass"]):
 				if s.air.get("away", false):
@@ -65,5 +70,6 @@ func _init() -> void:
 		print("D-line %-7s pressure %3.0f%%  sacks %4.1f%%  throw-aways %3.0f%%  time to throw %.2fs  comp %3.0f%%  %4.1f yds/att  net %4.1f yds/dropback  INT %3.1f%%" % [dl,
 			100.0 * st["press"] / N, 100.0 * st["sack"] / N, 100.0 * st["away"] / N, st["tt"] / maxf(st["thr"], 1), 100.0 * st["comp"] / maxf(st["att"], 1),
 			st["yds"] / maxf(st["att"], 1), st["net"] / N, 100.0 * st["int"] / maxf(st["att"], 1)])
+		print("      sacks by: ", st.get("by", {}))
 	print("OK")
 	quit()
