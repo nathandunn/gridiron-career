@@ -129,6 +129,20 @@ func _ready() -> void:
 				c3.current = true
 			"kickoff": new_game(true)
 			"menu": show_menu()
+			"nav3":
+				# Teams -> Roster -> a robot: the trail and the Back labels
+				hud.open_teams()
+				for step in ["Roster, swaps and upgrades", "#"]:
+					await get_tree().create_timer(0.4).timeout
+					var hit: Button = null
+					var st2: Array = [hud]
+					while not st2.is_empty() and hit == null:
+						var nd2: Node = st2.pop_back()
+						if nd2 is Button and (nd2 as Button).text.begins_with(step) and (step != "#" or (nd2 as Button).text.find("OVR") >= 0):
+							hit = nd2
+						st2.append_array(nd2.get_children())
+					if hit != null:
+						hit.pressed.emit()
 			"navtest":
 				hud.open_roster(0)
 				await get_tree().create_timer(0.5).timeout

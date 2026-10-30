@@ -431,6 +431,58 @@ func any_overlay() -> bool:
 
 
 var _back := Callable()      # where Close goes back to (a box score opened from another panel)
+## The trail of panels to this one (titles, shortened): shown under the title from the second
+## level down, and what "Back to ..." names.
+var _crumbs: Array = []
+var _prev_crumbs: Array = []
+var _close_btn: Button = null
+var _crumb_lbl: Label = null
+var _cur_title := ""
+
+
+## A panel title as a short crumb: "Roster · Red Rivets · purse $190" -> "Roster".
+static func _crumb(title: String) -> String:
+	if title.begins_with("Teams") or title.begins_with("New game: set up") or title.begins_with("Sim lab: schemes"):
+		return "Teams" if title.begins_with("Teams") else "Game setup"
+	if title.begins_with("Week ") or title.begins_with("Championship") or title.begins_with("Season over") or title.begins_with("Exhibition:"):
+		return "Game setup"
+	var c := title.get_slice(" · ", 0).get_slice(": ", 0)
+	return c if c.length() <= 26 else c.substr(0, 24) + "…"
+
+
+## After a panel is built (and its caller has set _back): name where Close goes, and the trail.
+func _refresh_nav() -> void:
+	if _close_btn == null or not is_instance_valid(_close_btn):
+		return
+	var me := _crumb(_cur_title)
+	if _back.is_valid():
+		var at := -1
+		for i in _prev_crumbs.size():
+			if _prev_crumbs[i] == me:
+				at = i
+				break
+		_crumbs = _prev_crumbs.slice(0, at + 1) if at >= 0 else _prev_crumbs + [me]
+		if _crumbs.is_empty() or _crumbs[-1] != me:
+			_crumbs.append(me)
+	else:
+		_crumbs = [me]
+	if _back.is_valid() and _crumbs.size() >= 2:
+		_close_btn.text = "← Back to %s" % _crumbs[-2]
+	elif _back.is_valid():
+		_close_btn.text = "← Back"
+	elif main != null and main._phase in ["picking", "special", "qbreak", "injury", "pregame"]:
+		_close_btn.text = "▾ Hide"     # the game waits on this panel: Resume brings it back
+	else:
+		_close_btn.text = "× Close"
+	if _crumb_lbl != null and is_instance_valid(_crumb_lbl):
+		_crumb_lbl.text = "  ›  ".join(_crumbs)
+		_crumb_lbl.visible = _crumbs.size() >= 2
+	for b in _back_buttons:
+		if is_instance_valid(b):
+			b.text = _close_btn.text if _back.is_valid() else b.text
+
+
+var _back_buttons: Array = []   # extra "Back" buttons on a panel that should read like Close
 var slips: Array = []        # the last game's pay slips, for the final box score
 var season_lines: Array = [] # the week's other results, next opponent, champion
 
@@ -441,6 +493,8 @@ func close_overlay(follow_back := true) -> void:
 	_overlay = null
 	Ux.panel("field")
 	main.overlay_changed(false)
+	if not (follow_back and _back.is_valid()):
+		_crumbs = []           # back to the field: the trail starts again
 	if follow_back and _back.is_valid():
 		var b := _back
 		_back = Callable()
@@ -449,9 +503,12 @@ func close_overlay(follow_back := true) -> void:
 
 ## A panel over the field: returns its content box.
 func _open(title: String) -> VBoxContainer:
+	_prev_crumbs = _crumbs.duplicate() if any_overlay() or not _crumbs.is_empty() else []
 	close_overlay(false)
 	Ux.panel(title)
 	_back = Callable()
+	_cur_title = title
+	_back_buttons = []
 	var dim := ColorRect.new()
 	dim.color = Color(0, 0, 0, 0.55)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -471,7 +528,12 @@ func _open(title: String) -> VBoxContainer:
 	var tl := _label(title, fs + 4, MAGENTA)
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(tl)
-	head.add_child(_button("× Close", func(): close_overlay()))
+	_close_btn = _button("× Close", func(): close_overlay())
+	head.add_child(_close_btn)
+	_crumb_lbl = _label("", fs - 3, Color(0.65, 0.72, 0.82))
+	_crumb_lbl.visible = false
+	outer.add_child(_crumb_lbl)
+	_refresh_nav.call_deferred()
 	var sc := DragScroll.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outer.add_child(sc)
@@ -1209,8 +1271,9 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 	var box := _open(title)
 	_back = back
 	if back.is_valid():
-		var bk := _button("Back", func(): close_overlay())
+		var bk := _button("← Back", func(): close_overlay())
 		box.add_child(bk)
+		_back_buttons.append(bk)
 	if mode == "final":
 		var w := g.winner()
 		box.add_child(_label("Tie game" if w < 0 else "%s win" % names[w], fs + 3, MAGENTA))
@@ -2038,7 +2101,7 @@ func open_robot(id: String) -> void:
 			row2.add_child(b2)
 	var back := HFlowContainer.new()
 	box.add_child(back)
-	back.add_child(_button("Back to the roster", func():
+	back.add_child(_button("← Back to Roster", func():
 		if _back.is_valid():
 			close_overlay()
 		else:
