@@ -794,6 +794,9 @@ func _sense(id: String, a: Array, p: P) -> bool:
 
 func _act(id: String, a: Array, p: P) -> bool:
 	var qb_live := ball_state == "held" and carrier == p and p.slot == "QB" and not thrown and not handed and _dirpos(p) <= 0.5 and String(p.assign.get("kind", "")) == "pass" and not qb_runner
+	# a scrambling quarterback is getting away first: his brain's throws wait a moment
+	if qb_live and scrambling and t - float(p.mem.get("_scr_t", -9.0)) < float(K.get("scr_settle", 0.6)):
+		qb_live = false
 	var ball_mine := ball_state == "held" and carrier == p
 	match id:
 		"assignment":
@@ -847,6 +850,8 @@ func _act(id: String, a: Array, p: P) -> bool:
 		"throw_away":
 			if not qb_live:
 				return false
+			if _try_escape(p, true):
+				return true        # he gets out of it instead
 			_throw_away(p)
 			return true
 		"scramble":
@@ -1436,7 +1441,7 @@ func _throw(qb: P, r: P) -> bool:
 	elif _pushed_back(qb) >= 1:
 		sigma *= 1.5                               # the pocket caved in on him: no room to step into it
 	if scrambling or qb.vel.length() > 3.0:
-		sigma *= 1.3
+		sigma *= float(K.get("run_throw_err", 1.5)) - 0.25 * clampf(_mobility(qb), -1.0, 1.0)
 	var err := Vector2(rng.randfn(0.0, sigma), rng.randfn(0.0, sigma))
 	var to := c + err
 	ball_state = "air"
@@ -1705,6 +1710,9 @@ func _drive_qb(p: P) -> void:
 			p.mem["_drop_done"] = true
 			read_t = t
 		return
+	if _try_escape(p):
+		_drive_scramble(p)
+		return
 	# in the pocket: slide away from the nearest free rusher
 	var e := _nearest_enemy(p, true)
 	if e != null and p.pos.distance_to(e.pos) < 3.5:
@@ -1728,7 +1736,7 @@ func _qb_default(p: P) -> void:
 	p.mem["_next_qb"] = t + BRAIN_EVERY
 	if reads.is_empty():
 		reads = ["WR1", "WR2", "WR3", "TE", "RB"]
-	var need := 1.2 - 1.2 * p.d("risk")
+	var need := 1.2 - 1.2 * p.d("risk") + (float(K.get("run_need", 0.8)) if scrambling else 0.0)
 	# IQ: how fast he gets through his reads, how much of the field he takes in, and how
 	# often he picks the best of what is open rather than the first thing that is
 	var qiq := clampf(float(p.body.get("iq", 1.0)), 0.6, 1.4)
@@ -1795,24 +1803,144 @@ func _qb_default(p: P) -> void:
 				p.intent = "daylight"
 
 
-func _drive_scramble(p: P) -> void:
-	# toward the emptier side, a little forward; once past the line he is a runner
-	var left := 0
-	var right := 0
+## A hole upfield for a scrambling quarterback: the clearest spot 3 yards past the line within
+## 6 yards of him across (INF if every one has a free defender near it).
+func _hole_ahead(p: P) -> Vector2:
+	var best := Vector2.INF
+	var best_gap := float(K.get("hole_gap", 2.6))
+	if p.pos.y < -float(K.get("hole_depth", 6.5)):
+		return best              # too deep in the backfield to run it from here
+	for dx in [-3.0, -1.5, 0.0, 1.5, 3.0]:
+		var spot := Vector2(clampf(p.pos.x + dx, -SIDELINE + 2.0, SIDELINE - 2.0), 0.5)
+		var gap := 99.0
+		for e: P in dfn:
+			if e.down:
+				continue
+			gap = minf(gap, e.pos.distance_to(spot))
+		for o: P in off:
+			if o != p and o.engaged != null:
+				gap = minf(gap, o.pos.distance_to(spot) + 0.4)   # a block in progress fills the gap too
+		# and nobody free standing on the way there
+		var path_ok := true
+		for e2: P in dfn:
+			if e2.down or e2.engaged != null:
+				continue
+			var seg := spot - p.pos
+			var u := clampf((e2.pos - p.pos).dot(seg) / maxf(seg.length_squared(), 0.01), 0.0, 1.0)
+			if e2.pos.distance_to(p.pos + seg * u) < 1.3:
+				path_ok = false
+		if path_ok and gap > best_gap:
+			best_gap = gap
+			best = spot
+	return best
+
+
+## A lane upfield for a scrambling quarterback: nobody free in front of him within 5 yards.
+func _lane_ahead(p: P) -> bool:
 	for e: P in dfn:
-		if e.pos.y < p.pos.y + 8.0 and not e.down:
-			if e.pos.x < p.pos.x:
-				left += 1
-			else:
-				right += 1
-	var sx := -1.0 if left < right else 1.0
-	if p.mem.has("_scr_dir"):
-		sx = float(p.mem["_scr_dir"])
-	p.mem["_scr_dir"] = sx
-	_set_want(p, Vector2(sx, 0.25).normalized() * p.spd() * 0.9)
-	if absf(p.pos.x) > SIDELINE - 4.0:
-		_set_want(p, Vector2(0, 1) * p.spd() * 0.8)
-	_qb_default(p)
+		if e.down or e.engaged != null:
+			continue
+		var rel := e.pos - p.pos
+		if rel.y > -0.5 and rel.length() < 4.5 and absf(rel.x) < rel.y + 1.0:
+			return false
+	return true
+
+
+## How well a quarterback moves: his speed and strength against a normal quarterback's
+## (about -1 slow .. 0 normal .. +1 quick and strong); 0 for a body with no robot.
+func _mobility(p: P) -> float:
+	if p.robot.is_empty():
+		return 0.0
+	var sp := (Robot.eff(p.robot, "speed") - Robot.mean_for("QB", "speed")) / 30.0
+	var st := (Robot.eff(p.robot, "strength") - Robot.mean_for("QB", "strength")) / 30.0
+	return clampf(sp * 0.7 + st * 0.3, -1.0, 1.5)
+
+
+## A free rusher closing on him: a mobile quarterback may break out of the pocket. `forced`:
+## he was about to throw it away. true if he is now scrambling.
+func _try_escape(p: P, forced := false) -> bool:
+	if scrambling or thrown or handed or p.slot != "QB" or t < float(p.mem.get("_next_escape", 0.0)):
+		return false
+	var e := _nearest_enemy(p, true)
+	if e == null or p.pos.distance_to(e.pos) > float(K.get("escape_r", 3.5)):
+		return false
+	p.mem["_next_escape"] = t + 0.3
+	var mob := _mobility(p)
+	var chance := clampf(float(K.get("escape_base", 0.12)) + float(K.get("escape_mob", 0.8)) * mob, 0.02, 0.85)
+	if forced:
+		chance *= 0.7
+	if rng.randf() >= chance:
+		return false
+	# the move itself: his feet against the rusher's - beat him and he grasps at air
+	var beat := clampf(0.45 + 0.35 * mob - 0.3 * (float(e.body.get("agility", 0.5)) - 0.5) - 0.15 * _skill(e, "rush"), 0.1, 0.9)
+	if rng.randf() >= beat:
+		return false
+	e.stumble_until = t + float(K.get("escape_stumble", 0.5))
+	p.juke_until = t + 0.6
+	scrambling = true
+	p.intent = "scramble"
+	p.mem["_scr_t"] = t
+	p.mem.erase("_scr_dir")
+	_say("QB escapes the pocket")
+	_fx("juke", p, e)
+	return true
+
+
+## On the move: away from the rushers. He throws on the run if someone comes open (less
+## accurately), takes off upfield if there's room and he can run, or, once clear, resets his
+## feet and throws from the new spot.
+func _drive_scramble(p: P) -> void:
+	var push := Vector2.ZERO
+	var near := 99.0
+	for e: P in dfn:
+		if e.down or e.engaged != null:
+			continue
+		var d := p.pos.distance_to(e.pos)
+		if d < 8.0:
+			push += (p.pos - e.pos) / maxf(d * d, 0.5)
+			near = minf(near, d)
+	# someone closing on him: another move, or get rid of it rather than take the sack
+	if near < float(K.get("scr_bail", 1.9)) and t - float(p.mem.get("_scr_t", t)) > 0.25 and t >= float(p.mem.get("_next_move", 0.0)):
+		p.mem["_next_move"] = t + 0.35
+		var e2 := _nearest_enemy(p, true)
+		var mob2 := _mobility(p)
+		if e2 != null and rng.randf() < clampf(0.35 + 0.35 * mob2 - 0.3 * (float(e2.body.get("agility", 0.5)) - 0.5), 0.1, 0.8):
+			e2.stumble_until = t + float(K.get("escape_stumble", 0.5))
+			p.juke_until = t + 0.5
+			_fx("juke", p, e2)
+		elif p.pos.y < 0.0 and rng.randf() < 0.35 + 0.5 * p.d("discipline"):
+			_say("QB throws it away on the run")
+			_throw_away(p)
+			return
+	var dir := push.normalized() if push.length() > 0.01 else Vector2(float(p.mem.get("_scr_dir", 1.0)), 0.0)
+	dir.y = clampf(dir.y, -0.35, 0.5)     # out and around, not back into his own end zone
+	if absf(p.pos.x) > SIDELINE - 3.0:
+		dir = Vector2(0, 1)
+	p.mem["_scr_dir"] = signf(dir.x) if absf(dir.x) > 0.1 else float(p.mem.get("_scr_dir", 1.0))
+	var mob := _mobility(p)
+	# room to run and the legs for it: take off
+	# a hole upfield and the legs for it: take off through it
+	var hole := _hole_ahead(p)
+	if mob > 0.0 and hole != Vector2.INF and rng.randf() < (0.1 + 0.25 * mob) * DT * 10.0:
+		qb_runner = true
+		p.intent = "daylight"
+		_set_want(p, (hole - p.pos).normalized() * p.spd())
+		_say("QB takes off through the hole")
+		return
+	_set_want(p, dir.normalized() * p.spd())
+	# clear of them: set the feet and throw from here
+	if near > float(K.get("reset_r", 3.0)) and t - float(p.mem.get("_scr_t", t)) > float(K.get("reset_t", 0.7)):
+		scrambling = false
+		p.intent = "assignment"
+		p.mem["_drop_target"] = p.pos
+		p.mem["_drop_done"] = true
+		p.mem["_reset_t"] = t
+		read_t = t
+		_say("QB resets")
+		return
+	# getting away first; then, on the run, only to a man clearly open
+	if t - float(p.mem.get("_scr_t", t)) > float(K.get("scr_settle", 0.6)):
+		_qb_default(p)
 	if p.pos.y > 0.3:
 		qb_runner = true
 
@@ -3072,7 +3200,10 @@ func _contacts() -> void:
 		if t < c.stiff_until:
 			p -= 0.25 * clampf(float(c.body["power"]) - float(e.body["power"]) + 0.6, 0.0, 1.0)
 		if c.slot == "QB" and not handed and c.pos.y < 0.5:
-			p += float(K.get("pocket_tackle", 0.32))   # in the pocket he can't get away
+			if scrambling:
+				p -= float(K.get("scr_slip", 0.25)) * clampf(_mobility(c), 0.0, 1.5)   # on the move he's slippery
+			else:
+				p += float(K.get("pocket_tackle", 0.32))   # in the pocket he can't get away
 		p += (gang - 1) * 0.12
 		if dive:
 			p *= 0.5
