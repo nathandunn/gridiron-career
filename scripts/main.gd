@@ -634,7 +634,7 @@ const AUDIBLE_WINDOW := 2.6
 
 ## Is the person's side allowed an audible this snap (time on the clock, and they call plays)?
 func _offer_audible(snap: Dictionary) -> bool:
-	if not game.has_time():
+	if not audibles_on() or not game.has_time():
 		return false
 	var u := -1
 	for t in 2:
@@ -851,6 +851,30 @@ func _on_moment(a: Dictionary) -> void:
 		_slowmo = 1.3
 	sfx.on_action(String(a["kind"]))
 	announcer.on_action(a, sim)
+
+
+## Whether you get the pre-snap Audible? button (kept with the career).
+func audibles_on() -> bool:
+	return bool(Career.data.get("opt_audibles", true)) if Career.loaded else _audibles_on
+
+
+var _audibles_on := true
+
+
+func audible_label() -> String:
+	return "Audible: on" if audibles_on() else "Audible: off"
+
+
+func toggle_audibles() -> String:
+	var on := not audibles_on()
+	_audibles_on = on
+	if Career.loaded:
+		Career.data["opt_audibles"] = on
+		Career.save()
+	if not on and _aud_ready:
+		_aud_ready = false
+		hud.show_audible_button(false)
+	return audible_label()
 
 
 ## Sound and voice, voice off, or quiet. Returns the button's new label.

@@ -339,6 +339,7 @@ var _resume: Button
 
 
 var _aud_btn: Button = null
+var _aud_toggle: Button = null
 
 
 ## The pre-snap "Audible?" button (only while there is time to check out of the call).
@@ -419,6 +420,8 @@ func _build_controls() -> void:
 	bar.add_child(_view_btn)
 	_sound_btn = _button("Sound: voice", func(): _sound_btn.text = main.next_sound())
 	bar.add_child(_sound_btn)
+	_aud_toggle = _button(main.audible_label(), func(): _aud_toggle.text = main.toggle_audibles())
+	bar.add_child(_aud_toggle)
 	bar.add_child(_button("Teams", func(): open_teams()))
 	bar.add_child(_button("Roster", func(): open_roster()))
 	bar.add_child(_button("Edit AI", func(): open_editor()))
