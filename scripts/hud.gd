@@ -613,7 +613,7 @@ func _mode_section(box: VBoxContainer) -> void:
 			var ovr := 0.0
 			for s0 in o["starters"]:
 				ovr += Robot.overall(o["starters"][s0])
-			box.add_child(_label("   %s · %s · average %d" % [o["name"], Career.schemes_text(o), int(ovr / 22.0)], fs - 2, Color(0.85, 0.9, 0.95)))
+			box.add_child(_label("   %s · %s · %s" % [o["name"], Career.schemes_text(o), Career.ratings_text(o)], fs - 2, Color(0.85, 0.9, 0.95)))
 		var lr := HFlowContainer.new()
 		lr.add_theme_constant_override("h_separation", 6)
 		box.add_child(lr)
@@ -631,7 +631,7 @@ func _mode_section(box: VBoxContainer) -> void:
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
 		var opp := Career.team(1)
-		box.add_child(_label("%s. This week: %s (%s, %s)." % [Career.week_label(), opp["name"], Career.schemes_text(opp), Career._rec_text(opp["rec"])], fs, Color(0.9, 0.93, 1.0)))
+		box.add_child(_label("%s. This week: %s (%s, %s) - %s." % [Career.week_label(), opp["name"], Career.schemes_text(opp), Career._rec_text(opp["rec"]), Career.ratings_text(opp)], fs, Color(0.9, 0.93, 1.0)))
 		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid for the result (win $1,300, tie $700) and for what you did: $250 a touchdown, $100 a big play (20+ yards), $100 a sack, $200 a takeaway, $50 a big hit (a part knocked off), $25 a first down - about $3,000 for a typical win, $1,000 for a loss. Repairs, upgrades and new robots come out of it. Each rival plays twice; best record is champion.", fs - 1, dim))
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
@@ -740,7 +740,7 @@ func open_teams(pregame := false) -> void:
 			ovr += Robot.overall(tm["starters"][s0])
 			if not Robot.lost_parts(tm["starters"][s0]).is_empty():
 				hurt += 1
-		box.add_child(_label("%s: starters average %d overall, %d on the bench%s. Purse $%d." % [tm["name"], int(ovr / 22.0), (tm["bench"] as Array).size(),
+		box.add_child(_label("%s: %s, %d on the bench%s. Purse $%d." % [tm["name"], Career.ratings_text(tm), (tm["bench"] as Array).size(),
 			(", %d missing parts" % hurt) if hurt > 0 else "", Career.money(t)], fs - 1, Color(0.85, 0.9, 0.95)))
 		var rrow := HFlowContainer.new()
 		rrow.add_theme_constant_override("h_separation", 6)
@@ -1585,11 +1585,11 @@ func open_next() -> void:
 	var ovr := 0.0
 	for s0 in opp["starters"]:
 		ovr += Robot.overall(opp["starters"][s0])
-	box.add_child(_label("%s · %s · record %s · starters average %d" % [opp["name"], Career.schemes_text(opp), Career._rec_text(opp.get("rec", {"w": 0, "l": 0, "t": 0})), int(ovr / 22.0)], fs, Color(0.9, 0.93, 1.0)))
+	box.add_child(_label("%s · %s · record %s · %s" % [opp["name"], Career.schemes_text(opp), Career._rec_text(opp.get("rec", {"w": 0, "l": 0, "t": 0})), Career.ratings_text(opp)], fs, Color(0.9, 0.93, 1.0)))
 	var my := 0.0
 	for s1 in me["starters"]:
 		my += Robot.overall(me["starters"][s1])
-	box.add_child(_label("%s · starters average %d · purse $%d" % [me["name"], int(my / 22.0), Career.money(0)], fs, YELLOW))
+	box.add_child(_label("%s · %s · purse $%d" % [me["name"], Career.ratings_text(me), Career.money(0)], fs, YELLOW))
 	_garage(box, func(): open_next())
 
 

@@ -1484,13 +1484,40 @@ static func _rec_text(r: Dictionary) -> String:
 
 
 ## The table, best first: [{name, rec, text, you}]
+## A side's ratings: the average overall of its starters (as they are now, damage and all),
+## all of them, the offence and the defence. {ovr, off, def}
+static func team_ratings(tm: Dictionary) -> Dictionary:
+	var sums := {"ovr": 0.0, "off": 0.0, "def": 0.0}
+	var ns := {"ovr": 0, "off": 0, "def": 0}
+	for s in tm.get("starters", {}):
+		var r: Dictionary = tm["starters"][s]
+		if r.is_empty():
+			continue
+		var o := float(Robot.overall_if(r, "now"))
+		var side := "off" if s in Play.OFFENSE_SLOTS else "def"
+		sums["ovr"] += o
+		sums[side] += o
+		ns["ovr"] += 1
+		ns[side] += 1
+	var out := {}
+	for k in sums:
+		out[k] = int(roundf(sums[k] / maxf(ns[k], 1)))
+	return out
+
+
+## "OVR 61 (off 63, def 59)"
+static func ratings_text(tm: Dictionary) -> String:
+	var rt := team_ratings(tm)
+	return "OVR %d (off %d, def %d)" % [rt["ovr"], rt["off"], rt["def"]]
+
+
 static func standings() -> Array:
 	var sn := season()
 	if sn.is_empty():
 		return []
-	var rows: Array = [{"name": String(data["teams"][0]["name"]), "rec": sn["you"], "you": true}]
+	var rows: Array = [{"name": String(data["teams"][0]["name"]), "rec": sn["you"], "you": true, "rt": ratings_text(data["teams"][0])}]
 	for c in sn["clubs"]:
-		rows.append({"name": String(c["name"]), "rec": c["rec"], "you": false})
+		rows.append({"name": String(c["name"]), "rec": c["rec"], "you": false, "rt": ratings_text(c)})
 	rows.sort_custom(func(a, b):
 		var pa := int(a["rec"]["w"]) * 2 + int(a["rec"]["t"])
 		var pb := int(b["rec"]["w"]) * 2 + int(b["rec"]["t"])
@@ -1498,5 +1525,5 @@ static func standings() -> Array:
 			return pa > pb
 		return int(a["rec"]["pf"]) - int(a["rec"]["pa"]) > int(b["rec"]["pf"]) - int(b["rec"]["pa"]))
 	for r in rows:
-		r["text"] = "%s  %s  (%d-%d)" % [r["name"], _rec_text(r["rec"]), int(r["rec"]["pf"]), int(r["rec"]["pa"])]
+		r["text"] = "%s  %s  (%d-%d)  ·  %s" % [r["name"], _rec_text(r["rec"]), int(r["rec"]["pf"]), int(r["rec"]["pa"]), r["rt"]]
 	return rows
