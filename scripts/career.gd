@@ -124,7 +124,204 @@ static func new_team(t: int, seed_v := -1, fit := true) -> Dictionary:
 	tm["special"] = _make_special(rng, t, used)
 	if fit:
 		starter_upgrades(tm, rng)
+	best_lineup(tm)
 	return tm
+
+
+## ---- lineups: the best start, the worst sit -------------------------------------------------------
+const LINEUP_GROUPS := ["QB", "RB", "WR", "TE", "OL", "DL", "LB", "CB", "S"]
+
+
+static func _slots_of(g: String) -> Array:
+	return Play.GROUP_SLOTS.get(g, [g])
+
+
+static func _lineup_score(r: Dictionary, g: String) -> float:
+	if not Robot.can_play(r):
+		return -1000.0
+	return float(Robot.overall_at(r, g)) + (0.5 if String(r.get("group", "")) == g else 0.0)
+
+
+## At every position the healthiest, highest-rated robots start (anyone already playing there,
+## and the bench men of that position); the rest go to the bench.
+static func best_lineup(tm: Dictionary) -> void:
+	var starters: Dictionary = tm["starters"]
+	var everyone: Array = (starters.values() + (tm["bench"] as Array)).filter(func(r): return not (r as Dictionary).is_empty())
+	for g in LINEUP_GROUPS:
+		var slots := _slots_of(g)
+		var pool: Array = []
+		for s in slots:
+			if starters.has(s) and not (starters[s] as Dictionary).is_empty():
+				pool.append(starters[s])
+		for b in tm["bench"]:
+			if String(b.get("group", "")) == g and not pool.any(func(x): return is_same(x, b)):
+				pool.append(b)
+		pool.sort_custom(func(a, b): return _lineup_score(a, g) > _lineup_score(b, g))
+		for i in mini(slots.size(), pool.size()):
+			starters[slots[i]] = pool[i]
+			pool[i]["slot"] = slots[i]
+	var bench: Array = []
+	for r in everyone:
+		if not starters.values().any(func(x): return is_same(x, r)):
+			r["slot"] = ""
+			bench.append(r)
+	tm["bench"] = bench
+
+
+## Before a kickoff: both sides put their best robots out (yours too, unless you set your own).
+static func auto_lineups() -> void:
+	for t in 2:
+		if t == 0 and not bool(data.get("auto_lineup", true)):
+			continue
+		best_lineup(team(t))
+	save()
+
+
+## ---- selling, scrapping and trading robots ----------------------------------------------------
+## Why `robot` can't leave your team, or "" if he can (someone on the bench must be able to take
+## his place if he starts; kickers and punters stay for now).
+static func cant_part_with(t: int, robot: Dictionary) -> String:
+	var g := String(robot.get("group", ""))
+	if g in ["K", "P"]:
+		return "Kickers and punters can't be sold or traded yet."
+	var tm := team(t)
+	for s in tm["starters"]:
+		if is_same(tm["starters"][s], robot):
+			for b in tm["bench"]:
+				if fits(b, s) and Robot.can_play(b):
+					return ""
+			return "Nobody on the bench can play %s: buy or trade for one first." % s
+	return ""
+
+
+## Take `robot` off team `t`, his place (if he started) going to the best bench man who fits.
+static func _take_off(t: int, robot: Dictionary) -> void:
+	var tm := team(t)
+	for s in tm["starters"]:
+		if is_same(tm["starters"][s], robot):
+			var best := {}
+			for b in tm["bench"]:
+				if fits(b, s) and Robot.can_play(b) and (best.is_empty() or Robot.overall_at(b, String(Play.SLOT_GROUP[s])) > Robot.overall_at(best, String(Play.SLOT_GROUP[s]))):
+					best = b
+			tm["starters"][s] = best
+			best["slot"] = s
+			tm["bench"].erase(best)
+			best_lineup(tm)
+			return
+	for i in (tm["bench"] as Array).size():
+		if is_same(tm["bench"][i], robot):
+			tm["bench"].remove_at(i)
+			return
+
+
+## What his parts fetch as scrap: a share of their price, by tier and condition.
+static func scrap_value(r: Dictionary) -> int:
+	var v := 0.0
+	for k in Robot.PARTS:
+		var pt: Dictionary = Robot.ensure_parts(r)[k]
+		var tier := String(pt["tier"])
+		var mx := float(Robot.TIER_HP.get(tier, 100))
+		v += float(PART_PRICE[k]) * {"Junk": 0.1, "Stock": 1.0, "Mk II": 2.0, "Mk III": 3.5, "Prototype": 6.0}.get(tier, 1.0) * clampf(float(pt["hp"]) / mx, 0.0, 1.0)
+	return int(roundf(v * 0.25 / 10.0)) * 10
+
+
+static func scrap(t: int, robot: Dictionary) -> int:
+	if cant_part_with(t, robot) != "":
+		return 0
+	var v := scrap_value(robot)
+	_take_off(t, robot)
+	add_money(t, v)
+	save()
+	return v
+
+
+## The other sides you can deal with: in a season the three rival clubs, in an exhibition the
+## other team; none in the sim lab.
+static func dealers() -> Array:
+	if exhibition():
+		return [team(1)]
+	if sim_mode() or not data.has("season"):
+		return []
+	return data["season"]["clubs"]
+
+
+static func _club_money(c: Dictionary) -> int:
+	return money(1) if exhibition() else int(c.get("money", 0))
+
+
+static func _club_pay(c: Dictionary, amount: int) -> void:
+	if exhibition():
+		add_money(1, amount)
+	else:
+		c["money"] = int(c.get("money", 0)) + amount
+
+
+## Would he start for club `c`? (Better than their worst starter at his position.)
+static func would_start(r: Dictionary, c: Dictionary) -> bool:
+	var g := String(r.get("group", ""))
+	var worst := 999.0
+	for s in _slots_of(g):
+		var x: Dictionary = c["starters"].get(s, {})
+		if not x.is_empty():
+			worst = minf(worst, float(Robot.overall_at(x, g)))
+	return float(Robot.overall_at(r, g)) > worst
+
+
+## What club `c` would pay for him: most of his price if he'd start for them, a little if not.
+static func sell_offer(r: Dictionary, c: Dictionary) -> int:
+	var f := 0.75 if would_start(r, c) else 0.35
+	return int(roundf(robot_price(r) * f / 10.0)) * 10
+
+
+static func sell_to(t: int, robot: Dictionary, c: Dictionary) -> bool:
+	var offer := sell_offer(robot, c)
+	if cant_part_with(t, robot) != "" or _club_money(c) < offer:
+		return false
+	_take_off(t, robot)
+	robot["slot"] = ""
+	(c["bench"] as Array).append(robot)
+	best_lineup(c)
+	_club_pay(c, -offer)
+	add_money(t, offer)
+	save()
+	return true
+
+
+## A trade: your `mine` for their `theirs` (same position), plus `cash` from you. They take it
+## if what they get is worth at least what they give.
+static func trade_gap(mine: Dictionary, theirs: Dictionary) -> int:
+	return maxi(int(roundf((robot_price(theirs) * 0.95 - robot_price(mine)) / 10.0)) * 10, 0)
+
+
+static func trade(t: int, mine: Dictionary, c: Dictionary, theirs: Dictionary) -> bool:
+	var cash := trade_gap(mine, theirs)
+	if money(t) < cash:
+		return false
+	var tm := team(t)
+	# theirs takes mine's place on your side, and mine his on theirs
+	var swapped := false
+	for s in tm["starters"]:
+		if is_same(tm["starters"][s], mine):
+			tm["starters"][s] = theirs
+			swapped = true
+	if not swapped:
+		tm["bench"].erase(mine)
+		tm["bench"].append(theirs)
+	var their_swapped := false
+	for s in c["starters"]:
+		if is_same(c["starters"][s], theirs):
+			c["starters"][s] = mine
+			their_swapped = true
+	if not their_swapped:
+		c["bench"].erase(theirs)
+		c["bench"].append(mine)
+	best_lineup(tm)
+	best_lineup(c)
+	if cash > 0:
+		add_money(t, -cash)
+		_club_pay(c, cash)
+	save()
+	return true
 
 
 ## Jersey numbers by position, roughly as the real game hands them out.
@@ -499,6 +696,7 @@ static func damage_bill(t: int) -> int:
 ## Called at kickoff, so the pay covers only the damage done in this game.
 static func note_kickoff() -> void:
 	ensure()
+	auto_lineups()
 	data["bill_before"] = [damage_bill(0), damage_bill(1)]
 	save()
 
@@ -1185,6 +1383,8 @@ static func finish_week(g: Game) -> Array:
 			continue
 		var a: Dictionary = sn["clubs"][int(pair[0]) - 1]
 		var b: Dictionary = sn["clubs"][int(pair[1]) - 1]
+		best_lineup(a)
+		best_lineup(b)
 		var ta := Team.build(0, String(a["coach"]), {}, "coach", String(a.get("defense", "")))
 		ta["roster"] = a["starters"]
 		ta["bench"] = a["bench"]

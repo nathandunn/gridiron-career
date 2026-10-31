@@ -1933,6 +1933,14 @@ func open_roster(t := -1) -> void:
 		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
 	fair.button_pressed = Career.fair()
 	tabs.add_child(fair)
+	var auto_on := bool(Career.data.get("auto_lineup", true))
+	var al := _button("Coach sets the lineup: %s" % ("on" if auto_on else "off"), func():
+		Career.data["auto_lineup"] = not bool(Career.data.get("auto_lineup", true))
+		if bool(Career.data["auto_lineup"]):
+			Career.best_lineup(Career.team(0))
+		Career.save(); main.library_changed(); open_roster(), true)
+	al.button_pressed = auto_on
+	tabs.add_child(al)
 	box.add_child(_label("Tap a robot for his details. Ratings run 1-100 and suit the position: corners are quick but light, linemen slow but strong. OVR is measured against his position, so 60 is an average one of his kind. ARMOUR is his toughness (with what his core adds): how well he stands up to hits; then his parts by tier. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
 	var starters: Dictionary = tm["starters"]
 	for sg in SIDE_GROUPS:
@@ -2162,6 +2170,8 @@ func open_robot(id: String) -> void:
 			if String(bb["group"]) == String(Play.SLOT_GROUP[slot]):
 				b2.add_theme_color_override("font_color", YELLOW)
 			row2.add_child(b2)
+	if t == 0:
+		_sell_section(box, r, id)
 	var back := HFlowContainer.new()
 	box.add_child(back)
 	back.add_child(_button("« Back to Roster", func():
@@ -2170,6 +2180,70 @@ func open_robot(id: String) -> void:
 		else:
 			open_roster(t)))
 
+
+
+## Sell him to a rival club, scrap him for parts, or trade him for one of theirs.
+func _sell_section(box: Control, r: Dictionary, id: String) -> void:
+	_section(box, "Sell or trade")
+	var why := Career.cant_part_with(0, r)
+	if why != "":
+		box.add_child(_label(why, fs - 1, Color(0.85, 0.75, 0.6)))
+		return
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	row.add_theme_constant_override("v_separation", 6)
+	box.add_child(row)
+	var sv := Career.scrap_value(r)
+	row.add_child(_button("Scrap for parts: $%d" % sv, func():
+		var got := Career.scrap(0, r)
+		main.library_changed()
+		toast("SCRAPPED\n+$%d" % got, 1.8)
+		open_roster(0)))
+	for c in Career.dealers():
+		var offer := Career.sell_offer(r, c)
+		var can := Career._club_money(c) >= offer
+		var b := _button("Sell to %s: $%d%s%s" % [c["name"], offer, " (he'd start for them)" if Career.would_start(r, c) else "", "" if can else " - they can't afford it"], func():
+			if Career.sell_to(0, r, c):
+				main.library_changed()
+				toast("SOLD\nto %s, +$%d" % [c["name"], offer], 1.8)
+				open_roster(0))
+		b.disabled = not can
+		if not can:
+			b.tooltip_text = "%s can't afford him ($%d in their purse)" % [c["name"], Career._club_money(c)]
+		row.add_child(b)
+	for c in Career.dealers():
+		row.add_child(_button("Trade with %s..." % c["name"], func(): _open_trade(r, id, c)))
+	if Career.dealers().is_empty():
+		box.add_child(_label("No other clubs to deal with here: scrap is the only sale.", fs - 2, Color(0.75, 0.8, 0.85)))
+
+
+## Their robots at his position: what each is worth against him, and the deal.
+func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
+	var g := String(r.get("group", ""))
+	var box := _open("Trade with %s" % c["name"])
+	_back = func(): open_robot(id)
+	box.add_child(_label("Your %s %s (%s, OVR %d, worth $%d) for one of their %s players. They take the deal if what they get is worth at least what they give; if not, you add the difference in cash." % [g, r["name"], g, Robot.overall_if(r, "now"), Career.robot_price(r), g], fs - 1, Color(0.85, 0.88, 0.92)))
+	var theirs: Array = []
+	for s in c["starters"]:
+		var x: Dictionary = c["starters"][s]
+		if not x.is_empty() and String(x.get("group", "")) == g:
+			theirs.append([x, s])
+	for x in c["bench"]:
+		if String(x.get("group", "")) == g:
+			theirs.append([x, "bench"])
+	if theirs.is_empty():
+		box.add_child(_label("They have no %s to trade." % g, fs, YELLOW))
+	for pair in theirs:
+		var x: Dictionary = pair[0]
+		var cash := Career.trade_gap(r, x)
+		var line := "%s (%s) OVR %d, worth $%d - %s" % [x["name"], pair[1], Robot.overall_if(x, "now"), Career.robot_price(x), ("straight swap" if cash == 0 else "you add $%d" % cash)]
+		var b := _button(line, func():
+			if Career.trade(0, r, c, x):
+				main.library_changed()
+				toast("TRADED\n%s for %s" % [r["name"], x["name"]], 2.0)
+				open_roster(0))
+		b.disabled = Career.money(0) < cash
+		box.add_child(b)
 
 
 ## ---- broken robots -----------------------------------------------------------------------------
