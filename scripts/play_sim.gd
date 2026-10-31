@@ -1881,6 +1881,7 @@ func _try_escape(p: P, forced := false) -> bool:
 	p.intent = "scramble"
 	p.mem["_scr_t"] = t
 	p.mem.erase("_scr_dir")
+	p.mem.erase("_scr_side")
 	_say("QB escapes the pocket")
 	_fx("juke", p, e)
 	return true
@@ -1912,15 +1913,32 @@ func _drive_scramble(p: P) -> void:
 			_say("QB throws it away on the run")
 			_throw_away(p)
 			return
-	var dir := push.normalized() if push.length() > 0.01 else Vector2(float(p.mem.get("_scr_dir", 1.0)), 0.0)
-	dir.y = clampf(dir.y, -0.35, 0.5)     # out and around, not back into his own end zone
+	# out of the pocket: break for the edge on the side away from the pressure, past the tackles
+	if not p.mem.has("_scr_side"):
+		var lw := 0.0
+		for e3: P in dfn:
+			if not e3.down and e3.engaged == null and e3.pos.distance_to(p.pos) < 8.0:
+				lw += (1.0 if e3.pos.x < p.pos.x else -1.0) / maxf(e3.pos.distance_to(p.pos), 0.5)
+		p.mem["_scr_side"] = 1.0 if lw >= 0.0 else -1.0
+	var side := float(p.mem["_scr_side"])
+	var edge := 0.0
+	for o2: P in off:
+		if o2.group == "OL":
+			edge = maxf(edge, (o2.pos.x - ball_x) * side)
+	var outside := (p.pos.x - ball_x) * side > edge + 1.5
+	var dir := (Vector2(side, 0.15) if not outside else Vector2(side * 0.55, 0.45)).normalized()
+	if push.length() > 0.01:
+		dir = (dir * 0.65 + push.normalized() * 0.35).normalized()
+	dir.y = clampf(dir.y, -0.35, 0.6)     # out and around, not back into his own end zone
 	if absf(p.pos.x) > SIDELINE - 3.0:
 		dir = Vector2(0, 1)
-	p.mem["_scr_dir"] = signf(dir.x) if absf(dir.x) > 0.1 else float(p.mem.get("_scr_dir", 1.0))
+	p.mem["_scr_dir"] = side
 	var mob := _mobility(p)
 	# room to run and the legs for it: take off
 	# a hole upfield and the legs for it: take off through it
 	var hole := _hole_ahead(p)
+	if hole == Vector2.INF and outside and _lane_ahead(p):
+		hole = p.pos + Vector2(side * 0.5, 5.0)      # outside the pocket with room: up the edge
 	if mob > 0.0 and hole != Vector2.INF and rng.randf() < (0.1 + 0.25 * mob) * DT * 10.0:
 		qb_runner = true
 		p.intent = "daylight"
