@@ -208,16 +208,20 @@ func _build_scoreboard() -> void:
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	v.add_child(row)
+	var narrow := get_viewport().get_visible_rect().size.x < 520.0
 	for t in 2:
-		var l := _label("", fs + 6, FieldView.NEON[t].lightened(0.25))
+		var l := _label("", fs + (3 if narrow else 6), FieldView.NEON[t].lightened(0.25))
 		l.add_theme_color_override("font_outline_color", Color(FieldView.NEON[t], 0.5))
 		l.add_theme_constant_override("outline_size", 4)
 		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		# never wider than its share of the board: a long club name trims rather than push it off
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if t == 0 else HORIZONTAL_ALIGNMENT_RIGHT
 		_score[t] = l
 		if t == 1:
-			_clock = _label("", fs + 3, YELLOW)
+			_clock = _label("", fs + (1 if narrow else 3), YELLOW)
 			_clock.autowrap_mode = TextServer.AUTOWRAP_OFF
 			_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			row.add_child(_clock)
@@ -242,6 +246,8 @@ func show_state(g: Game) -> void:
 	for t in 2:
 		var has := g.poss == t and not g.over
 		var cn: String = String(g.teams[t].get("club", Career.team(t)["name"])) if Career.loaded else (g.teams[t]["coach"] as Coach).name
+		if get_viewport().get_visible_rect().size.x < 520.0:
+			cn = cn.split(" ")[-1]          # a phone: "Sparks", not "Sprocket City Sparks"
 		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
 	_clock.text = "Final" if g.over else "Q%d %d:%02d" % [g.quarter, s / 60, s % 60]
