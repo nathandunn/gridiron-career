@@ -521,6 +521,7 @@ func make_sim() -> PlaySim:
 			dfn = dfn.duplicate()
 			dfn["roster"] = _special_unit(1 - poss, "cover", {})
 	ctx["set_edge"] = bool(pending.get("set_edge", false))
+	ctx["kickoff"] = pending.has("return") and String(pending["return"].get("kind", "")) == "kickoff"
 	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
 	if pending.has("return") and pending["return"].has("ground"):
 		var gd: Dictionary = pending["return"]

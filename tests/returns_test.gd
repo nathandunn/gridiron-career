@@ -13,7 +13,8 @@ func _init() -> void:
 	var all_ret := []
 	var fum := 0
 	var pts := 0
-	for i in 12:
+	var ng := int(PlaySim.K.get("games", 12.0))
+	for i in ng:
 		var g := Batch.play_game(Team.build(0, "Balanced"), Team.build(1, "By the Numbers"), 300.0, 100 + i)
 		pts += g.score[0] + g.score[1]
 		for e in g.log:
@@ -35,7 +36,7 @@ func _init() -> void:
 		print("%s: %d, %.1f yds avg" % [k, n[k], yds[k] / maxf(n[k], 1)])
 	all_ret.sort()
 	print("longest %.0f, kickoff returns %s" % [longest, all_ret])
-	print("return TDs %d, fumbles %d, points per game %.1f" % [tds, fum, pts / 12.0])
+	print("return TDs %d, fumbles %d, points per game %.1f" % [tds, fum, pts / float(ng)])
 	assert(n["Kickoff"] > 0)
 	print("OK")
 	quit()

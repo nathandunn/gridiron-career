@@ -30,10 +30,10 @@ func _init() -> void:
 	for k in opps:
 		assert(opps[k] == 2)
 	print("market ", Career.market().map(func(r): return "%s %s $%d" % [r["group"], r["name"], r["price"]]))
-	var m0: int = Career.market()[0]["price"]
-	Career.add_money(0, m0)
+	var pick: Dictionary = Career.market().filter(func(r): return not (String(r["group"]) in ["K", "P"]))[0]
+	Career.add_money(0, int(pick["price"]))
 	var nb: int = Career.team(0)["bench"].size()
-	assert(Career.buy_robot(0, Career.market()[0]["id"]))
+	assert(Career.buy_robot(0, pick["id"]))
 	assert(Career.team(0)["bench"].size() == nb + 1)
 	Career.set_mode("exhibition")
 	assert(Career.exhibition())
@@ -42,7 +42,7 @@ func _init() -> void:
 	assert(Career.money(1) < 2000)
 	Career.set_mode("season")
 	Career.new_season()
-	assert(Career.season()["week"] == 1 and Career.money(0) == 2000)
+	assert(Career.season()["week"] == 1 and Career.money(0) == Career.SEASON_MONEY)
 	print("OK")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(Career.PATH))
 	quit()

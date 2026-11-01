@@ -2040,6 +2040,8 @@ func _drive_carrier(p: P) -> void:
 		p.heading = nh
 	if p.manner.get("protect", false):
 		sp *= 0.93
+	if _lead_spot(p) != Vector2.INF and p.pos.distance_to(_lead_spot(p)) < 1.5:
+		sp *= float(K.get("lead_pace", 1.0))
 	if t < p.slow_until:
 		sp *= 0.7
 	_set_want(p, p.heading * sp)
@@ -2099,6 +2101,10 @@ func _steer(p: P) -> Vector2:
 				s -= (p.pos + h * 3.0).distance_to(py) * 0.5
 			"daylight":
 				s -= risk * 0.3
+		# a kick returner follows his lead blockers while they are in front of him and free
+		var lead := _lead_spot(p)
+		if lead != Vector2.INF:
+			s -= (p.pos + h * 2.0).distance_to(lead) * float(K.get("lead_follow", 0.5))
 		if oob:
 			s -= 6.0
 		s -= maxf(absf(end.x) - 21.0, 0.0) * 0.35
@@ -2112,6 +2118,25 @@ func _steer(p: P) -> Vector2:
 			bs = s
 			best = h
 	return best
+
+
+## Where a kick returner aims to follow his lead blockers: just behind the pair of them, while
+## they are free and in front of him. INF when there is no one to follow.
+func _lead_spot(p: P) -> Vector2:
+	if p != carrier or not air.has("escorts"):
+		return Vector2.INF
+	var dir := _attack_dir(p)
+	var sum := Vector2.ZERO
+	var n := 0
+	for q: P in off:
+		if q.idx in (air["escorts"] as Array) and not q.down and q.engaged == null:
+			var ahead := (q.pos.y - p.pos.y) * dir
+			if ahead > 0.5 and ahead < 7.0 and absf(q.pos.x - p.pos.x) < 5.0:
+				sum += q.pos
+				n += 1
+	if n == 0:
+		return Vector2.INF
+	return sum / n - Vector2(0, dir * 1.2)
 
 
 ## Blocking: the target is picked by _assign_blocks; here we close on him.
@@ -2138,12 +2163,20 @@ func _drive_blocker_for_carrier(p: P) -> void:
 	if p.group == "OL" and p.block_target != null and p.engaged != null:
 		return
 	var tgt := p.block_target
-	if tgt != null:
+	if tgt != null and p.idx in (air.get("escorts", []) as Array):
+		# a lead blocker gets between his man and the returner, close to the returner
+		var to_t := tgt.pos - carrier.pos
+		_toward(p, carrier.pos + carrier.vel * 0.2 + to_t.normalized() * clampf(to_t.length() * 0.45, 1.2, 4.0), 1.0, 0.0)
+	elif tgt != null:
 		_toward(p, tgt.pos - (tgt.pos - carrier.pos).normalized() * 0.6, 1.0, 0.0)
 	else:
-		# escort: stay ahead of the carrier
+		# escort: stay ahead of the carrier (a kickoff's lead blockers one each side of his path)
 		var dir := _attack_dir(carrier)
-		_toward(p, carrier.pos + Vector2(0, dir * 3.0), 0.85)
+		var esc: Array = air.get("escorts", [])
+		var sx := 0.0
+		if p.idx in esc:
+			sx = -1.5 if esc.find(p.idx) == 0 else 1.5
+		_toward(p, carrier.pos + carrier.vel * 0.35 + Vector2(sx, dir * float(K.get("lead_gap", 3.5))), 1.0, 0.0)
 
 
 func _pursue(p: P) -> void:
@@ -2400,6 +2433,10 @@ func _drive_air(p: P) -> void:
 		# well out in front of him when he catches it
 		if p == air_target:
 			_set_want(p, Vector2.ZERO)
+		elif p.idx in (air.get("escorts", []) as Array) and p.block_target == null:
+			# a lead blocker: set up just in front of the returner and wait for him
+			var sx2 := -1.5 if (air["escorts"] as Array).find(p.idx) == 0 else 1.5
+			_toward(p, air_target.pos + Vector2(sx2, float(K.get("lead_gap", 3.5)) + 1.0), 0.9)
 		elif p.block_target != null:
 			# go and meet your man, keeping between him and the returner
 			var tgt := p.block_target
@@ -2565,9 +2602,17 @@ func _assign_return_blocks() -> void:
 			b.block_target = b.engaged
 			taken[b.engaged.idx] = true
 	var escorts: Array = []
+	# a kickoff return: the two blockers nearest the returner lead him - just in front, one each
+	# side - and take whoever comes at him first; the rest go and find a man
+	if bool(ctx.get("kickoff", false)) and ret != null and float(K.get("lead_blockers", 1.0)) > 0.0:
+		if not air.has("escorts"):
+			var near: Array = blockers.filter(func(b): return b.engaged == null)
+			near.sort_custom(func(a, b): return a.pos.distance_to(ret.pos) < b.pos.distance_to(ret.pos))
+			air["escorts"] = near.slice(0, 2).map(func(b): return b.idx)
+		escorts = air["escorts"]
 	var pairs: Array = []
 	for b: P in blockers:
-		if b.engaged != null:
+		if b.engaged != null or b.idx in escorts:
 			continue
 		for e: P in dfn:
 			if e.down or taken.has(e.idx):
@@ -2589,6 +2634,22 @@ func _assign_return_blocks() -> void:
 		b.block_target = e
 		done[b.idx] = true
 		taken[e.idx] = true
+	# the lead blockers take the men nobody else has - the free runners - nearest the returner first
+	for b: P in blockers:
+		if not (b.idx in escorts) or b.engaged != null:
+			continue
+		var best: P = null
+		var bd := 1e9
+		for e: P in dfn:
+			if e.down or taken.has(e.idx) or e.engaged != null:
+				continue
+			var d_ret := e.pos.distance_to(ret.pos)
+			if d_ret < float(K.get("lead_r", 12.0)) and e.pos.y > ret.pos.y - 1.0 and d_ret < bd:
+				bd = d_ret
+				best = e
+		b.block_target = best
+		if best != null:
+			taken[best.idx] = true
 	for b: P in blockers:
 		if b.engaged == null and not done.has(b.idx) and not (b.idx in escorts):
 			b.block_target = null
