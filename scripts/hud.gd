@@ -2076,7 +2076,8 @@ func open_robot(id: String) -> void:
 	box.add_child(top)
 	# the model, turning slowly
 	var svc := SubViewportContainer.new()
-	svc.custom_minimum_size = Vector2(170, 220)
+	var narrow := get_viewport().get_visible_rect().size.x < 520.0
+	svc.custom_minimum_size = Vector2(120, 160) if narrow else Vector2(170, 220)
 	svc.stretch = true
 	var sv := SubViewport.new()
 	sv.own_world_3d = true
@@ -2149,7 +2150,7 @@ func open_robot(id: String) -> void:
 		line.add_theme_constant_override("separation", 8)
 		box.add_child(line)
 		var name_l := _label(String(Robot.LABEL[k]), fs - 1)
-		name_l.custom_minimum_size.x = 110
+		name_l.custom_minimum_size.x = 84 if get_viewport().get_visible_rect().size.x < 520.0 else 110
 		line.add_child(name_l)
 		var bar := ProgressBar.new()
 		bar.min_value = 0
@@ -2389,8 +2390,11 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 		var pt: Dictionary = parts[k]
 		var hp := float(pt["hp"])
 		var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
-		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 8)
+		# a flowing row: on a narrow screen the buttons drop to the next line instead of
+		# pushing the page off the side
+		var line := HFlowContainer.new()
+		line.add_theme_constant_override("h_separation", 8)
+		line.add_theme_constant_override("v_separation", 4)
 		box.add_child(line)
 		var nl := _label(String(Robot.PART_LABEL[k]), fs - 1)
 		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
@@ -2412,7 +2416,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			bar.max_value = mx
 			bar.value = hp
 			bar.show_percentage = false
-			bar.custom_minimum_size = Vector2(36, fs)
+			bar.custom_minimum_size = Vector2(70, fs)
 			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 			var fill := StyleBoxFlat.new()
