@@ -170,7 +170,14 @@ func _button(text: String, cb: Callable, toggle := false) -> Button:
 	b.toggle_mode = toggle
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.pressed.connect(cb)
+	# pressed: it greys at once (so a tap shows), and comes back if the page didn't change
+	b.pressed.connect(func():
+		var was_disabled := b.disabled
+		if not b.toggle_mode:
+			b.disabled = true
+		cb.call()
+		if is_instance_valid(b) and not b.toggle_mode and not was_disabled:
+			b.set_deferred("disabled", false))
 	return b
 
 
@@ -487,7 +494,8 @@ func _refresh_nav() -> void:
 	else:
 		_crumbs = [me]
 	if _back.is_valid() and _crumbs.size() >= 2:
-		_close_btn.text = "« Back to %s" % _crumbs[-2]
+		# on a phone the trail underneath says where; the button stays short so it never widens the page
+		_close_btn.text = ("« Back" if get_viewport().get_visible_rect().size.x < 520.0 else "« Back to %s" % _crumbs[-2])
 	elif _back.is_valid():
 		_close_btn.text = "« Back"
 	elif main != null and main._phase in ["picking", "special", "qbreak", "injury", "pregame", "audible"]:
@@ -522,8 +530,15 @@ func close_overlay(follow_back := true) -> void:
 
 
 ## A panel over the field: returns its content box.
+var _sc: DragScroll = null
+
+
 func _open(title: String) -> VBoxContainer:
 	_prev_crumbs = _crumbs.duplicate() if any_overlay() or not _crumbs.is_empty() else []
+	# the same page again (after a purchase, a repair, a tab): stay where you had scrolled to
+	var keep_scroll := -1
+	if any_overlay() and _sc != null and is_instance_valid(_sc) and _crumb(title) == _crumb(_cur_title):
+		keep_scroll = _sc.scroll_vertical
 	close_overlay(false)
 	Ux.panel(title)
 	_back = Callable()
@@ -557,6 +572,9 @@ func _open(title: String) -> VBoxContainer:
 	var sc := DragScroll.new()
 	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	outer.add_child(sc)
+	_sc = sc
+	if keep_scroll > 0:
+		_restore_scroll(sc, keep_scroll)
 	var box := VBoxContainer.new()
 	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 8)
@@ -567,6 +585,14 @@ func _open(title: String) -> VBoxContainer:
 	refit.call_deferred()
 	main.overlay_changed(true)
 	return box
+
+
+func _restore_scroll(sc: DragScroll, v: int) -> void:
+	for i in 3:
+		await get_tree().process_frame
+	if is_instance_valid(sc):
+		sc.scroll_vertical = v
+		sc._pos = float(v)
 
 
 func _fit_panel(pc: PanelContainer, sc: Control, box: Control, max_h: float) -> void:
@@ -2243,6 +2269,14 @@ func open_robot(id: String) -> void:
 
 
 
+## A long button that wraps onto two lines rather than widen the page past a phone's screen.
+func _wrap_button(b: Button) -> Button:
+	b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	b.custom_minimum_size.x = minf(get_viewport().get_visible_rect().size.x - 80.0, 420.0)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return b
+
+
 ## Sell him to a rival club, scrap him for parts, or trade him for one of theirs.
 func _sell_section(box: Control, r: Dictionary, id: String) -> void:
 	_section(box, "Sell or trade")
@@ -2263,17 +2297,18 @@ func _sell_section(box: Control, r: Dictionary, id: String) -> void:
 	for c in Career.dealers():
 		var offer := Career.sell_offer(r, c)
 		var can := Career._club_money(c) >= offer
-		var b := _button("Sell to %s: $%d%s%s" % [c["name"], offer, " (he'd start for them)" if Career.would_start(r, c) else "", "" if can else " - they can't afford it"], func():
+		var b := _button("Sell to %s: $%d%s%s" % [c["name"], offer, " (he'd start for them)" if Career.would_start(r, c) else "", "" if can else " - can't afford it"], func():
 			if Career.sell_to(0, r, c):
 				main.library_changed()
 				toast("SOLD\nto %s, +$%d" % [c["name"], offer], 1.8)
 				open_roster(0))
+		_wrap_button(b)
 		b.disabled = not can
 		if not can:
 			b.tooltip_text = "%s can't afford him ($%d in their purse)" % [c["name"], Career._club_money(c)]
 		row.add_child(b)
 	for c in Career.dealers():
-		row.add_child(_button("Trade with %s..." % c["name"], func(): _open_trade(r, id, c)))
+		row.add_child(_wrap_button(_button("Trade with %s..." % c["name"], func(): _open_trade(r, id, c))))
 	if Career.dealers().is_empty():
 		box.add_child(_label("No other clubs to deal with here: scrap is the only sale.", fs - 2, Color(0.75, 0.8, 0.85)))
 
@@ -2304,7 +2339,7 @@ func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 				toast("TRADED\n%s for %s" % [r["name"], x["name"]], 2.0)
 				open_roster(0))
 		b.disabled = Career.money(0) < cash
-		box.add_child(b)
+		box.add_child(_wrap_button(b))
 
 
 ## ---- broken robots -----------------------------------------------------------------------------

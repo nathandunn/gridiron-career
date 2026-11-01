@@ -253,6 +253,39 @@ func _ready() -> void:
 				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["head"]["hp"] = 0
 				hud.open_injuries(_broken_mine())
+			"robotclick":
+				# open a robot page from the roster, scroll down, tap a button: the page must stay put
+				Career.add_money(0, 5000)
+				var rr2: Dictionary = Career.roster(0)[String(args.get("slot", "WR1"))]
+				hud.open_roster(0)
+				await get_tree().create_timer(0.3).timeout
+				hud.open_robot(String(rr2["id"]))
+				hud._back = func(): hud.open_roster(0)
+				await get_tree().create_timer(0.4).timeout
+				hud._sc.scroll_vertical = int(args.get("scroll", 500))
+				hud._sc._pos = float(hud._sc.scroll_vertical)
+				await get_tree().create_timer(0.3).timeout
+				var want := String(args.get("click", "Mk II")).replace("_", " ")
+				var st3: Array = [hud._sc]
+				var hit3: Button = null
+				while not st3.is_empty() and hit3 == null:
+					var nd3: Node = st3.pop_back()
+					if nd3 is Button and (nd3 as Button).text.begins_with(want) and not (nd3 as Button).disabled:
+						hit3 = nd3
+					st3.append_array(nd3.get_children())
+				print("scroll before ", hud._sc.scroll_vertical, " clicking ", hit3.text if hit3 else "none")
+				if hit3 != null:
+					hit3.pressed.emit()
+				await get_tree().create_timer(0.4).timeout
+				print("scroll after ", hud._sc.scroll_vertical)
+				if args.has("dbgw"):
+					var bx: Control = hud._sc.get_child(0)
+					print("box min ", bx.get_combined_minimum_size().x, " scroll w ", hud._sc.size.x)
+					for ch in bx.get_children():
+						if (ch as Control).get_combined_minimum_size().x > 250:
+							print("WIDE ", ch.get_class(), " ", (ch as Control).get_combined_minimum_size().x, " ", ch.get("text") if ch.get("text") != null else "")
+							for c2 in ch.get_children():
+								print("    ", c2.get_class(), " ", (c2 as Control).get_combined_minimum_size().x, " ", c2.get("text") if c2.get("text") != null else "")
 			"robot":
 				var rr: Dictionary = Career.roster(0)[String(args.get("slot", "QB"))]
 				if args.has("upall"):        # check: upgrades show in his overall and ratings

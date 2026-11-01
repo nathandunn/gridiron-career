@@ -22,7 +22,8 @@ var _held: BaseButton = null   # the button the finger went down on, switched of
 
 
 func _ready() -> void:
-	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	# never sideways - and never let something wide stretch the panel past the screen
+	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	# Godot's own touch scrolling would fight ours: never let it start
 	scroll_deadzone = 1000000
 	# a slim bar as a hint of where you are; it isn't needed to scroll
