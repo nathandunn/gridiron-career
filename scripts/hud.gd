@@ -1310,11 +1310,13 @@ func _play_subline(p: Play) -> String:
 
 ## ---- box scores: at each quarter break, at the end and any time from Stats ---------------
 
-var _stats_tab := "team"
+var _stats_tab := "report"
 
 
 ## mode: "quarter" (a break - Continue goes on), "final", or "live" (just a look).
 func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()) -> void:
+	_stats_mode = mode
+	_stats_snap = snap
 	var names := [(g.teams[0]["coach"] as Coach).name, (g.teams[1]["coach"] as Coach).name]
 	if Career.loaded:
 		names = [String(g.teams[0].get("club", Career.team(0)["name"])), String(g.teams[1].get("club", Career.team(1)["name"]))]
@@ -1344,11 +1346,14 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
 	box.add_child(tabs)
-	for tab in [["team", "Team"], ["p0", "%s players" % Team.NAMES[0]], ["p1", "%s players" % Team.NAMES[1]]]:
+	for tab in [["report", "Report"], ["team", "Team"], ["p0", "%s players" % Team.NAMES[0]], ["p1", "%s players" % Team.NAMES[1]]]:
 		var b := _button(tab[1], func(): _stats_tab = tab[0]; _back = Callable(); show_stats(g, mode, snap, back), true)
 		b.button_pressed = _stats_tab == tab[0]
 		tabs.add_child(b)
 	match _stats_tab:
+		"report":
+			box.add_child(_label("How it went for %s: the play-calling (what you called and how it worked) and the players (who stood out, which units let you down, the damage). Green went well, red needs fixing." % names[0], fs - 2, Color(0.75, 0.8, 0.85)))
+			_report_lines(box, Analysis.postgame(g, 0))
 		"team":
 			_box_score(box, stats, [1, 1], names)
 		"p0", "p1":
@@ -1505,6 +1510,11 @@ static func ovr_change_text(r: Dictionary, track: Dictionary) -> Array:
 
 ## Every robot on the side: his overall at kickoff, minus what the hits took, plus what
 ## repairs gave back, equals where he is now; then how worn each of his parts is.
+var _cond_all := false
+var _stats_mode := "live"
+var _stats_snap := {}
+
+
 func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void:
 	var roster: Dictionary = team.get("roster", {})
 	if roster.is_empty():
@@ -1521,6 +1531,24 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		rows.append([String(slot), roster[slot]])
 	for r: Dictionary in team.get("bench", []):
 		rows.append(["bench", r])
+	# the damaged first (most hurt at the top); the unmarked only if asked for
+	var hurt_of := func(r: Dictionary) -> float:
+		var h := 0.0
+		for k in Robot.PARTS:
+			var pt: Dictionary = Robot.ensure_parts(r)[k]
+			h += 1.0 - clampf(float(pt["hp"]) / float(Robot.TIER_HP.get(String(pt["tier"]), 100)), 0.0, 1.0)
+		return h
+	rows = rows.filter(func(x): return not (x[1] as Dictionary).is_empty())
+	rows.sort_custom(func(a, b): return hurt_of.call(a[1]) > hurt_of.call(b[1]))
+	var unmarked := rows.filter(func(x): return hurt_of.call(x[1]) < 0.001).size()
+	if not _cond_all:
+		rows = rows.filter(func(x): return hurt_of.call(x[1]) >= 0.001)
+	var ft := _button(("Unmarked robots: shown (%d)" if _cond_all else "Unmarked robots: hidden (%d) - show them") % unmarked, func():
+		_cond_all = not _cond_all
+		if main.game != null:
+			show_stats(main.game, _stats_mode, _stats_snap, _back), true)
+	ft.button_pressed = _cond_all
+	box.add_child(ft)
 	for row in rows:
 		var r: Dictionary = row[1]
 		if r.is_empty():
@@ -1581,6 +1609,8 @@ func open_next() -> void:
 	_section(box, "Standings")
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
+	_section(box, "Scouting report")
+	_report_lines(box, Analysis.pregame(me, opp))
 	_section(box, "This week's opponent")
 	var ovr := 0.0
 	for s0 in opp["starters"]:
@@ -1929,6 +1959,9 @@ func open_roster(t := -1) -> void:
 		var b := _button(String(Career.team(i)["name"]) + (" (you)" if i == 0 else ""), func(): _draft_armed = false; open_roster(i), true)
 		b.button_pressed = i == _roster_team
 		tabs.add_child(b)
+	for c in Career.other_clubs():
+		var cc: Dictionary = c
+		tabs.add_child(_button(String(cc["name"]), func(): open_club(cc)))
 	var fair := _button("Fair bodies: %s" % ("on" if Career.fair() else "off"), func():
 		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
 	fair.button_pressed = Career.fair()
@@ -1966,6 +1999,33 @@ func open_roster(t := -1) -> void:
 			_draft_armed = true
 		open_roster())
 	row.add_child(draft)
+
+
+## Report lines in colour: green went well, red needs fixing, grey to note.
+func _report_lines(box: Control, lines: Array) -> void:
+	for ln in lines:
+		var col := Color(0.55, 0.95, 0.6) if ln[1] == "good" else (Color(1.0, 0.55, 0.5) if ln[1] == "bad" else Color(0.85, 0.88, 0.92))
+		box.add_child(_label(("+ " if ln[1] == "good" else ("! " if ln[1] == "bad" else "- ")) + String(ln[0]), fs - 1, col))
+
+
+## Any club's players, to look at: their schemes, record, ratings and every robot.
+func open_club(c: Dictionary) -> void:
+	var box := _open("%s players" % c["name"])
+	_back = func(): open_roster()
+	box.add_child(_label("%s · %s%s" % [Career.schemes_text(c), Career.ratings_text(c), ("  ·  record " + Career._rec_text(c["rec"])) if c.has("rec") else ""], fs, CYAN))
+	var starters: Dictionary = c["starters"]
+	for sg in SIDE_GROUPS:
+		_section(box, sg[0])
+		for g in sg[1]:
+			for s in Play.GROUP_SLOTS.get(g, [g]):
+				var b := _robot_row(starters[s], s, false)
+				b.disabled = true
+				box.add_child(b)
+	_section(box, "Bench")
+	for r in c["bench"]:
+		var b2 := _robot_row(r, "", false)
+		b2.disabled = true
+		box.add_child(b2)
 
 
 func _robot_row(r: Dictionary, slot: String, from_roster := false) -> Button:

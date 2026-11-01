@@ -2158,6 +2158,16 @@ func _pursue(p: P) -> void:
 		var side := -1.0 if p.idx == int(air.get("contain_l", -1)) else 1.0
 		if (p.pos.x - c.pos.x) * side < 1.5 or d > 6.0:
 			aim.x = c.pos.x + side * maxf(2.5, absf(aim.x - c.pos.x))
+	elif air.get("kick", false) and p.side == 1 and float(K.get("lanes", 1.0)) > 0.0:
+		# kick coverage keeps its lanes: each man runs straight down his own strip of the field
+		# and only squeezes in on the returner as he gets near him, so there's no outside to
+		# run round
+		if not p.mem.has("_lane_x"):
+			p.mem["_lane_x"] = p.pos.x
+		var gap_y := p.pos.y - c.pos.y
+		if gap_y > 3.0:
+			var squeeze := clampf(1.0 - (gap_y - 4.0) / float(K.get("lane_close", 20.0)), 0.2, 1.0)
+			aim.x = lerpf(float(p.mem["_lane_x"]), aim.x, squeeze)
 	var dir := _attack_dir(c)
 	if (p.pos.y - c.pos.y) * dir > 1.5 and d > 4.0 and (p.intent == "stay_deep" or (p.group == "S" and p.d("discipline") > 0.6 and d > 7.0)):
 		# keep leverage: match him across the field, stay between him and the goal, close in

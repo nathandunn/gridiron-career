@@ -1571,6 +1571,20 @@ static func ratings_text(tm: Dictionary) -> String:
 	return "OVR %d (off %d, def %d)" % [rt["ovr"], rt["off"], rt["def"]]
 
 
+## The clubs other than yours and this week's opponent, to look at (season: the other clubs;
+## sim lab: the ten opponents).
+static func other_clubs() -> Array:
+	if sim_mode():
+		return sim_opponents()
+	if exhibition() or not data.has("season"):
+		return []
+	var out: Array = []
+	for c in data["season"]["clubs"]:
+		if not is_same(c, team(1)):
+			out.append(c)
+	return out
+
+
 static func standings() -> Array:
 	var sn := season()
 	if sn.is_empty():
