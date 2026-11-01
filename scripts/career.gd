@@ -913,12 +913,72 @@ static func coach_plan(t: int, purse: bool, reserve := 400, focus := "", seed :=
 	var sp_copy := sp.duplicate(true)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	out["cost"] = upgrades_with(copy, budget, rng) if focus == "" else _focus_on(copy["starters"], sp_copy, focus, budget)
+	out["cost"] = value_upgrades(copy["starters"], sp_copy, budget) if focus == "" else _focus_on(copy["starters"], sp_copy, focus, budget)
 	for s in real:
 		_plan_row(out["rows"], s, real[s], copy["starters"][s])
 	for s in sp:
 		_plan_row(out["rows"], s, sp[s], sp_copy[s])
 	return out
+
+
+## How much each position's overall counts when the coach weighs value (the quarterback most).
+const VALUE_WEIGHT := {"QB": 1.8, "RB": 1.0, "WR": 1.0, "TE": 0.8, "OL": 1.0, "DL": 1.1, "LB": 0.9, "CB": 1.0, "S": 0.9, "K": 0.5, "P": 0.4}
+
+
+## His overall, unrounded (so a small gain still shows).
+static func _ovr_f(r: Dictionary) -> float:
+	var ks := Robot.keys(r)
+	var g := String(r.get("group", ""))
+	var s := 0.0
+	for k in ks:
+		s += Robot.eff(r, k) - Robot.mean_for(g, k) + Robot.BASE
+	return s / maxf(ks.size(), 1)
+
+
+## "Best value anywhere": again and again, the one upgrade among the starters (and kicker and
+## punter) that adds the most overall per dollar, weighted by how much his position counts,
+## until nothing affordable is left. Fits the parts; returns what it cost.
+static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: int) -> int:
+	var robots: Array = []
+	for s in starters:
+		if not (starters[s] as Dictionary).is_empty():
+			robots.append(starters[s])
+	for s in specials:
+		if not (specials[s] as Dictionary).is_empty():
+			robots.append(specials[s])
+	var left := budget
+	for guard in 300:
+		var best := {}
+		var best_k := ""
+		var best_p := 0
+		var best_r := 0.0
+		for r in robots:
+			var w := float(VALUE_WEIGHT.get(String(r.get("group", "")), 1.0))
+			var parts := Robot.ensure_parts(r)
+			for k in Robot.PARTS:
+				var nt := next_tier(r, k)
+				if nt == "":
+					continue
+				var pr := upgrade_price(k, nt)
+				if pr > left:
+					continue
+				var before := _ovr_f(r)
+				var keep: Dictionary = parts[k]
+				parts[k] = {"tier": nt, "hp": Robot.TIER_HP[nt]}
+				var gain := (_ovr_f(r) - before) * w
+				parts[k] = keep
+				var ratio := gain / float(pr)
+				if ratio > best_r:
+					best_r = ratio
+					best = r
+					best_k = k
+					best_p = pr
+		if best.is_empty():
+			break
+		var tier := next_tier(best, best_k)
+		Robot.ensure_parts(best)[best_k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
+		left -= best_p
+	return budget - left
 
 
 static func _plan_row(rows: Array, slot: String, was: Dictionary, now: Dictionary) -> void:
@@ -964,7 +1024,7 @@ static func coach_spend(t: int, purse: bool, reserve := 400, focus := "", seed :
 	if seed != 0:
 		rng = RandomNumberGenerator.new()
 		rng.seed = seed            # the same draw coach_plan showed
-	var spent := upgrades_with(team(t), budget, rng) if focus == "" else focus_upgrades(t, focus, budget)
+	var spent := value_upgrades(team(t)["starters"], special(t), budget) if focus == "" else focus_upgrades(t, focus, budget)
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))

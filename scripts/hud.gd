@@ -2416,7 +2416,8 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 		var nm := String(r["name"])
 		var bits := nm.split(" ")
 		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
-		box.add_child(_label("%s (%s)   OVR %d -> %d (%+d)   $%d" % [short, r["slot"], int(r["before"]), int(r["after"]), int(r["after"]) - int(r["before"]), int(r["cost"])], fs, Color(0.85, 0.95, 1.0)))
+		var per := float(int(r["after"]) - int(r["before"])) * 100.0 / maxf(float(r["cost"]), 1.0)
+		box.add_child(_label("%s (%s)   OVR %d -> %d (%+d)   $%d   (%.1f OVR per $100)" % [short, r["slot"], int(r["before"]), int(r["after"]), int(r["after"]) - int(r["before"]), int(r["cost"]), per], fs, Color(0.85, 0.95, 1.0)))
 		box.add_child(_label("    " + ", ".join(r["parts"]), fs - 2, Color(0.75, 0.8, 0.88)))
 		if not (r.get("gains", []) as Array).is_empty():
 			box.add_child(_label("    " + ", ".join(r["gains"]), fs - 2, Color(0.55, 0.95, 0.6)))
