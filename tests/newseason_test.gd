@@ -9,7 +9,7 @@ func _init() -> void:
 	assert(Career.season_over())
 	Career.new_season()
 	print("new season ", Career.money(0), " week ", Career.season()["week"], " last ", Career.data.get("last_champion"))
-	assert(Career.money(0) == 2000)
+	assert(Career.money(0) == Career.SEASON_MONEY)
 	# an old save without a season gets one, with $2,000
 	Career.data.erase("season")
 	Career.data["money"][0] = 250
@@ -18,7 +18,7 @@ func _init() -> void:
 	Career.data = {}
 	Career.ensure()
 	print("migrated ", Career.money(0))
-	assert(Career.money(0) == 2000)
+	assert(Career.money(0) == Career.STARTER_BUDGET)
 	print("OK")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(Career.PATH))
 	quit()

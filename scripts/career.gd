@@ -88,9 +88,8 @@ static func ensure() -> void:
 			_give_defenses()
 			return
 	Robot.used_names = {}
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1)], "starter_upgrades": true, "mode": "season", "pos_ratings": true}
-	data["money"] = [STARTER_BUDGET, START_MONEY + int(data["teams"][1].get("leftover", 0))]   # you start with $2,000 to spend
-	_season_around_current()
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true}
+	_fresh_season()
 	save()
 
 
@@ -1308,8 +1307,8 @@ static func _random_coach() -> String:
 	return names[randi() % names.size()] if not names.is_empty() else "Balanced"
 
 
-static func _new_club(name: String) -> Dictionary:
-	var tm := new_team(1)
+static func _new_club(name: String, fit := true) -> Dictionary:
+	var tm := new_team(1, -1, fit)
 	tm["name"] = name
 	tm["coach"] = _random_coach()
 	tm["defense"] = _random_defense()
@@ -1328,7 +1327,8 @@ static func _season_around_current() -> void:
 	first["defense"] = _random_defense()
 	first["money"] = int(data.get("money", [START_MONEY, START_MONEY])[1])
 	first["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
-	data["season"] = {"week": 1, "clubs": [first, _new_club(names[1]), _new_club(names[2])],
+	var fresh := bool(data.get("_fresh", false))
+	data["season"] = {"week": 1, "clubs": [first, _new_club(names[1], not fresh), _new_club(names[2], not fresh)],
 		"you": {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}, "results": [], "champion": ""}
 	_set_opponent()
 
@@ -1339,12 +1339,72 @@ static func new_season() -> void:
 	if season_over():
 		data["last_champion"] = String(season().get("champion", ""))
 	data["teams"][0] = new_team(0, -1, false)
-	data["money"] = [STARTER_BUDGET, START_MONEY]
-	data["teams"][1] = new_team(1)
+	data["teams"][1] = new_team(1, -1, false)
 	data["bill_before"] = [0, 0]
-	_season_around_current()
+	_fresh_season()
 	data["mode"] = "season"
 	save()
+
+
+## Every season starts level: four new teams drafted the same way (no upgrades fitted), their
+## ratings evened out so each has the same average starter rating, and $5,000 apiece to spend.
+const SEASON_MONEY := 5000
+
+
+static func _fresh_season() -> void:
+	data["money"] = [SEASON_MONEY, SEASON_MONEY]
+	data["_fresh"] = true
+	_season_around_current()
+	data.erase("_fresh")
+	var clubs: Array = data["season"]["clubs"]
+	for c in clubs:
+		c["money"] = SEASON_MONEY
+	var all: Array = [data["teams"][0]] + clubs
+	equalize_teams(all)
+
+
+## A side's average starter rating, unrounded.
+static func _team_avg(tm: Dictionary) -> float:
+	var s := 0.0
+	var n := 0
+	for sl in tm["starters"]:
+		var r: Dictionary = tm["starters"][sl]
+		if not r.is_empty():
+			s += float(Robot.overall_if(r, "now"))    # the rating the tables show
+			n += 1
+	return s / maxf(n, 1)
+
+
+static func _shift(r: Dictionary, d: int) -> void:
+	for k in r.get("ratings", {}):
+		r["ratings"][k] = clampi(int(r["ratings"][k]) + d, 15, 99)
+
+
+## Even out the teams' ratings: every robot on a side moves by the same amount so each side's
+## average starter rating comes out the same (the league's average).
+static func equalize_teams(teams: Array) -> void:
+	if teams.is_empty():
+		return
+	for tm in teams:
+		best_lineup(tm)           # who starts first: then the starters are what gets evened out
+	var target := 0.0
+	for tm in teams:
+		target += _team_avg(tm)
+	target /= teams.size()
+	for tm in teams:
+		for pass_i in 6:
+			var gap := target - _team_avg(tm)
+			var bodies: Array = (tm["starters"] as Dictionary).values() + (tm.get("bench", []) as Array) + ((tm.get("special", {}) as Dictionary).values())
+			if absf(gap) >= 0.5:
+				for r in bodies:
+					_shift(r, int(roundf(gap)))
+			else:
+				# the last fraction: nudge a few starters by one each
+				var starters: Array = (tm["starters"] as Dictionary).values()
+				var nudge := int(roundf(gap * starters.size()))
+				for i in mini(absi(nudge), starters.size()):
+					_shift(starters[i], signi(nudge))
+				break
 
 
 static func season() -> Dictionary:
