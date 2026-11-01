@@ -224,7 +224,9 @@ func _ready() -> void:
 				sim_to_end()
 			"fixtest":
 				sim_to_end()
-				await get_tree().create_timer(3.0).timeout
+				while _phase == "simend":
+					await get_tree().create_timer(0.5).timeout
+				await get_tree().create_timer(1.0).timeout
 				next_game()
 				await get_tree().create_timer(1.0).timeout
 				var found: Array = []
@@ -988,10 +990,29 @@ func sim_to_end() -> void:
 		return
 	hud.close_overlay(false)
 	hud.show_resume(false, "")
+	hud.show_audible_button(false)
 	_choice = {}
-	var guard := 0
-	while not game.over and guard < 600:
-		guard += 1
+	# played out a few snaps a frame, so the score, the clock and the numbers tick along
+	sim = null
+	view.set_play(null, game.poss, game.yl, game.to_go)
+	_sim_end = {"guard": 0, "t": 0.0, "log_n": game.log.size()}
+	_phase = "simend"
+	hud.show_board(true)        # the score and the running numbers stay up while it sims
+
+
+var _sim_end := {}
+
+
+## One step of Sim to end: a couple of snaps, then the running numbers.
+func _sim_end_step(delta: float) -> void:
+	_sim_end["t"] = float(_sim_end["t"]) + delta
+	if float(_sim_end["t"]) < 0.06:
+		return
+	_sim_end["t"] = 0.0
+	for i in 2:
+		if game.over or int(_sim_end["guard"]) >= 600:
+			break
+		_sim_end["guard"] = int(_sim_end["guard"]) + 1
 		var snap := game.next_snap({"coach_off": true, "coach_def": true})
 		if snap["kind"] != "play":
 			continue
@@ -1001,6 +1022,38 @@ func sim_to_end() -> void:
 		game.finish(s2)
 		for t in 2:
 			game.coach_fixes(t)
+	# what just happened that matters: scores and turnovers
+	for j in range(int(_sim_end["log_n"]), game.log.size()):
+		var e: Dictionary = game.log[j]
+		var tx := String(e.get("text", ""))
+		if tx.find("TOUCHDOWN") >= 0 or tx.find("FIELD GOAL") >= 0 or tx.find("INTERCEPT") >= 0 or tx.find("FUMBLE") >= 0 or tx.find("SAFETY") >= 0 or tx.find("RECOVER") >= 0:
+			hud.caption("Q%d %s  %s" % [mini(int(e.get("q", game.quarter)), 4), _clock_txt(float(e.get("clock", 0.0))), tx], false, Color(1.0, 0.85, 0.3))
+	_sim_end["log_n"] = game.log.size()
+	view.set_play(null, game.poss, game.yl, game.to_go)
+	hud.show_state(game)
+	hud.set_progress(_sim_line())
+	if game.over or int(_sim_end["guard"]) >= 600:
+		_finish_sim_to_end()
+
+
+static func _clock_txt(c: float) -> String:
+	return "%d:%02d" % [int(c) / 60, int(c) % 60]
+
+
+## The running numbers while it sims: score, clock and each side's running and passing.
+func _sim_line() -> String:
+	var parts: Array = ["Simulating to the end - Q%d %s" % [mini(game.quarter, 4), _clock_txt(game.clock)]]
+	for t in 2:
+		var st: Dictionary = game.stats[t]
+		var nm: String = game.teams[t].get("club", Team.NAMES[t])
+		parts.append("%s %d: runs %d for %.1f a carry, passing %d/%d %d yds, %d sacked, %d turnovers" % [nm, game.score[t], int(st["rush_att"]),
+			float(st["rush_yds"]) / maxf(float(st["rush_att"]), 1.0), int(st["comp"]), int(st["pass_att"]), int(st["pass_yds"]), int(st["sacks"]), int(st["turnovers"])])
+	return "\n".join(parts)
+
+
+func _finish_sim_to_end() -> void:
+	_sim_end = {}
+	hud.set_progress("")
 	_seen_q = game.quarter_ends.size()
 	if Career.loaded:
 		Career.save()
@@ -1105,6 +1158,9 @@ func _process(delta: float) -> void:
 		return
 	if _batch_left > 0:
 		_batch_step()
+		return
+	if _phase == "simend":
+		_sim_end_step(delta)
 		return
 	# a panel that is waiting on you was closed: nothing happens until you come back to it
 	if _phase in ["picking", "special", "qbreak", "injury", "pregame", "audible"]:
