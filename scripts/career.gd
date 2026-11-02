@@ -700,28 +700,55 @@ static func note_kickoff() -> void:
 	save()
 
 
+## What side `t` is paid for game `g`: the result and what they did, as [label, $] lines.
+## The same table for every club, in your games and the others.
+static func pay_lines(g: Game, t: int) -> Array:
+	var w := g.winner()
+	var lines: Array = []
+	var res := "tie" if w < 0 else ("win" if w == t else "loss")
+	if int(RESULT_PAY[res]) > 0:
+		lines.append([{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], int(RESULT_PAY[res])])
+	var got := _earned(g, t)
+	for e in EARN:
+		var n := int(got[e[0]])
+		if n > 0:
+			lines.append(["%s x%d" % [e[1], n], n * int(e[2])])
+	return lines
+
+
 static func pay_game(g: Game) -> Array:
 	var slips: Array = []
-	var w := g.winner()
 	for t in 2:
-		var lines: Array = []
-		var res := "tie" if w < 0 else ("win" if w == t else "loss")
-		var total := int(RESULT_PAY[res])
-		if total > 0:
-			lines.append([{"win": "Win", "tie": "Tie", "loss": "Loss"}[res], total])
-		var got := _earned(g, t)
-		for e in EARN:
-			var n := int(got[e[0]])
-			if n > 0:
-				lines.append(["%s x%d" % [e[1], n], n * int(e[2])])
-				total += n * int(e[2])
+		var lines := pay_lines(g, t)
+		var total := 0
+		for ln in lines:
+			total += int(ln[1])
 		add_money(t, total)
 		slips.append({"lines": lines, "total": total, "name": String(team(t)["name"]), "purse": money(t)})
 	save()
-	slips[1]["news"] = rival_shopping(1)     # the rival's owner goes shopping
-	slips[1]["news"] = coach_repairs(1) + slips[1]["news"]
+	slips[1]["news"] = club_ready(1)     # the rival repairs, then spends with Best buy
 	slips[1]["purse"] = money(1)
 	return slips
+
+
+## A rival club gets ready for its next game: repairs all its damage, then spends what it has
+## (above a $400 reserve for repairs) with Best buy, as you could.
+static func club_ready(t: int) -> Array:
+	var news := coach_repairs(t)
+	var spent := club_spend(t)
+	if spent > 0:
+		news.append("%s spends $%d on upgrades (Best buy); purse now $%d." % [team(t)["name"], spent, money(t)])
+	return news
+
+
+## A rival club's Best buy with its own purse (above $400). Returns what it cost.
+static func club_spend(t: int) -> int:
+	var budget := maxi(money(t) - 400, 0)
+	if budget <= 0:
+		return 0
+	var spent := _spend(team(t)["starters"], special(t), "win", budget)
+	add_money(t, -spent)
+	return spent
 
 
 ## The rival coach puts all his damage right before he shops.
@@ -1095,33 +1122,6 @@ static func buy_armor(t: int, robot: Dictionary) -> bool:
 
 
 ## The rival's owner spends after a game: upgrades for his weakest starters, keeping a reserve.
-static func rival_shopping(t: int) -> Array:
-	var news: Array = []
-	var starters: Dictionary = team(t)["starters"]
-	for i in 4:
-		var best := {}
-		var best_k := ""
-		var best_tier := 99
-		for s in starters:
-			var r: Dictionary = starters[s]
-			for k in Robot.PARTS:
-				var nt := next_tier(r, k)
-				if nt == "":
-					continue
-				var ti := Robot.TIERS.find(String(r["parts"][k]["tier"]))
-				if ti < best_tier or (ti == best_tier and randf() < 0.15):
-					best_tier = ti
-					best = r
-					best_k = k
-		if best.is_empty() or money(t) - upgrade_price(best_k, next_tier(best, best_k)) < 400:
-			break
-		var tier := next_tier(best, best_k)
-		if buy_upgrade(t, best, best_k):
-			news.append("%s buys %s a %s %s." % [team(t)["name"], best["name"], tier, String(Robot.PART_LABEL[best_k]).to_lower()])
-	return news
-
-
-
 ## ---- every team starts with $2,000 of upgrades ------------------------------------------------------
 
 const STARTER_BUDGET := 2000
@@ -1379,6 +1379,12 @@ static func _fresh_season() -> void:
 		c["money"] = SEASON_MONEY
 	var all: Array = [data["teams"][0]] + clubs
 	equalize_teams(all)
+	# every rival spends its season money before week 1, as you can
+	var keep := int(data["season"].get("opp", 0))
+	for ci in clubs.size():
+		data["season"]["opp"] = ci
+		club_spend(1)
+	data["season"]["opp"] = keep
 
 
 ## A side's average starter rating, unrounded.
@@ -1532,17 +1538,17 @@ static func finish_week(g: Game) -> Array:
 		var og := Batch.play_game(ta, tb, g.qlen, randi())
 		_record(a["rec"], og.score[0], og.score[1])
 		_record(b["rec"], og.score[1], og.score[0])
-		for pr in [[a, og.score[0], og.score[1]], [b, og.score[1], og.score[0]]]:
-			var club: Dictionary = pr[0]
-			var res := "win" if pr[1] > pr[2] else ("loss" if pr[1] < pr[2] else "tie")
-			club["money"] = int(club.get("money", 0)) + int(PAY[res])
+		for side in 2:
+			var club: Dictionary = [a, b][side]
+			for ln in pay_lines(og, side):
+				club["money"] = int(club.get("money", 0)) + int(ln[1])
 		var keep := int(sn["opp"])
 		for ci in [int(pair[0]) - 1, int(pair[1]) - 1]:
 			sn["opp"] = ci
 			var club2: Dictionary = team(1)
 			for slot in club2["starters"]:
 				coach_fix(club2["starters"], club2["bench"], slot)
-			rival_shopping(1)
+			club_ready(1)
 		sn["opp"] = keep
 		var line := "Week %d: %s %d - %d %s" % [wk, a["name"], og.score[0], og.score[1], b["name"]]
 		sn["results"].append(line)
