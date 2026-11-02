@@ -876,6 +876,8 @@ const FOCUS := {
 	"def": {"label": "Best defense buy", "slots": [], "parts": []},
 	"run": {"label": "Best run-game buy", "slots": [], "parts": []},
 	"pass": {"label": "Best passing buy", "slots": [], "parts": []},
+	"rund": {"label": "Best run-defense buy", "slots": [], "parts": []},
+	"passd": {"label": "Best pass-defense buy", "slots": [], "parts": []},
 	"qb": {"label": "The perfect quarterback", "slots": ["QB"], "parts": ["rarm", "larm", "head", "core", "lleg", "rleg"]},
 	"wr": {"label": "Better receivers (WR, TE)", "slots": ["WR1", "WR2", "WR3", "TE"], "parts": ["lleg", "rleg", "larm", "rarm", "head"]},
 	"rb": {"label": "Better running back", "slots": ["RB"], "parts": ["lleg", "rleg", "core", "larm", "rarm", "head"]},
@@ -986,6 +988,10 @@ static var BUY_WEIGHTS := {
 	"run": {"RB": 1.6, "OL": 1.2, "TE": 0.9, "WR": 0.3, "QB": 0.3},
 	# passing: the thrower, his targets and his protection
 	"pass": {"QB": 2.0, "WR": 1.2, "TE": 0.8, "OL": 0.9, "RB": 0.3},
+	# stopping the run: the front that takes on blockers and the men who fill behind it
+	"rund": {"DL": 1.4, "LB": 1.3, "S": 0.6, "CB": 0.3},
+	# stopping the pass: the cover men and the pass rush
+	"passd": {"CB": 1.4, "S": 1.1, "DL": 1.0, "LB": 0.6},
 }
 
 
