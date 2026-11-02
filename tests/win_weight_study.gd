@@ -11,6 +11,7 @@ func _init() -> void:
 		var kv := a.trim_prefix("--").split("=")
 		if kv[0] == "group": g = kv[1]
 		if kv[0] == "games": ng = int(kv[1])
+		if kv[0] == "boost": PlaySim.K["boost"] = float(kv[1])
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
 	var margin := 0.0
@@ -23,7 +24,7 @@ func _init() -> void:
 			var r: Dictionary = a["roster"][s]
 			if String(r["group"]) == g:
 				for k in r["ratings"]:
-					r["ratings"][k] = clampi(int(r["ratings"][k]) + 10, 20, 99)
+					r["ratings"][k] = clampi(int(r["ratings"][k]) + int(PlaySim.K.get("boost", 20.0)), 20, 99)
 		var res := Batch.play_game(a, b, 300.0, 500 + i)
 		var m: int = res.score[0] - res.score[1]
 		margin += m
