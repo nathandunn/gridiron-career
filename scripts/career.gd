@@ -872,6 +872,10 @@ static func upgrade_funds(t: int) -> int:
 const FOCUS := {
 	"": {"label": "Efficient buy (most OVR per $)", "slots": [], "parts": []},
 	"win": {"label": "Best buy (most likely to win)", "slots": [], "parts": []},
+	"off": {"label": "Best offense buy", "slots": [], "parts": []},
+	"def": {"label": "Best defense buy", "slots": [], "parts": []},
+	"run": {"label": "Best run-game buy", "slots": [], "parts": []},
+	"pass": {"label": "Best passing buy", "slots": [], "parts": []},
 	"qb": {"label": "The perfect quarterback", "slots": ["QB"], "parts": ["rarm", "larm", "head", "core", "lleg", "rleg"]},
 	"wr": {"label": "Better receivers (WR, TE)", "slots": ["WR1", "WR2", "WR3", "TE"], "parts": ["lleg", "rleg", "larm", "rarm", "head"]},
 	"rb": {"label": "Better running back", "slots": ["RB"], "parts": ["lleg", "rleg", "core", "larm", "rarm", "head"]},
@@ -973,12 +977,24 @@ static func _ovr_f(r: Dictionary) -> float:
 const WIN_WEIGHT := {"QB": 2.0, "LB": 1.2, "RB": 1.1, "WR": 1.0, "DL": 1.0, "CB": 1.0, "OL": 0.9, "S": 0.8, "TE": 0.7}
 
 
+## The weighted buys: which positions count, and how much. A position left out is not bought for.
+static var BUY_WEIGHTS := {
+	"win": WIN_WEIGHT,
+	"off": {"QB": 2.0, "RB": 1.1, "WR": 1.0, "TE": 0.7, "OL": 0.9},
+	"def": {"DL": 1.0, "LB": 1.2, "CB": 1.0, "S": 0.8},
+	# the run game: the back and the men blocking for him (a QB's legs on keepers, a little)
+	"run": {"RB": 1.6, "OL": 1.2, "TE": 0.9, "WR": 0.3, "QB": 0.3},
+	# passing: the thrower, his targets and his protection
+	"pass": {"QB": 2.0, "WR": 1.2, "TE": 0.8, "OL": 0.9, "RB": 0.3},
+}
+
+
 ## Spend for a coach's plan: "" the efficient buy, "win" the best buy, else one group.
 static func _spend(starters: Dictionary, specials: Dictionary, focus: String, budget: int) -> int:
 	if focus == "":
 		return value_upgrades(starters, specials, budget)
-	if focus == "win":
-		return value_upgrades(starters, specials, budget, WIN_WEIGHT)
+	if BUY_WEIGHTS.has(focus):
+		return value_upgrades(starters, specials, budget, BUY_WEIGHTS[focus])
 	return _focus_on(starters, specials, focus, budget)
 
 
@@ -998,7 +1014,9 @@ static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: i
 		for r in robots:
 			var parts := Robot.ensure_parts(r)
 			var before := _ovr_f(r)
-			var w := float(weights.get(String(r.get("group", "")), 1.0)) if not weights.is_empty() else 1.0
+			var w := float(weights.get(String(r.get("group", "")), 0.0)) if not weights.is_empty() else 1.0
+			if w <= 0.0:
+				continue
 			for k in Robot.PARTS:
 				var keep: Dictionary = parts[k]
 				var cost := 0
