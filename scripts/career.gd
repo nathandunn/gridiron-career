@@ -940,10 +940,10 @@ static func _ovr_f(r: Dictionary) -> float:
 ## ahead keeps it from passing up a part whose first step is dear but whose next ones pay.
 ## Kicker and punter are left alone: they do not count in the team OVR. Fits the parts;
 ## returns what it cost.
-## How much a point of each position's overall is worth in winning games, per robot (measured:
-## tests/win_weight_study.gd - one group 10 points better, the average point margin it buys,
-## shared out among the robots in the group). "Best buy" spends by these.
-const WIN_WEIGHT := {"QB": 1.0, "RB": 1.0, "WR": 1.0, "TE": 1.0, "OL": 1.0, "DL": 1.0, "LB": 1.0, "CB": 1.0, "S": 1.0}
+## How much a point of each position's overall is worth in winning games, per robot: a best
+## guess (football sense, loosely checked with tests/win_weight_study.gd). "Best buy" spends by
+## these.
+const WIN_WEIGHT := {"QB": 2.0, "LB": 1.2, "RB": 1.1, "WR": 1.0, "DL": 1.0, "CB": 1.0, "OL": 0.9, "S": 0.8, "TE": 0.7}
 
 
 ## Spend for a coach's plan: "" the efficient buy, "win" the best buy, else one group.
