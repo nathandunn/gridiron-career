@@ -1,7 +1,7 @@
 extends SceneTree
 ## The coach's plan changes nothing, and buying it buys exactly what it showed.
 func _init() -> void:
-	for focus in ["db", "", "qb", "st"]:
+	for focus in ["db", "", "win", "qb", "st"]:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(Career.PATH))
 		Career.loaded = false
 		Career.ensure()

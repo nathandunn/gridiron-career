@@ -843,7 +843,8 @@ static func upgrade_funds(t: int) -> int:
 ## What the coach can be told to spend on. Each names the robots and the parts that carry what
 ## those robots do (legs for speed and routes, arms for hands and throwing, core for strength).
 const FOCUS := {
-	"": {"label": "Best value anywhere", "slots": [], "parts": []},
+	"": {"label": "Efficient buy (most OVR per $)", "slots": [], "parts": []},
+	"win": {"label": "Best buy (most likely to win)", "slots": [], "parts": []},
 	"qb": {"label": "The perfect quarterback", "slots": ["QB"], "parts": ["rarm", "larm", "head", "core", "lleg", "rleg"]},
 	"wr": {"label": "Better receivers (WR, TE)", "slots": ["WR1", "WR2", "WR3", "TE"], "parts": ["lleg", "rleg", "larm", "rarm", "head"]},
 	"rb": {"label": "Better running back", "slots": ["RB"], "parts": ["lleg", "rleg", "core", "larm", "rarm", "head"]},
@@ -912,7 +913,7 @@ static func coach_plan(t: int, purse: bool, reserve := 400, focus := "", seed :=
 	var sp_copy := sp.duplicate(true)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	out["cost"] = value_upgrades(copy["starters"], sp_copy, budget) if focus == "" else _focus_on(copy["starters"], sp_copy, focus, budget)
+	out["cost"] = _spend(copy["starters"], sp_copy, focus, budget)
 	for s in real:
 		_plan_row(out["rows"], s, real[s], copy["starters"][s])
 	for s in sp:
@@ -920,8 +921,6 @@ static func coach_plan(t: int, purse: bool, reserve := 400, focus := "", seed :=
 	return out
 
 
-## How much each position's overall counts when the coach weighs value (the quarterback most).
-const VALUE_WEIGHT := {"QB": 1.8, "RB": 1.0, "WR": 1.0, "TE": 0.8, "OL": 1.0, "DL": 1.1, "LB": 0.9, "CB": 1.0, "S": 0.9, "K": 0.5, "P": 0.4}
 
 
 ## His overall, unrounded (so a small gain still shows).
@@ -931,51 +930,70 @@ static func _ovr_f(r: Dictionary) -> float:
 	var s := 0.0
 	for k in ks:
 		s += Robot.eff(r, k) - Robot.mean_for(g, k) + Robot.BASE
-	return s / maxf(ks.size(), 1)
+	# what junk and missing parts take off, as the shown overall counts it
+	return s / maxf(ks.size(), 1) + Robot.effective_overall(r) - float(Robot.overall(r))
 
 
-## "Best value anywhere": again and again, the one upgrade among the starters (and kicker and
-## punter) that adds the most overall per dollar, weighted by how much his position counts,
-## until nothing affordable is left. Fits the parts; returns what it cost.
-static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: int) -> int:
+## "Efficient buy": the most team overall per dollar. Again and again it takes the step - one
+## part, up one or more tiers - that adds the most to the starters' average overall (the team
+## OVR the tables show) per dollar, until nothing affordable is left. Looking more than one tier
+## ahead keeps it from passing up a part whose first step is dear but whose next ones pay.
+## Kicker and punter are left alone: they do not count in the team OVR. Fits the parts;
+## returns what it cost.
+## How much a point of each position's overall is worth in winning games, per robot (measured:
+## tests/win_weight_study.gd - one group 10 points better, the average point margin it buys,
+## shared out among the robots in the group). "Best buy" spends by these.
+const WIN_WEIGHT := {"QB": 1.0, "RB": 1.0, "WR": 1.0, "TE": 1.0, "OL": 1.0, "DL": 1.0, "LB": 1.0, "CB": 1.0, "S": 1.0}
+
+
+## Spend for a coach's plan: "" the efficient buy, "win" the best buy, else one group.
+static func _spend(starters: Dictionary, specials: Dictionary, focus: String, budget: int) -> int:
+	if focus == "":
+		return value_upgrades(starters, specials, budget)
+	if focus == "win":
+		return value_upgrades(starters, specials, budget, WIN_WEIGHT)
+	return _focus_on(starters, specials, focus, budget)
+
+
+## "Best buy" is the same search with each robot's gain weighted by WIN_WEIGHT.
+static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: int, weights: Dictionary = {}) -> int:
 	var robots: Array = []
 	for s in starters:
 		if not (starters[s] as Dictionary).is_empty():
 			robots.append(starters[s])
-	for s in specials:
-		if not (specials[s] as Dictionary).is_empty():
-			robots.append(specials[s])
 	var left := budget
 	for guard in 300:
 		var best := {}
 		var best_k := ""
+		var best_tier := ""
 		var best_p := 0
 		var best_r := 0.0
 		for r in robots:
-			var w := float(VALUE_WEIGHT.get(String(r.get("group", "")), 1.0))
 			var parts := Robot.ensure_parts(r)
+			var before := _ovr_f(r)
+			var w := float(weights.get(String(r.get("group", "")), 1.0)) if not weights.is_empty() else 1.0
 			for k in Robot.PARTS:
-				var nt := next_tier(r, k)
-				if nt == "":
-					continue
-				var pr := upgrade_price(k, nt)
-				if pr > left:
-					continue
-				var before := _ovr_f(r)
 				var keep: Dictionary = parts[k]
-				parts[k] = {"tier": nt, "hp": Robot.TIER_HP[nt]}
-				var gain := (_ovr_f(r) - before) * w
+				var cost := 0
+				for step in 4:
+					var nt := next_tier(r, k)
+					if nt == "":
+						break
+					cost += upgrade_price(k, nt)
+					if cost > left:
+						break
+					parts[k] = {"tier": nt, "hp": Robot.TIER_HP[nt]}
+					var ratio := (_ovr_f(r) - before) * w / float(cost)
+					if ratio > best_r:
+						best_r = ratio
+						best = r
+						best_k = k
+						best_tier = nt
+						best_p = cost
 				parts[k] = keep
-				var ratio := gain / float(pr)
-				if ratio > best_r:
-					best_r = ratio
-					best = r
-					best_k = k
-					best_p = pr
 		if best.is_empty():
 			break
-		var tier := next_tier(best, best_k)
-		Robot.ensure_parts(best)[best_k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
+		Robot.ensure_parts(best)[best_k] = {"tier": best_tier, "hp": Robot.TIER_HP[best_tier]}
 		left -= best_p
 	return budget - left
 
@@ -1023,7 +1041,7 @@ static func coach_spend(t: int, purse: bool, reserve := 400, focus := "", seed :
 	if seed != 0:
 		rng = RandomNumberGenerator.new()
 		rng.seed = seed            # the same draw coach_plan showed
-	var spent := value_upgrades(team(t)["starters"], special(t), budget) if focus == "" else focus_upgrades(t, focus, budget)
+	var spent := _spend(team(t)["starters"], special(t), focus, budget)
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))
@@ -1263,7 +1281,7 @@ static func new_exhibition() -> void:
 	data["exhibition"]["teams"][1]["defense"] = _random_defense()
 	var was := String(data.get("mode", "season"))
 	data["mode"] = "exhibition"
-	coach_spend(1, true, 0)
+	coach_spend(1, true, 0, "win")
 	data["mode"] = was
 	save()
 
