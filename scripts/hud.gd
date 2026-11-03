@@ -1638,9 +1638,23 @@ func open_next() -> void:
 		_section(box, "Last week")
 		for ln in results.slice(maxi(results.size() - 2, 0)):
 			box.add_child(_label(String(ln), fs - 1, Color(0.85, 0.9, 0.95)))
+	var potw: Dictionary = sn.get("potw", {})
+	if not potw.is_empty():
+		_section(box, "Players of the week")
+		for side in ["off", "def"]:
+			if potw.has(side):
+				var b: Dictionary = potw[side]
+				box.add_child(_label("%s: %s %s (%s) - %s" % ["Offense" if side == "off" else "Defense", b["slot"], b["name"], b["team"], Career.stat_line(b["stats"], side)], fs - 1, YELLOW if String(b["team"]) == String(me["name"]) else Color(0.85, 0.9, 0.95)))
 	_section(box, "Standings")
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
+	if not (sn.get("tally", {}) as Dictionary).is_empty():
+		_section(box, "Season leaders")
+		for side in ["off", "def"]:
+			var i := 0
+			for row in Career.season_leaders(side):
+				i += 1
+				box.add_child(_label("%s %d. %s %s (%s) - %s" % ["Offense" if side == "off" else "Defense", i, row["slot"], row["name"], row["team"], Career.stat_line(row["stats"], side)], fs - 2, YELLOW if String(row["team"]) == String(me["name"]) else Color(0.8, 0.85, 0.9)))
 	_section(box, "Scouting report")
 	_report_lines(box, Analysis.pregame(me, opp))
 	_section(box, "This week's opponent")

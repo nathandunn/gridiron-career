@@ -1525,6 +1525,7 @@ static func finish_week(g: Game) -> Array:
 	var lines: Array = []
 	var opp: Dictionary = team(1)
 	var wk := int(sn["week"])
+	var games: Array = [[g, data["teams"][0], opp]]
 	if wk > WEEKS:
 		# the championship game: no draws - a tie goes to overtime
 		var mine: int = g.score[0]
@@ -1538,6 +1539,8 @@ static func finish_week(g: Game) -> Array:
 		sn["champion"] = String(data["teams"][0]["name"]) if mine > theirs else String(opp["name"])
 		sn["results"].append("Championship: %s %d - %d %s%s" % [data["teams"][0]["name"], g.score[0], g.score[1], opp["name"], ot])
 		lines.append("CHAMPIONS: %s%s!" % [sn["champion"], ot])
+		lines.append_array(_awards(games, "Championship game"))
+		lines.append_array(season_award_lines())
 		sn["week"] = wk + 1
 		restock()
 		save()
@@ -1560,6 +1563,7 @@ static func finish_week(g: Game) -> Array:
 		tb["roster"] = b["starters"]
 		tb["bench"] = b["bench"]
 		var og := Batch.play_game(ta, tb, g.qlen, randi())
+		games.append([og, a, b])
 		_record(a["rec"], og.score[0], og.score[1])
 		_record(b["rec"], og.score[1], og.score[0])
 		for side in 2:
@@ -1577,6 +1581,7 @@ static func finish_week(g: Game) -> Array:
 		var line := "Week %d: %s %d - %d %s" % [wk, a["name"], og.score[0], og.score[1], b["name"]]
 		sn["results"].append(line)
 		lines.append("Elsewhere: %s %d - %d %s" % [a["name"], og.score[0], og.score[1], b["name"]])
+	lines.append_array(_awards(games, "Week %d" % wk))
 	sn["week"] = wk + 1
 	restock()
 	if wk == WEEKS:
@@ -1610,12 +1615,115 @@ static func finish_week(g: Game) -> Array:
 			sn["champion"] = String(ca["name"]) if sa > sb else String(cb["name"])
 			sn["results"].append("Championship: %s %d - %d %s%s" % [ca["name"], og.score[0], og.score[1], cb["name"], ot])
 			lines.append("You missed the championship game. %s %d - %d %s%s: CHAMPIONS %s" % [ca["name"], og.score[0], og.score[1], cb["name"], ot, sn["champion"]])
+			lines.append_array(_awards([[og, ca, cb]], "Championship game"))
+			lines.append_array(season_award_lines())
 			sn["week"] = WEEKS + 2
 	else:
 		_set_opponent()
 		lines.append("Next week: %s (%s)" % [opponent_name(), _rec_text(team(1)["rec"])])
 	save()
 	return lines
+
+
+## ---- players of the week and of the season -------------------------------------------------------
+## Points for a player's game: yards, touchdowns and takeaways, less what he gave away.
+static func _off_pts(d: Dictionary) -> float:
+	# a passer's yards and touchdowns count a little less than the catcher's, but he has all of them
+	return float(d["pyd"]) * 0.05 + float(d["ptd"]) * 5.0 - float(d["int"]) * 2.5 - float(d["sk"]) * 0.5 \
+		+ float(d["ryd"]) * 0.1 + float(d["rtd"]) * 6.0 + float(d["rec"]) * 0.3 + float(d["recyd"]) * 0.07 \
+		+ float(d["rectd"]) * 5.0 - float(d["fum"]) * 2.0
+
+
+static func _def_pts(d: Dictionary) -> float:
+	return float(d["tkl"]) + float(d["sack"]) * 4.0 + float(d["dint"]) * 5.0 + float(d["pbu"]) * 1.5 \
+		+ float(d["ff"]) * 3.0 + float(d["fr"]) * 2.0 + float(d["dtd"]) * 6.0 - float(d["mt"]) * 0.5
+
+
+## "21/30, 280 pass yds, 3 TD" - the numbers that earned it.
+static func stat_line(d: Dictionary, side: String) -> String:
+	var bits: Array = []
+	if side == "off":
+		if float(d["att"]) > 0:
+			bits.append("%d/%d, %d pass yds" % [int(d["cmp"]), int(d["att"]), int(d["pyd"])])
+			if int(d["ptd"]) > 0: bits.append("%d TD pass%s" % [int(d["ptd"]), "" if int(d["ptd"]) == 1 else "es"])
+			if int(d["int"]) > 0: bits.append("%d INT" % int(d["int"]))
+		if float(d["car"]) > 0:
+			bits.append("%d run%s, %d yds" % [int(d["car"]), "" if int(d["car"]) == 1 else "s", int(d["ryd"])])
+			if int(d["rtd"]) > 0: bits.append("%d rushing TD" % int(d["rtd"]))
+		if float(d["rec"]) > 0:
+			bits.append("%d catch%s, %d yds" % [int(d["rec"]), "" if int(d["rec"]) == 1 else "es", int(d["recyd"])])
+			if int(d["rectd"]) > 0: bits.append("%d TD catch%s" % [int(d["rectd"]), "" if int(d["rectd"]) == 1 else "es"])
+	else:
+		for kv in [["tkl", "tackle"], ["sack", "sack"], ["dint", "interception"], ["pbu", "pass broken up"], ["ff", "forced fumble"], ["fr", "fumble recovery"], ["dtd", "TD"]]:
+			var n := int(d[kv[0]])
+			if n > 0:
+				bits.append("%d %s%s" % [n, kv[1], "" if n == 1 or kv[0] == "pbu" else "s"])
+	return ", ".join(bits)
+
+
+## The week's best on offense and on defense across every game played, added to the season
+## tally. Returns the lines to show.
+static func _awards(games: Array, label: String) -> Array:
+	var sn := season()
+	var tally: Dictionary = sn.get("tally", {})
+	var best := {"off": [], "def": []}
+	for gm in games:
+		var gg: Game = gm[0]
+		for t in 2:
+			var tm: Dictionary = gm[1 + t]
+			for slot in gg.pstats[t]:
+				var r: Dictionary = (tm["starters"] as Dictionary).get(slot, {})
+				if r.is_empty():
+					continue
+				var d: Dictionary = gg.pstats[t][slot]
+				var side := "off" if slot in Play.OFFENSE_SLOTS else "def"
+				var pts := _off_pts(d) if side == "off" else _def_pts(d)
+				var who := {"id": String(r.get("id", "")), "name": String(r["name"]), "slot": String(slot), "team": String(tm["name"]), "side": side, "pts": pts, "stats": d.duplicate()}
+				if best[side].is_empty() or pts > float(best[side]["pts"]):
+					best[side] = who
+				# the season tally: points and stats added up, per robot
+				var key := String(r.get("id", r["name"]))
+				var tl: Dictionary = tally.get(key, {"name": who["name"], "slot": who["slot"], "team": who["team"], "side": side, "pts": 0.0, "games": 0, "stats": {}})
+				tl["pts"] = float(tl["pts"]) + pts
+				tl["games"] = int(tl["games"]) + 1
+				tl["team"] = who["team"]
+				for k in d:
+					tl["stats"][k] = float(tl["stats"].get(k, 0.0)) + float(d[k])
+				tally[key] = tl
+	sn["tally"] = tally
+	var out: Array = []
+	var potw := {}
+	for side in ["off", "def"]:
+		var b: Dictionary = best[side]
+		if b.is_empty():
+			continue
+		potw[side] = b
+		out.append("%s %s player of the week: %s %s (%s) - %s" % [label, "offensive" if side == "off" else "defensive", b["slot"], b["name"], b["team"], stat_line(b["stats"], side)])
+	sn["potw"] = potw
+	return out
+
+
+## The season's best: top three on offense and on defense by points over the season.
+static func season_leaders(side: String, n := 3) -> Array:
+	var rows: Array = []
+	var tally: Dictionary = season().get("tally", {})
+	for k in tally:
+		if String(tally[k]["side"]) == side:
+			rows.append(tally[k])
+	rows.sort_custom(func(a, b): return float(a["pts"]) > float(b["pts"]))
+	return rows.slice(0, n)
+
+
+static func season_award_lines() -> Array:
+	var out: Array = []
+	for side in ["off", "def"]:
+		var top := season_leaders(side)
+		if top.is_empty():
+			continue
+		out.append("SEASON'S BEST %s: %s %s (%s) - %s" % ["OFFENSIVE PLAYER" if side == "off" else "DEFENSIVE PLAYER", top[0]["slot"], top[0]["name"], top[0]["team"], stat_line(top[0]["stats"], side)])
+		for i in range(1, top.size()):
+			out.append("   %d. %s %s (%s) - %s" % [i + 1, top[i]["slot"], top[i]["name"], top[i]["team"], stat_line(top[i]["stats"], side)])
+	return out
 
 
 static func _club_index(name: String) -> int:
