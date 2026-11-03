@@ -110,9 +110,16 @@ class P:
 	var zone_r := 8.0
 	var bitten_until := 0.0
 	var spd_scale := 1.0
+	# heat: running hard builds it, the core's cooling sheds it; too hot and he slows down
+	var heat := 0.0
+	var cool := 0.45
+	var hot_said := false
 
 	func spd() -> float:
-		return float(body["speed"]) * spd_scale
+		return float(body["speed"]) * spd_scale * heat_mult()
+
+	func heat_mult() -> float:
+		return 1.0 - float(PlaySim.K.get("heat_slow", 0.15)) * clampf((heat - float(PlaySim.K.get("heat_max", 3.0))) / 3.0, 0.0, 1.0)
 
 	var robot := {}        # the rated robot playing this slot (empty: the position's equal body)
 
@@ -302,6 +309,7 @@ func _make(s: String, side: int, team: Dictionary, a: Dictionary, i: int) -> P:
 			p.robot = rb
 			# his own position's frame: a receiver filling in on the line is still built like a receiver
 			p.body = Robot.apply(rb, BODY[String(rb.get("group", p.group))].duplicate())
+			p.cool = core_cooling(rb)
 	p.spd_scale = 1.0 + (rng.randf() - 0.5) * 0.06
 	p.brain = (team["brains"] as Dictionary).get(s, null)
 	if p.brain != null:
@@ -2939,8 +2947,30 @@ func _knock_down(p: P, secs: float) -> void:
 
 ## ---- movement --------------------------------------------------------------------------------
 
+## How fast a robot's core sheds heat (per second): a better core runs cooler.
+const CORE_COOL := {"Junk": 0.25, "Stock": 0.45, "Mk II": 0.6, "Mk III": 0.75, "Prototype": 0.95}
+static func core_cooling(rb: Dictionary) -> float:
+	if rb.is_empty():
+		return CORE_COOL["Stock"]
+	if Robot.part_lost(rb, "core"):
+		return CORE_COOL["Junk"]
+	return float(CORE_COOL.get(String(Robot.ensure_parts(rb)["core"]["tier"]), CORE_COOL["Stock"]))
+
+
+## Running hard heats a robot (a full sprint about 1 a second), his core cools him all the time.
+func _heat(p: P) -> void:
+	var top := float(p.body["speed"]) * p.spd_scale
+	var effort := clampf(p.vel.length() / maxf(top, 0.1), 0.0, 1.2)
+	p.heat = maxf(p.heat + (maxf(effort - 0.5, 0.0) * 2.0 - p.cool) * DT, 0.0)
+	if not p.hot_said and p.heat_mult() < 0.95 and p == carrier:
+		p.hot_said = true
+		_say("%s is overheating - slowing down" % p.slot)
+
+
 func _move_all() -> void:
 	for p: P in players:
+		if float(K.get("heat_on", 1.0)) > 0.0:
+			_heat(p)
 		var want: Vector2 = p.mem.get("_want", Vector2.ZERO)
 		if p.down:
 			p.vel = p.vel.move_toward(Vector2.ZERO, 20.0 * DT)

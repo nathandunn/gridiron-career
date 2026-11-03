@@ -208,7 +208,7 @@ const PART_LABEL := {"head": "Head", "core": "Core", "larm": "Left arm", "rarm":
 const TIER_HP := {"Junk": 50, "Stock": 100, "Mk II": 140, "Mk III": 180, "Prototype": 240}
 const PART_HELP := {
 	"head": "Sensors and CPU. Without it: IQ near zero - he only follows his assignment.",
-	"core": "The power plant. Without it he shuts down and can't play.",
+	"core": "The power plant. Without it he shuts down and can't play. A better core runs cooler: he keeps his speed on a long run instead of overheating.",
 	"larm": "Catching, tackling, stiff arms, throwing. Lose one: about half as good. Lose both: hopeless.",
 	"rarm": "Catching, tackling, stiff arms, throwing. Lose one: about half as good. Lose both: hopeless.",
 	"lleg": "Speed and cuts. Lose one: he hops, at under half speed.",
