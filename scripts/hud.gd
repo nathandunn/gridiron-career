@@ -701,7 +701,7 @@ func open_teams(pregame := false) -> void:
 	elif pregame:
 		var ko := _button("Kick off", func():
 			if Career.loaded and not Career.exhibition() and Career.season_over():
-				Career.new_season()
+				Career.next_season()
 			close_overlay(false); main.new_game(true))
 		ko.add_theme_font_size_override("font_size", fs + 4)
 		box.add_child(ko)
@@ -1917,7 +1917,7 @@ func open_menu() -> void:
 	var rec := Career._rec_text(sn.get("you", {"w": 0, "l": 0, "t": 0}))
 	var line := ""
 	if Career.season_over():
-		line = "Season over - champions: %s. Your record %s. Next: a new season with $2,000." % [sn.get("champion", "?"), rec]
+		line = "Season over - champions: %s. Your record %s. Next: a new season - same robots, $5,000 more." % [sn.get("champion", "?"), rec]
 	else:
 		var opp: Dictionary = sn["clubs"][int(sn.get("opp", 0))]
 		line = "%s · %s %s · purse $%d · next: %s (%s)" % [Career.week_label(), you["name"], rec, int(Career.data["money"][0]), opp["name"], Career.schemes_text(opp)]

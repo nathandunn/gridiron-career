@@ -1403,9 +1403,35 @@ static func new_season() -> void:
 	save()
 
 
-## Every season starts level: four new teams drafted the same way (no upgrades fitted), their
-## ratings evened out so each has the same average starter rating, and $5,000 apiece to spend.
+## A career starts level: four new teams drafted the same way (no upgrades fitted), evened out
+## with parts so each has the same average starter rating, and $5,000 apiece to spend. Later
+## seasons keep every club as it is - its robots, parts, damage and purse - and add $5,000.
 const SEASON_MONEY := 5000
+
+
+## The next season: the same four clubs with the same robots (unless traded or scrapped), records
+## cleared, $5,000 more each; the rivals spend theirs before week 1. No levelling.
+static func next_season() -> void:
+	ensure()
+	var sn := season()
+	if sn.is_empty():
+		new_season()
+		return
+	data["last_champion"] = String(sn.get("champion", ""))
+	var clubs: Array = sn["clubs"]
+	data["mode"] = "season"
+	add_money(0, SEASON_MONEY)
+	for c in clubs:
+		c["rec"] = {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}
+		c["money"] = int(c.get("money", 0)) + SEASON_MONEY
+	data["season"] = {"week": 1, "clubs": clubs, "you": {"w": 0, "l": 0, "t": 0, "pf": 0, "pa": 0}, "results": [], "champion": ""}
+	data["mode"] = "season"
+	for ci in clubs.size():
+		data["season"]["opp"] = ci
+		club_ready(1)
+	_set_opponent()
+	restock()
+	save()
 
 
 static func _fresh_season() -> void:

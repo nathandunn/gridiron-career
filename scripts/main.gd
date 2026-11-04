@@ -92,6 +92,16 @@ func _ready() -> void:
 					for k in Robot.PARTS:
 						rb["parts"][k]["hp"] = int(float(Robot.TIER_HP[String(rb["parts"][k]["tier"])]) * f)
 					i += 1
+		if args.has("stars"):
+			# test hook: some robots upgraded to see the stars
+			var j := 0
+			for t in 2:
+				for sl in Career.team(t)["starters"]:
+					var rb2: Dictionary = Career.team(t)["starters"][sl]
+					var tier := "Mk II" if j % 3 == 0 else ("Mk III" if j % 3 == 1 else "Stock")
+					for k in Robot.PARTS:
+						rb2["parts"][k] = {"tier": tier, "hp": Robot.TIER_HP[tier]}
+					j += 1
 		if args.has("wear"):
 			PlaySim.K["wear"] = float(args["wear"])   # more breakage, to see it sooner
 		await get_tree().create_timer(at).timeout
@@ -580,7 +590,7 @@ func new_game(start := true) -> void:
 	if view != null:
 		view.clear_debris()
 	if Career.loaded and not start and not Career.exhibition() and Career.season_over():
-		Career.new_season()     # the season is done: the next one starts now, with $2,000 to spend before kickoff
+		Career.next_season()     # the season is done: the next one starts now, $5,000 more to spend before kickoff
 	if Career.loaded:
 		coaches[1] = Career.opponent_coach()     # this week's rival club (or the exhibition side)
 		defenses[1] = Career.opponent_defense()

@@ -277,12 +277,48 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 	_sticks.visible = yard_line + to_go < 100.0 and not kick
 
 
+## A flat five-point star that always faces the camera (the web font has no star glyph).
+func _star_mesh() -> MeshInstance3D:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pts: Array = []
+	for i in 10:
+		var a := PI / 2.0 + i * PI / 5.0
+		var rr := 0.5 if i % 2 == 0 else 0.2
+		pts.append(Vector3(cos(a) * rr, sin(a) * rr, 0))
+	for i in 10:
+		st.add_vertex(Vector3.ZERO)
+		st.add_vertex(pts[i])
+		st.add_vertex(pts[(i + 1) % 10])
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.no_depth_test = true
+	m.render_priority = 10
+	mi.material_override = m
+	return mi
+
+
 ## The warning over a worn robot's head: "!" (amber) under 50% condition, "!!" (red) under 10%.
 func _warn(p: PlaySim.P, e: Dictionary) -> void:
 	var w: Label3D = e.get("warn")
 	if w == null or p.robot.is_empty():
 		return
+	var star: MeshInstance3D = e.get("star")
 	var c := Robot.condition(p.robot)
+	if star != null and int(e.get("cond_seen", -1)) != int(c[0]):
+		e["cond_seen"] = int(c[0])     # only work the overall out again when he has taken damage
+		var ovr := Robot.overall_if(p.robot, "now")
+		star.visible = ovr > 65
+		if ovr >= 70:
+			star.scale = Vector3.ONE * 1.0
+			(star.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.85, 0.15)
+		else:
+			star.scale = Vector3.ONE * 0.6
+			(star.material_override as StandardMaterial3D).albedo_color = Color(0.92, 0.95, 1.0)
 	var frac := float(c[0]) / maxf(float(c[1]), 1.0)
 	w.visible = frac < 0.5
 	if frac < 0.1:
@@ -331,13 +367,18 @@ func _ensure_player(p: PlaySim.P) -> void:
 	warn.font_size = 72
 	warn.pixel_size = 0.014
 	warn.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	warn.position = Vector3(0, 3.8, 0)
+	warn.position = Vector3(0, 4.25, 0)
 	warn.outline_size = 14
 	warn.no_depth_test = true
 	warn.visible = false
 	root.add_child(warn)
+	# a good robot carries a star: a small white one over 65 overall, a bigger gold one at 70+
+	var star := _star_mesh()
+	star.position = Vector3(0, 3.6, 0)
+	star.visible = false
+	root.add_child(star)
 	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "nodes": r["nodes"],
-		"wheels": r["wheels"], "flames": r["flames"], "label": lab, "warn": warn,
+		"wheels": r["wheels"], "flames": r["flames"], "label": lab, "warn": warn, "star": star,
 		"team": team, "slot": p.slot, "rid": rid,
 		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
 
