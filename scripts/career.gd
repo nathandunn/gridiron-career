@@ -54,6 +54,20 @@ static func _position_ratings() -> void:
 	save()
 
 
+## Saves from before robots were the sum of their parts: every robot's ratings go back to his
+## position's base (plating bought before this cannot be told from his old ratings, so it goes), so
+## the same parts make the same robot on any team.
+static func _parts_only() -> void:
+	if bool(data.get("parts_only", false)):
+		return
+	for r in _all_robots():
+		if not r.has("armor"):
+			r["armor"] = 0
+		Robot.reset_ratings(r)
+	data["parts_only"] = true
+	save()
+
+
 static func ensure() -> void:
 	if loaded:
 		return
@@ -80,6 +94,7 @@ static func ensure() -> void:
 				data["starter_upgrades"] = true
 				save()
 			_position_ratings()
+			_parts_only()
 			_register_names()
 			if not data.has("season"):
 				_season_around_current()      # saves from before seasons: this becomes week 1 of one
@@ -88,7 +103,7 @@ static func ensure() -> void:
 			_give_defenses()
 			return
 	Robot.used_names = {}
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true}
+	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true, "parts_only": true}
 	_fresh_season()
 	save()
 
@@ -395,7 +410,6 @@ static func _make_special(rng: RandomNumberGenerator, t: int, used := {}) -> Dic
 			tries += 1
 		used[n] = true
 		var r := Robot.make(rng, s, n, "t%d-%s%d" % [t, s, rng.randi() % 100000], true)
-		r["ratings"]["leg"] = int(clampf(roundf(rng.randfn(66.0, 12.0)), 35.0, 97.0))
 		out[s] = r
 	return out
 
@@ -1140,7 +1154,8 @@ static func armor_price(robot: Dictionary) -> int:
 static func buy_armor(t: int, robot: Dictionary) -> bool:
 	if Robot.rating(robot, "toughness") >= 99.0 or not spend(t, armor_price(robot)):
 		return false
-	robot["ratings"]["toughness"] = mini(int(Robot.rating(robot, "toughness")) + 5, 99)
+	robot["armor"] = int(robot.get("armor", 0)) + 1
+	Robot.reset_ratings(robot)
 	save()
 	return true
 
@@ -1423,13 +1438,9 @@ static func _team_avg(tm: Dictionary) -> float:
 	return s / maxf(n, 1)
 
 
-static func _shift(r: Dictionary, d: int) -> void:
-	for k in r.get("ratings", {}):
-		r["ratings"][k] = clampi(int(r["ratings"][k]) + d, 15, 99)
-
-
-## Even out the teams' ratings: every robot on a side moves by the same amount so each side's
-## average starter rating comes out the same (the league's average).
+## Even out the teams: robots are the sum of their parts, so the weaker sides are given parts
+## (free, the best value first) until every side's average starter rating is within half a
+## point of the best one's.
 static func equalize_teams(teams: Array) -> void:
 	if teams.is_empty():
 		return
@@ -1437,21 +1448,12 @@ static func equalize_teams(teams: Array) -> void:
 		best_lineup(tm)           # who starts first: then the starters are what gets evened out
 	var target := 0.0
 	for tm in teams:
-		target += _team_avg(tm)
-	target /= teams.size()
+		target = maxf(target, _team_avg(tm))
 	for tm in teams:
-		for pass_i in 6:
-			var gap := target - _team_avg(tm)
-			var bodies: Array = (tm["starters"] as Dictionary).values() + (tm.get("bench", []) as Array) + ((tm.get("special", {}) as Dictionary).values())
-			if absf(gap) >= 0.5:
-				for r in bodies:
-					_shift(r, int(roundf(gap)))
-			else:
-				# the last fraction: nudge a few starters by one each
-				var starters: Array = (tm["starters"] as Dictionary).values()
-				var nudge := int(roundf(gap * starters.size()))
-				for i in mini(absi(nudge), starters.size()):
-					_shift(starters[i], signi(nudge))
+		for guard in 200:
+			if _team_avg(tm) >= target - 0.25:
+				break
+			if value_upgrades(tm["starters"], {}, 400) == 0:
 				break
 
 

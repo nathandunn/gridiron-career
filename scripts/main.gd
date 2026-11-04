@@ -82,6 +82,16 @@ func _ready() -> void:
 			cam.set_view(String(args["view"]))
 		if args.has("speed"):
 			set_speed(float(args["speed"]))
+		if args.has("hurt"):
+			# test hook: wear down some robots on both sides to see the warnings
+			var i := 0
+			for t in 2:
+				for sl in Career.team(t)["starters"]:
+					var rb: Dictionary = Career.team(t)["starters"][sl]
+					var f := 0.3 if i % 3 == 0 else (0.05 if i % 3 == 1 else 1.0)
+					for k in Robot.PARTS:
+						rb["parts"][k]["hp"] = int(float(Robot.TIER_HP[String(rb["parts"][k]["tier"])]) * f)
+					i += 1
 		if args.has("wear"):
 			PlaySim.K["wear"] = float(args["wear"])   # more breakage, to see it sooner
 		await get_tree().create_timer(at).timeout

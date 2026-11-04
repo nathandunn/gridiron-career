@@ -1254,6 +1254,13 @@ func winner() -> int:
 	return 0 if score[0] > score[1] else 1
 
 
+## "Q2 3:12" - the quarter and the time left in it.
+func clock_text() -> String:
+	var c := maxi(int(clock), 0)
+	var q := "Q%d" % quarter if quarter <= 4 else "OT"
+	return "%s %d:%02d" % [q, c / 60, c % 60]
+
+
 func situation() -> String:
 	var side := "own" if yl <= 50.0 else "opp"
 	var line := int(round(yl if yl <= 50.0 else 100.0 - yl))

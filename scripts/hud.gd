@@ -1081,11 +1081,11 @@ func _save_generated(text: String) -> void:
 ## ---- calling your own plays ---------------------------------------------------------------
 
 func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionary = {}) -> void:
-	var title := "%s %s · %s" % [Team.NAMES[team], side, g.situation()]
+	# the clock and the down stay in the title, so they are always on screen while you choose
+	var title := "%s · %s · %s %s" % [g.clock_text(), g.situation(), Team.NAMES[team], side]
 	var box := _open(title)
-	box.add_child(_label("%s %d - %d %s   ·   Q%d %d:%02d.  Pick a play - all made up just now." % [
-		(g.teams[0]["coach"] as Coach).name, g.score[0], g.score[1], (g.teams[1]["coach"] as Coach).name,
-		mini(g.quarter, 4), maxi(int(g.clock), 0) / 60, maxi(int(g.clock), 0) % 60], fs - 2, Color(0.8, 0.82, 0.85)))
+	box.add_child(_label("%s %d - %d %s.  Pick a play - all made up just now." % [
+		(g.teams[0]["coach"] as Coach).name, g.score[0], g.score[1], (g.teams[1]["coach"] as Coach).name], fs - 2, Color(0.8, 0.82, 0.85)))
 	var vp := get_viewport().get_visible_rect().size
 	var inner := minf(vp.x - 16.0, 900.0) - 40.0
 	var cols := 2 if inner < 560.0 else 4
@@ -1246,7 +1246,7 @@ func _punt_cards(g: Game, team: int, cw: float, coach_pick: bool) -> Array:
 func open_audible(g: Game, team: int, side: String, snap: Dictionary, hand: Array, coach: Dictionary) -> void:
 	var mine_key := "off_name" if side == "offense" else "def_name"
 	var theirs_key := "def_name" if side == "offense" else "off_name"
-	var box := _open("Audible? %s" % ("on offense" if side == "offense" else "on defense"))
+	var box := _open("%s · %s · Audible? %s" % [g.clock_text(), g.situation(), "offense" if side == "offense" else "defense"])
 	box.add_child(_label("Time on the play clock: you may check out of your call once, after seeing how they line up.", fs - 1, Color(0.8, 0.83, 0.88)))
 	box.add_child(_label("Your call:  %s" % String(snap[mine_key]), fs + 2, YELLOW))
 	var theirs := String(snap[theirs_key])
@@ -1286,7 +1286,7 @@ func show_audibles(g: Game, list: Array) -> void:
 
 func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 	var tname := String(g.teams[team].get("club", g.teams[team]["name"]))
-	var box := _open(("%s kick off" if kind == "kickoff" else "%s return") % tname)
+	var box := _open("%s · %s" % [g.clock_text(), ("%s kick off" if kind == "kickoff" else "%s return") % tname])
 	var vp := get_viewport().get_visible_rect().size
 	var inner := minf(vp.x - 16.0, 900.0) - 40.0
 	var cols := 2

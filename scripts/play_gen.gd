@@ -408,7 +408,8 @@ static func hand(rng: RandomNumberGenerator, side: String, n: int, to_go := 10.0
 		guard += 1
 		var g: Dictionary = offense(rng) if side == "offense" else defense(rng)
 		var p: Play = g["play"]
-		if not p.errors.is_empty() or seen.has(p.name):
+		# no repeats: not the same name, and not the same play under another name
+		if not p.errors.is_empty() or seen.has(p.name) or seen.has("about:" + p.about):
 			continue
 		if side == "defense":
 			# a spread of shells, not eight versions of one
@@ -426,6 +427,7 @@ static func hand(rng: RandomNumberGenerator, side: String, n: int, to_go := 10.0
 			if is_run:
 				runs += 1
 		seen[p.name] = true
+		seen["about:" + p.about] = true
 		out.append(g)
 	if side == "offense":
 		out.sort_custom(func(a, b): return int(a["play"].kind == "run") > int(b["play"].kind == "run"))

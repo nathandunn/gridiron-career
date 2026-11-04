@@ -269,11 +269,28 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 		_ensure_player(p)
 		_players[p.idx]["root"].visible = true
 		(_players[p.idx]["label"] as Label3D).text = "RET" if kick and p == s.air_target else p.slot
+		_warn(p, _players[p.idx])
 		_prev[p.idx] = p.pos
 		_cur[p.idx] = p.pos
 	_place_line(_los, yard_line)
 	_place_line(_sticks, minf(yard_line + to_go, 100.0))
 	_sticks.visible = yard_line + to_go < 100.0 and not kick
+
+
+## The warning over a worn robot's head: "!" (amber) under 50% condition, "!!" (red) under 10%.
+func _warn(p: PlaySim.P, e: Dictionary) -> void:
+	var w: Label3D = e.get("warn")
+	if w == null or p.robot.is_empty():
+		return
+	var c := Robot.condition(p.robot)
+	var frac := float(c[0]) / maxf(float(c[1]), 1.0)
+	w.visible = frac < 0.5
+	if frac < 0.1:
+		w.text = "!!"
+		w.modulate = Color(1.0, 0.25, 0.2)
+	elif frac < 0.5:
+		w.text = "!"
+		w.modulate = Color(1.0, 0.75, 0.2)
 
 
 func _place_line(mi: MeshInstance3D, offense_yl: float) -> void:
@@ -308,8 +325,19 @@ func _ensure_player(p: PlaySim.P) -> void:
 	lab.no_depth_test = true
 	lab.modulate = NEON[team].lightened(0.4)
 	root.add_child(lab)
+	# a worn robot carries a warning over his head: "!" under half condition, "!!" under a tenth -
+	# yours to fix or swap out, theirs to go after
+	var warn := Label3D.new()
+	warn.font_size = 72
+	warn.pixel_size = 0.014
+	warn.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	warn.position = Vector3(0, 3.8, 0)
+	warn.outline_size = 14
+	warn.no_depth_test = true
+	warn.visible = false
+	root.add_child(warn)
 	_players[key] = {"root": root, "body": r["body"], "legs": r["legs"], "arms": r["arms"], "head": r["head"], "nodes": r["nodes"],
-		"wheels": r["wheels"], "flames": r["flames"], "label": lab,
+		"wheels": r["wheels"], "flames": r["flames"], "label": lab, "warn": warn,
 		"team": team, "slot": p.slot, "rid": rid,
 		"tilt": 0.0, "stride": 0.0, "roll": 0.0, "hop": 0.0, "lunge": 0.0, "arm": [0.0, 0.0], "anim": "", "anim_t": 0.0, "anim_yaw": 0.0, "fall_yaw": INF}
 
@@ -576,6 +604,7 @@ func _process(delta: float) -> void:
 		_gear(p, e, sp, delta)
 		var lab: Label3D = e["label"]
 		lab.modulate = YELLOW if p == sim.carrier else NEON[p.team].lightened(0.4)
+		_warn(p, e)
 	# the ball
 	var bp := sim.ball_pos
 	var h := sim.ball_h

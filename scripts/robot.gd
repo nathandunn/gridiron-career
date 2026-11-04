@@ -23,8 +23,8 @@ const POS_MEAN := {
 	"LB": {"speed": 62, "strength": 68, "toughness": 66, "iq": 62},
 	"CB": {"speed": 78, "strength": 46, "toughness": 54, "iq": 58},
 	"S": {"speed": 70, "strength": 56, "toughness": 60, "iq": 62},
-	"K": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58},
-	"P": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58},
+	"K": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58, "leg": 66},
+	"P": {"speed": 50, "strength": 40, "toughness": 45, "iq": 58, "leg": 66},
 }
 
 
@@ -92,12 +92,9 @@ static func unique_name(rng: RandomNumberGenerator) -> String:
 
 static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String, mixed_parts := false) -> Dictionary:
 	var g: String = Play.SLOT_GROUP.get(slot, slot)
-	var r := {}
-	for k in CORE + (SKILLS[g] as Array):
-		# most robots are about average for their position; a few stand out either way
-		r[k] = int(clampf(roundf(rng.randfn(mean_for(g, k), 12.0)), 20.0, 99.0))
-	# toughness varies the most: some robots are tanks, some are glass
-	r["toughness"] = int(clampf(roundf(rng.randfn(mean_for(g, "toughness"), 18.0)), 15.0, 99.0))
+	# a robot is the sum of his parts: every robot of a position starts from the same ratings
+	# (his position's average) and only his parts, their condition and bought plating change them
+	var r := base_ratings(g)
 	var robot := {"id": id, "name": unique_name(rng),
 		"number": number, "slot": slot, "group": g, "ratings": r}
 	ensure_parts(robot)
@@ -108,6 +105,22 @@ static func make(rng: RandomNumberGenerator, slot: String, number: int, id: Stri
 			var tier := "Junk" if roll < 0.15 else ("Stock" if roll < 0.85 else ("Mk II" if roll < 0.97 else "Mk III"))
 			robot["parts"][k] = {"tier": tier, "hp": TIER_HP[tier]}
 	return robot
+
+
+## The ratings every robot of a position has before his parts: the position's averages.
+static func base_ratings(g: String) -> Dictionary:
+	var r := {}
+	for k in CORE + (SKILLS[g] as Array):
+		r[k] = int(roundf(mean_for(g, k)))
+	return r
+
+
+## Put a robot's ratings back to his position's base, plus any armour plating he carries.
+static func reset_ratings(robot: Dictionary) -> void:
+	var g := String(robot["group"])
+	var r := base_ratings(g)
+	r["toughness"] = mini(int(r.get("toughness", 60)) + 5 * int(robot.get("armor", 0)), 99)
+	robot["ratings"] = r
 
 
 static func keys(robot: Dictionary) -> Array:
