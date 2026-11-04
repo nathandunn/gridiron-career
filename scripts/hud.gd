@@ -519,6 +519,7 @@ func _refresh_nav() -> void:
 var _back_buttons: Array = []   # extra "Back" buttons on a panel that should read like Close
 var slips: Array = []        # the last game's pay slips, for the final box score
 var season_lines: Array = [] # the week's other results, next opponent, champion
+var game_stars: Dictionary = {}   # players of the game just finished (worked out at the final whistle)
 
 
 func close_overlay(follow_back := true) -> void:
@@ -1346,6 +1347,35 @@ var _stats_tab := "report"
 
 
 ## mode: "quarter" (a break - Continue goes on), "final", or "live" (just a look).
+## On the final screen: players of the game, of the week (every game this week), and at the end
+## of a season the season's awards - near the top, so nobody has to scroll for them.
+func _award_sections(box: Container, g: Game) -> void:
+	if not Career.loaded:
+		return
+	var mine := String(Career.team(0)["name"])
+	var row_label := func(head: String, b: Dictionary, side: String) -> void:
+		box.add_child(_label("%s: %s %s (%s) - %s" % [head, b["slot"], b["name"], b["team"], Career.stat_line(b["stats"], side)], fs - 1, YELLOW if String(b["team"]) == mine else Color(0.88, 0.92, 1.0)))
+	var gs: Dictionary = game_stars if not game_stars.is_empty() else Career.game_stars(g)
+	if not (gs["off"] as Dictionary).is_empty() or not (gs["def"] as Dictionary).is_empty():
+		_section(box, "Players of the game")
+		for side in ["off", "def"]:
+			if not (gs[side] as Dictionary).is_empty():
+				row_label.call("Offense" if side == "off" else "Defense", gs[side], side)
+	if Career.exhibition():
+		return
+	var sn := Career.season()
+	var potw: Dictionary = sn.get("potw", {})
+	if not potw.is_empty():
+		_section(box, "Players of the week" if not String(sn.get("potw_label", "")).begins_with("Championship") else "Players of the championship game")
+		for side in ["off", "def"]:
+			if potw.has(side):
+				row_label.call("Offense" if side == "off" else "Defense", potw[side], side)
+	if Career.season_over():
+		_section(box, "Season awards")
+		for aw in Career.season_awards():
+			row_label.call(String(aw[0]), aw[1], String(aw[1]["side"]))
+
+
 func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()) -> void:
 	_stats_mode = mode
 	_stats_snap = snap
@@ -1375,6 +1405,8 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		var w := g.winner()
 		box.add_child(_label("Tie game" if w < 0 else "%s win" % names[w], fs + 3, MAGENTA))
 	_line_score(box, names, line, score)
+	if mode == "final":
+		_award_sections(box, g)
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
 	box.add_child(tabs)
@@ -1648,7 +1680,12 @@ func open_next() -> void:
 	_section(box, "Standings")
 	for r in Career.standings():
 		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
-	if not (sn.get("tally", {}) as Dictionary).is_empty():
+	if Career.season_over() and not (sn.get("tally", {}) as Dictionary).is_empty():
+		_section(box, "Season awards")
+		for aw in Career.season_awards():
+			var row2: Dictionary = aw[1]
+			box.add_child(_label("%s: %s %s (%s) - %s" % [aw[0], row2["slot"], row2["name"], row2["team"], Career.stat_line(row2["stats"], String(row2["side"]))], fs - 1, YELLOW if String(row2["team"]) == String(me["name"]) else Color(0.85, 0.9, 0.95)))
+	elif not (sn.get("tally", {}) as Dictionary).is_empty():
 		_section(box, "Season leaders")
 		for side in ["off", "def"]:
 			var i := 0

@@ -587,6 +587,7 @@ func reopen_panel() -> Callable:
 func new_game(start := true) -> void:
 	hud.slips = []
 	hud.season_lines = []
+	hud.game_stars = {}
 	if view != null:
 		view.clear_debris()
 	if Career.loaded and not start and not Career.exhibition() and Career.season_over():
@@ -1100,9 +1101,11 @@ func _next() -> void:
 		if Career.loaded and _phase != "over":
 			if Career.exhibition():
 				hud.slips = []                    # an exhibition pays nobody
+				hud.game_stars = Career.game_stars(game)
 				hud.season_lines = ["Exhibition: no pay, nothing carries over."]
 			else:
 				hud.slips = Career.pay_game(game)     # the final whistle pays both sides
+				hud.game_stars = Career.game_stars(game)   # before the week moves on to the next opponent
 				hud.season_lines = Career.finish_week(game)
 		if _phase != "over":
 			Ux.ev("final", {"score": game.score, "mode": Career.mode() if Career.loaded else "quick"})
