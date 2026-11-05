@@ -7,7 +7,7 @@ func _init() -> void:
 	var still_tied := 0
 	for i in 40:
 		var g := Batch.play_game(Team.build(0, "Balanced"), Team.build(1, "Balanced"), 90.0, 4000 + i)
-		if g.quarter <= 4 and (g.line[0] as Array).size() == 4:
+		if (g.line[0] as Array).size() == 4:
 			continue
 		ot += 1
 		var ot0: int = g.line[0][4]

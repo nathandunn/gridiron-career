@@ -303,7 +303,8 @@ func _star_mesh() -> MeshInstance3D:
 	return mi
 
 
-## The warning over a worn robot's head: "!" (amber) under 50% condition, "!!" (red) under 10%.
+## The warning over a worn robot's head: "!" (amber) when a part is under 50%, "!!" (red) when one
+## is under 10% or already off. Also his star: white at 65+, gold at 70+.
 func _warn(p: PlaySim.P, e: Dictionary) -> void:
 	var w: Label3D = e.get("warn")
 	if w == null or p.robot.is_empty():
@@ -313,14 +314,19 @@ func _warn(p: PlaySim.P, e: Dictionary) -> void:
 	if star != null and int(e.get("cond_seen", -1)) != int(c[0]):
 		e["cond_seen"] = int(c[0])     # only work the overall out again when he has taken damage
 		var ovr := Robot.overall_if(p.robot, "now")
-		star.visible = ovr > 65
+		star.visible = ovr >= 65
 		if ovr >= 70:
 			star.scale = Vector3.ONE * 1.0
 			(star.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.85, 0.15)
 		else:
 			star.scale = Vector3.ONE * 0.6
 			(star.material_override as StandardMaterial3D).albedo_color = Color(0.92, 0.95, 1.0)
-	var frac := float(c[0]) / maxf(float(c[1]), 1.0)
+	# each part breaks on its own when it runs out, so the warning goes by his weakest part (a part
+	# already off counts as 0)
+	var frac := 1.0
+	for k in Robot.PARTS:
+		var pt: Dictionary = Robot.ensure_parts(p.robot)[k]
+		frac = minf(frac, maxf(float(pt["hp"]), 0.0) / maxf(float(Robot.TIER_HP.get(String(pt["tier"]), 100)), 1.0))
 	w.visible = frac < 0.5
 	if frac < 0.1:
 		w.text = "!!"
@@ -362,7 +368,7 @@ func _ensure_player(p: PlaySim.P) -> void:
 	lab.no_depth_test = true
 	lab.modulate = NEON[team].lightened(0.4)
 	root.add_child(lab)
-	# a worn robot carries a warning over his head: "!" under half condition, "!!" under a tenth -
+	# a worn robot carries a warning over his head: "!" when a part is under half, "!!" under a tenth or off -
 	# yours to fix or swap out, theirs to go after
 	var warn := Label3D.new()
 	warn.font_size = 72
@@ -373,7 +379,7 @@ func _ensure_player(p: PlaySim.P) -> void:
 	warn.no_depth_test = true
 	warn.visible = false
 	root.add_child(warn)
-	# a good robot carries a star: a small white one over 65 overall, a bigger gold one at 70+
+	# a good robot carries a star: a small white one at 65+ overall, a bigger gold one at 70+
 	var star := _star_mesh()
 	star.position = Vector3(0, 3.6, 0)
 	star.visible = false
