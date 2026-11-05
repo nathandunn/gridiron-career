@@ -519,7 +519,8 @@ func _refresh_nav() -> void:
 var _back_buttons: Array = []   # extra "Back" buttons on a panel that should read like Close
 var slips: Array = []        # the last game's pay slips, for the final box score
 var season_lines: Array = [] # the week's other results, next opponent, champion
-var game_stars: Dictionary = {}   # players of the game just finished (worked out at the final whistle)
+var game_stars: Dictionary = {}
+var _tbl_narrow := false     # player tables on a phone: smaller type, rating under the name   # players of the game just finished (worked out at the final whistle)
 
 
 func close_overlay(follow_back := true) -> void:
@@ -1516,6 +1517,7 @@ func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
 func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, track: Dictionary = {}) -> void:
 	var v := func(slot: String, k: String) -> float: return float(ps[slot][k]) / float(per)
 	var fmt := func(x: float) -> String: return str(int(round(x))) if per == 1 else "%.1f" % x
+	_tbl_narrow = get_viewport().get_visible_rect().size.x < 520.0
 	var who := func(slot: String) -> String:
 		# the robot himself: number and name (and his position)
 		var rb: Dictionary = (team.get("roster", {}) as Dictionary).get(slot, {})
@@ -1524,7 +1526,8 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 			var parts := nm.split(" ")
 			var short := ("%s. %s" % [parts[0].substr(0, 1), " ".join(parts.slice(1))]) if parts.size() > 1 else nm
 			if per == 1:
-				return "%s (%s)  %s" % [short, slot, ovr_change_text(rb, track)[0]]
+				# on a phone his rating goes under his name, so the numbers keep their room
+				return "%s (%s)%s%s" % [short, slot, "\n   " if _tbl_narrow else "  ", ovr_change_text(rb, track)[0]]
 			return "%s (%s)" % [short, slot]
 		var b: Brain = (team.get("brains", {}) as Dictionary).get(slot, null)
 		return slot if b == null else "%s %s" % [slot, b.name.split(" ")[0]]
@@ -1549,23 +1552,24 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 		_section(box, tb[0])
 		var grid := GridContainer.new()
 		grid.columns = 1 + (tb[1] as Array).size()      # the name, then one column per stat
-		grid.add_theme_constant_override("h_separation", 12)
+		grid.add_theme_constant_override("h_separation", 7 if _tbl_narrow else 12)
 		grid.add_theme_constant_override("v_separation", 2)
 		box.add_child(grid)
-		var hl := _label("", fs - 2)
+		var tf := fs - (3 if _tbl_narrow else 2)
+		var hl := _label("", tf)
 		grid.add_child(hl)
 		for h in tb[1]:
-			var l := _label(h, fs - 2, CYAN)
+			var l := _label(h, tf, CYAN)
 			l.autowrap_mode = TextServer.AUTOWRAP_OFF
 			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			grid.add_child(l)
 		for sl in slots:
-			var nl := _label(who.call(sl), fs - 2, Color(0.85, 0.9, 1))
+			var nl := _label(who.call(sl), tf, Color(0.85, 0.9, 1))
 			nl.autowrap_mode = TextServer.AUTOWRAP_OFF
 			nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(nl)
 			for cell in tb[3].call(sl):
-				var l := _label(String(cell), fs - 2)
+				var l := _label(String(cell), tf)
 				l.autowrap_mode = TextServer.AUTOWRAP_OFF
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 				grid.add_child(l)
