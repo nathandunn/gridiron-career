@@ -523,6 +523,16 @@ func make_sim() -> PlaySim:
 		if dfn.has("roster"):
 			dfn = dfn.duplicate()
 			dfn["roster"] = _special_unit(1 - poss, "cover", {})
+	if pending.has("fg"):
+		# the field goal unit: the kicker lines up in the back's spot, the quarterback holds
+		var kr := _specialist(poss, "K")
+		if off.has("roster") and not kr.is_empty():
+			off = off.duplicate()
+			off["roster"] = (off["roster"] as Dictionary).duplicate()
+			off["roster"]["RB"] = kr
+		sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
+		sim.start_fg(float(pending["fg"]["p"]))
+		return sim
 	ctx["set_edge"] = bool(pending.get("set_edge", false))
 	ctx["kickoff"] = pending.has("return") and String(pending["return"].get("kind", "")) == "kickoff"
 	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
@@ -965,39 +975,51 @@ func fg_chance(t: int, dist: float) -> float:
 	return clampf(p, 0.03, 0.97)
 
 
+## A field goal is played out: the line-up, the snap and hold, the rush and the kick (PlaySim
+## start_fg). This sets it up as the next snap; _finish_fg scores it.
 func _field_goal() -> Dictionary:
+	var fgp := PlayGen.field_goal(rng)
+	ball_x = clampf(ball_x, -HASH, HASH)
+	pending = {"kind": "play", "fg": {"kicker": poss, "dist": fg_distance(), "p": fg_chance(poss, fg_distance())},
+		"off": fgp["off"], "def": fgp["def"], "off_name": "Field goal (%d yards)" % int(round(fg_distance())), "def_name": "Field goal block",
+		"off_text": "", "def_text": ""}
+	return pending
+
+
+func _finish_fg(sim: PlaySim) -> Dictionary:
+	var r: Dictionary = sim.result
+	var fd: Dictionary = pending["fg"]
 	var kicker := poss
 	var k := _specialist(kicker, "K")
 	var who := _who(k, String(offense()["name"]) + "'s kicker")
-	var dist := fg_distance()
-	var st: Dictionary = stats[poss]
+	var dist := float(fd["dist"])
+	var st: Dictionary = stats[kicker]
 	st["fg_att"] = int(st.get("fg_att", 0)) + 1
-	var text := ""
-	var kick_yl := yl
-	var roll := rng.randf()
-	if roll < 0.025:
-		text = "%s's %d-yard field goal is BLOCKED!" % [who, int(round(dist))]
-		drive["result"] = "missed FG"
-		_take_over(maxf(yl - 7.0, 1.0))
-	elif roll < 0.025 + fg_chance(kicker, dist) * 0.975:
+	plays_run += 1
+	var e := {"kind": "play", "team": kicker, "off": "Field goal", "def": "Field goal block", "gain": 0.0, "why": String(r["why"]),
+		"down": down, "to_go": to_go, "yl": yl, "fg": String(r.get("fg", ""))}
+	_tick(float(r["t"]), true)
+	var res := String(r.get("fg", "miss"))
+	if res == "good":
 		st["fg"] = int(st.get("fg", 0)) + 1
-		_pts(kicker, 3)
 		drive["result"] = "FG"
-		text = "%s's %d-yard field goal is GOOD - 3 points!" % [who, int(round(dist))]
-		_tick(5.0, true)
-		text += " " + _kickoff(1 - kicker)
-		var e0 := {"kind": "fg", "good": true, "text": text, "kicker": kicker, "kick_yl": kick_yl, "how": "good"}
-		_log_play(e0)
-		return e0
+		e["text"] = "%s's %d-yard field goal is GOOD - 3 points!" % [who, int(round(dist))]
+		_pts(kicker, 3)
+		if not over:
+			e["text"] += " " + _kickoff(1 - kicker)
 	else:
-		var how: String = ["wide left", "wide right", "short"][rng.randi() % 3] if dist < fg_range(kicker) else ["short", "short", "wide right"][rng.randi() % 3]
-		text = "%s's %d-yard field goal is no good - %s." % [who, int(round(dist)), how]
 		drive["result"] = "missed FG"
+		if res == "blocked":
+			var by := String(r["stat"].get("fg_blocked_by", ""))
+			e["text"] = "%s's %d-yard field goal is BLOCKED%s!" % [who, int(round(dist)), (" by " + by) if by != "" else ""]
+			if by != "":
+				_add(1 - kicker, by, "pbu")
+				stats[1 - kicker]["pbu"] = int(stats[1 - kicker].get("pbu", 0)) + 1
+		else:
+			e["text"] = "%s's %d-yard field goal is no good - %s." % [who, int(round(dist)), String(r.get("fg_how", "wide"))]
 		# a miss: the other side takes over at the spot of the kick (their own 20 at worst)
 		_take_over(minf(yl - 7.0, 80.0))
 	ball_x = 0.0
-	_tick(5.0, true)
-	var e := {"kind": "fg", "good": false, "text": text, "kicker": kicker, "kick_yl": kick_yl, "how": text}
 	_log_play(e)
 	return e
 
@@ -1051,6 +1073,8 @@ func finish(sim: PlaySim) -> Dictionary:
 		broken.append({"team": p.team, "slot": p.slot, "name": String(p.robot.get("name", p.slot)), "part": pl["part"], "q": quarter, "id": String(p.robot.get("id", ""))})
 	if pending.has("return"):
 		return _finish_return(sim)
+	if pending.has("fg"):
+		return _finish_fg(sim)
 	var op: Play = pending["off"]
 	var dp: Play = pending["def"]
 	var team := poss
@@ -1341,9 +1365,14 @@ func winner() -> int:
 
 
 ## "Q2 3:12" - the quarter and the time left in it.
+## Did this game go to overtime (an OT period was added to the line score)?
+func in_ot() -> bool:
+	return (line[0] as Array).size() > 4
+
+
 func clock_text() -> String:
 	var c := maxi(int(clock), 0)
-	var q := "Q%d" % quarter if quarter <= 4 else "OT"
+	var q := "OT" if in_ot() else "Q%d" % mini(quarter, 4)
 	return "%s %d:%02d" % [q, c / 60, c % 60]
 
 

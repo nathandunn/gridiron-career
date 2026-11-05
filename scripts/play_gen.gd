@@ -384,6 +384,30 @@ static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, c
 	return {"off": off["play"], "def": dfn["play"]}
 
 
+## A field goal: the line and two wings shoulder to shoulder, the holder seven yards back, the
+## kicker behind him; the defense lines up across and comes after the kick.
+static func field_goal(rng: RandomNumberGenerator) -> Dictionary:
+	var lines: Array[String] = ["formation shotgun"]
+	var spots := {"LT": Vector2(-2.6, -0.8), "LG": Vector2(-1.3, -0.8), "C": Vector2(0.0, -0.8), "RG": Vector2(1.3, -0.8),
+		"RT": Vector2(2.6, -0.8), "TE": Vector2(-3.9, -0.9), "WR3": Vector2(3.9, -0.9), "WR1": Vector2(-4.9, -1.7),
+		"WR2": Vector2(4.9, -1.7), "QB": Vector2(0.0, -7.0), "RB": Vector2(-1.6, -9.6)}
+	for sl in spots:
+		lines.append("%s at %s %s" % [sl, _f(spots[sl].x), _f(spots[sl].y)])
+	lines.append("kind pass")
+	for sl in spots:
+		lines.append("%s: block" % sl)
+	var off := _finish("Field goal", "offense", "Field goal: the line and wings protect, the holder takes the snap", lines)
+	var dl: Array[String] = ["kind blitz", "front off"]
+	var xs := {"DE1": -3.4, "DT1": -1.0, "DT2": 1.0, "DE2": 3.4, "OLB1": -5.4, "MLB": 0.0, "OLB2": 5.4,
+		"CB1": -7.0, "CB2": 7.0, "FS": -2.2, "SS": 2.2}
+	for sl in xs:
+		var y := 1.0 if sl in ["DE1", "DT1", "DT2", "DE2", "CB1", "CB2", "OLB1", "OLB2"] else 2.6
+		dl.append("%s: blitz" % sl)
+		dl.append("%s at %s %s" % [sl, _f(float(xs[sl]) + rng.randf_range(-0.3, 0.3)), _f(y)])
+	var dfn := _finish("Field goal block", "defense", "Everybody comes after the kick", dl)
+	return {"off": off["play"], "def": dfn["play"]}
+
+
 static func _finish(name: String, side: String, about: String, lines: Array[String]) -> Dictionary:
 	var text := "play \"%s\"\nabout \"%s\"\nside %s\n%s\n" % [name, about, side, "\n".join(lines)]
 	var p := Play.parse(text)

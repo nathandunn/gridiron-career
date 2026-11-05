@@ -224,7 +224,7 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	actions.append({"t": t, "kind": "part_off", "a": v.idx, "b": by.idx, "pos": v.pos, "part": pick})
 	_say("%s's %s comes off!" % [v.slot, String(Robot.PART_LABEL[pick]).to_lower()])
 	var keep_scale := v.spd_scale
-	v.body = Robot.apply(v.robot, BODY[String(v.robot.get("group", v.group))].duplicate())
+	v.body = Robot.apply(v.robot, (BODY.get(String(v.robot.get("group", v.group)), BODY[v.group]) as Dictionary).duplicate())
 	v.spd_scale = keep_scale
 	if pick == "core":
 		_knock_down(v, 99.0)
@@ -308,7 +308,8 @@ func _make(s: String, side: int, team: Dictionary, a: Dictionary, i: int) -> P:
 		if not rb.is_empty():
 			p.robot = rb
 			# his own position's frame: a receiver filling in on the line is still built like a receiver
-			p.body = Robot.apply(rb, BODY[String(rb.get("group", p.group))].duplicate())
+			# (a kicker or punter filling in - the field goal unit - plays with a back's frame)
+			p.body = Robot.apply(rb, (BODY.get(String(rb.get("group", p.group)), BODY[p.group]) as Dictionary).duplicate())
 			p.cool = core_cooling(rb)
 	p.spd_scale = 1.0 + (rng.randf() - 0.5) * 0.06
 	p.brain = (team["brains"] as Dictionary).get(s, null)
@@ -547,6 +548,103 @@ func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void
 			air["contain_r"] = e.idx
 	_say("the kick is away")
 	_fx("kick", null, qb, qb.pos)
+
+
+## A field goal: the snap goes back to the holder seven yards behind the line; the protection
+## holds up the rush while the kicker steps into it. When the ball is down and kicked, a rusher
+## who has got to the spot in front of the holder may block it; otherwise it flies at the posts,
+## good with chance `p_make` (less with a rusher in his face). The play ends with the kick:
+## result why "fg_good", "fg_miss" or "fg_blocked".
+var fg := {}
+func start_fg(p_make: float) -> void:
+	snapped = true
+	carrier = null
+	ball_state = "fg"
+	var holder: P = by_slot["o:QB"]
+	fg = {"p": p_make, "kick_t": t + 1.35, "spot": holder.pos + Vector2(0, 0.6)}
+	air = {"kick": true, "fg": true}
+	ball_pos = holder.pos
+	ball_h = 0.3
+	_say("the snap, the hold...")
+
+
+## Everybody on a field goal: the protection holds its ground between the rushers and the spot,
+## the holder and kicker stay put, the rush goes for the spot.
+func _drive_fg(p: P) -> void:
+	var kp: Vector2 = fg["spot"]
+	if p.side == 0:
+		if p.slot == "QB":
+			_set_want(p, Vector2.ZERO)
+		elif p.slot == "RB":
+			# the kicker steps up into the kick
+			var go: bool = t > float(fg["kick_t"]) - 0.6
+			_toward(p, kp + Vector2(-0.4, -0.9), 0.45 if go else 0.0, 0.0)
+		elif p.engaged == null:
+			var tgt := p.block_target
+			if tgt != null:
+				_toward(p, tgt.pos + (kp - tgt.pos).normalized() * 0.9, 1.0, 0.3)
+			else:
+				_set_want(p, Vector2.ZERO)
+		return
+	if p.engaged != null:
+		return
+	# the rush: straight at the spot, the edge men curling in from outside
+	_toward(p, kp + Vector2(0, 0.8), 1.0, 0.0)
+
+
+## The moment of the kick: a rusher at the spot gets a hand on it, or it is away.
+func _kick_fg() -> void:
+	var kp: Vector2 = fg["spot"]
+	var best: P = null
+	var bd := 99.0
+	for e: P in dfn:
+		if e.down or e.engaged != null:
+			continue
+		var d := e.pos.distance_to(kp)
+		if d < bd:
+			bd = d
+			best = e
+	var p_block := 0.01
+	if best != null and bd < float(K.get("fg_block_r", 2.0)):
+		p_block += (1.0 - bd / float(K.get("fg_block_r", 2.0))) * 0.75 * (0.6 + 0.6 * float(best.body.get("agility", 0.5)))
+	if best != null and rng.randf() < p_block:
+		stat["fg_blocked_by"] = best.slot
+		stat["pbu_by"] = best.slot
+		_say("BLOCKED by %s!" % best.slot)
+		_fx("pbu", best, null, kp)
+		ball_pos = kp
+		_end("fg_blocked", kp)
+		return
+	# a rusher in his face hurries him
+	var p := float(fg["p"]) * clampf(0.82 + 0.06 * bd, 0.82, 1.0)
+	var good := rng.randf() < p
+	var post_y := to_goal + 10.0
+	var to := Vector2(0.0, post_y)
+	var end_h := 5.2
+	var how := "good"
+	if not good:
+		var roll := rng.randf()
+		if roll < 0.4:
+			to = Vector2(-4.6, post_y)
+			how = "wide left"
+			end_h = 4.6
+		elif roll < 0.8:
+			to = Vector2(4.6, post_y)
+			how = "wide right"
+			end_h = 4.6
+		else:
+			to = Vector2(0.0, post_y - 6.0)
+			how = "short"
+			end_h = 0.2
+	fg["good"] = good
+	fg["how"] = how
+	var dist := kp.distance_to(to)
+	ball_state = "air"
+	air = {"from": kp, "to": to, "t0": t, "T": clampf(0.6 + dist / 30.0, 0.9, 2.4), "lob": true, "dist": dist, "kick": true,
+		"fg": true, "end_h": end_h}
+	air_target = null
+	_say("the kick is up...")
+	_fx("kick", by_slot["o:RB"], null, to)
 
 
 ## A squib or an onside kick: driven into the turf from `from`, the ball bounces and skitters
@@ -1545,6 +1643,9 @@ func _drive(p: P) -> void:
 			return
 	var want := Vector2.ZERO
 	var frac := 1.0
+	if ball_state == "fg" or (ball_state == "air" and air.get("fg", false)):
+		_drive_fg(p)
+		return
 	if ball_state == "dead":
 		p.mem["_want"] = Vector2.ZERO
 		return
@@ -2117,6 +2218,7 @@ func _steer(p: P) -> Vector2:
 		var h := Vector2(sin(a), cos(a) * dir)
 		var prog := h.y * dir
 		var risk := 0.0
+		var shield: bool = air.get("kick", false) and p.side == 0 and float(K.get("ret_shield", 1.0)) > 0.0
 		for e: P in _enemies(p):
 			if e.down:
 				continue
@@ -2125,7 +2227,12 @@ func _steer(p: P) -> Vector2:
 				var cp: Vector2 = p.pos + h * p.spd() * tau
 				var reach: float = e.spd() * tau * 0.9 + TACKLE_R
 				var m: float = cp.distance_to(e.pos) - reach
-				risk += w * exp(-maxf(m, -2.0) * 0.9) * (1.6 - tau * 0.6) * 0.25
+				var we := w
+				# a kick returner reads his blocks: a tackler with one of his men in the way (on the
+				# line from where he'd be to the tackler) is much less of a threat that way
+				if shield and e.engaged == null and _screened(cp, e):
+					we *= float(K.get("ret_shield_w", 0.35))
+				risk += we * exp(-maxf(m, -2.0) * 0.9) * (1.6 - tau * 0.6) * 0.25
 		var end: Vector2 = p.pos + h * p.spd() * 1.2
 		var oob := absf(end.x) > SIDELINE - 0.5
 		var s := prog * (2.2 + 0.6 * (1.0 - vision)) - risk * (0.25 + 0.45 * vision) * float(K["evade"])
@@ -2182,6 +2289,26 @@ func _lead_spot(p: P) -> Vector2:
 	if n == 0:
 		return Vector2.INF
 	return sum / n - Vector2(0, dir * 1.2)
+
+
+## Is there one of the returner's men between spot `cp` and tackler `e` - near the line between
+## them and nearer the tackler - to get in his way?
+func _screened(cp: Vector2, e: P) -> bool:
+	var seg := e.pos - cp
+	var L := seg.length()
+	if L < 1.0:
+		return false
+	var u := seg / L
+	for b: P in off:
+		if b.down or b == carrier or b.engaged != null:
+			continue
+		var rel := b.pos - cp
+		var along := rel.dot(u)
+		if along < 0.6 or along > L - 0.2:
+			continue
+		if absf(rel.cross(u)) < 1.1:
+			return true
+	return false
 
 
 ## Blocking: the target is picked by _assign_blocks; here we close on him.
@@ -3065,6 +3192,19 @@ func _move_all() -> void:
 ## ---- the ball --------------------------------------------------------------------------------
 
 func _ball() -> void:
+	if ball_state == "fg":
+		ball_pos = by_slot["o:QB"].pos + Vector2(0, 0.6)
+		ball_h = 0.3
+		if t >= float(fg["kick_t"]):
+			_kick_fg()
+		return
+	if ball_state == "air" and air.get("fg", false):
+		var u := clampf((t - float(air["t0"])) / float(air["T"]), 0.0, 1.0)
+		ball_pos = (air["from"] as Vector2).lerp(air["to"], u)
+		ball_h = 0.3 + (float(air["end_h"]) - 0.3) * u + 4.0 * (2.5 + float(air["dist"]) * 0.1) * u * (1.0 - u)
+		if u >= 1.0:
+			_end("fg_good" if bool(fg.get("good", false)) else "fg_miss", air["to"])
+		return
 	match ball_state:
 		"held":
 			if carrier != null:
@@ -3470,6 +3610,9 @@ func _end(why: String, spot: Vector2) -> void:
 		"incomplete": why in ["incomplete", "broken up", "batted down"], "pass": thrown, "sack": why == "sack"}
 	if why == "td" and c != null and c.side == 1:
 		r["def_td"] = true
+	if why.begins_with("fg_"):
+		r["fg"] = why.substr(3)
+		r["fg_how"] = String(fg.get("how", "blocked"))
 	# a safety: the offense's carrier brought down in his own end zone
 	# (not on a kick: a kick downed in the end zone, or a returner brought down in it, is a touchback)
 	if c != null and c.side == 0 and spot.y <= -own_goal and why != "td" and not air.get("kick", false):

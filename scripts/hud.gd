@@ -250,7 +250,7 @@ func show_state(g: Game) -> void:
 			cn = cn.split(" ")[-1]          # a phone: "Sparks", not "Sprocket City Sparks"
 		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
-	_clock.text = ("Final (OT)" if g.quarter > 4 else "Final") if g.over else g.clock_text()
+	_clock.text = ("Final (OT)" if g.in_ot() else "Final") if g.over else g.clock_text()
 	var badge := (Career.mode_badge().to_upper() + "  ·  ") if Career.loaded else ""
 	_sit.text = badge + ("Final" if g.over else "%s ball · %s" % [g.teams[g.poss].get("club", g.teams[g.poss]["name"]), g.situation()])
 
@@ -1411,7 +1411,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		"final":
 			title = "Final"
 		"live":
-			title = "Box score · %s" % ("OT" if g.quarter > 4 else "Q%d" % g.quarter)
+			title = "Box score · %s" % ("OT" if g.in_ot() else "Q%d" % mini(g.quarter, 4))
 	var box := _open(title)
 	_back = back
 	if back.is_valid():
@@ -1548,7 +1548,7 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 		slots.sort_custom(func(a, b): return float(ps[a][key]) > float(ps[b][key]))
 		_section(box, tb[0])
 		var grid := GridContainer.new()
-		grid.columns = 6
+		grid.columns = 1 + (tb[1] as Array).size()      # the name, then one column per stat
 		grid.add_theme_constant_override("h_separation", 12)
 		grid.add_theme_constant_override("v_separation", 2)
 		box.add_child(grid)
@@ -1603,10 +1603,10 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		return
 	_section(box, "Condition")
 	box.add_child(_label("OVR at kickoff - damage + repairs = now (a part knocked off costs overall; junk spares cost a little). Then each part's wear: at 100% it comes off.", fs - 3, Color(0.75, 0.8, 0.85)))
-	var grid := GridContainer.new()
-	grid.columns = 3
-	grid.add_theme_constant_override("h_separation", 12)
-	grid.add_theme_constant_override("v_separation", 2)
+	# one robot to a line - his name and overall - with his parts' wear wrapped underneath, so a
+	# long list of wear never pushes the panel off a phone screen
+	var grid := VBoxContainer.new()
+	grid.add_theme_constant_override("separation", 2)
 	box.add_child(grid)
 	var rows: Array = []
 	for slot in roster:
@@ -1630,7 +1630,7 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		if main.game != null:
 			show_stats(main.game, _stats_mode, _stats_snap, _back), true)
 	ft.button_pressed = _cond_all
-	box.add_child(ft)
+	box.add_child(_wrap_button(ft))
 	for row in rows:
 		var r: Dictionary = row[1]
 		if r.is_empty():
@@ -1638,15 +1638,19 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		var nm := String(r.get("name", ""))
 		var bits := nm.split(" ")
 		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
+		var line := HBoxContainer.new()
+		line.add_theme_constant_override("separation", 12)
+		grid.add_child(line)
 		var nl := _label("%s (%s)" % [short, row[0]], fs - 2, Color(0.85, 0.9, 1))
 		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		grid.add_child(nl)
+		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line.add_child(nl)
 		var oc := ovr_change_text(r, track)
 		var o_txt: String = oc[0]
 		var hit: bool = oc[1]
 		var ol := _label(o_txt, fs - 2, Color(1.0, 0.55, 0.5) if hit else Color(0.85, 0.88, 0.92))
 		ol.autowrap_mode = TextServer.AUTOWRAP_OFF
-		grid.add_child(ol)
+		line.add_child(ol)
 		var worn: Array = []
 		var parts := Robot.ensure_parts(r)
 		for k in Robot.PARTS:
@@ -1657,7 +1661,8 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 				worn.append("%s OFF" % String(Robot.PART_LABEL[k]).to_lower())
 			elif hp < mx - 0.5:
 				worn.append("%s %d%%" % [String(Robot.PART_LABEL[k]).to_lower(), int(roundf(100.0 * (1.0 - hp / mx)))])
-		var dl := _label(", ".join(worn) if not worn.is_empty() else "unmarked", fs - 2, YELLOW if not worn.is_empty() else Color(0.6, 0.65, 0.7))
+		var dl := _label("   " + (", ".join(worn) if not worn.is_empty() else "unmarked"), fs - 3, YELLOW if not worn.is_empty() else Color(0.6, 0.65, 0.7))
+		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		dl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		grid.add_child(dl)
 

@@ -760,6 +760,9 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	var other: String = Team.NAMES[1 - poss_before]
 	var st: Dictionary = r.get("stat", {})
 	var scored: int = game.score[0] + game.score[1] - score_before[0] - score_before[1]
+	if r.has("fg"):
+		hud.toast({"good": "FIELD GOAL IS GOOD!", "blocked": "BLOCKED!"}.get(String(r["fg"]), "NO GOOD!\n" + String(r.get("fg_how", "")).to_upper()), 2.4)
+		return
 	if r.get("def_td", false):
 		hud.toast("PICK SIX!\n%s score" % other if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s score" % other, 2.4)
 	elif r.get("safety", false):
@@ -1077,7 +1080,7 @@ static func _clock_txt(c: float) -> String:
 
 ## The running numbers while it sims: score, clock and each side's running and passing.
 func _sim_line() -> String:
-	var parts: Array = ["Simulating to the end - %s %s" % ["OT" if game.quarter > 4 else "Q%d" % game.quarter, _clock_txt(game.clock)]]
+	var parts: Array = ["Simulating to the end - %s %s" % ["OT" if game.in_ot() else "Q%d" % mini(game.quarter, 4), _clock_txt(game.clock)]]
 	for t in 2:
 		var st: Dictionary = game.stats[t]
 		var nm: String = game.teams[t].get("club", Team.NAMES[t])
@@ -1148,7 +1151,7 @@ func _next() -> void:
 	var poss_before := game.poss
 	var snap := game.next_snap(_choice)
 	_choice = {}
-	_aud_ready = snap["kind"] == "play" and not snap.has("return") and _offer_audible(snap)
+	_aud_ready = snap["kind"] == "play" and not snap.has("return") and not snap.has("fg") and _offer_audible(snap)
 	if snap["kind"] != "play":
 		hud.show_call("")
 		hud.show_result(String(snap.get("text", "")))
