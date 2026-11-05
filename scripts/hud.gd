@@ -250,7 +250,7 @@ func show_state(g: Game) -> void:
 			cn = cn.split(" ")[-1]          # a phone: "Sparks", not "Sprocket City Sparks"
 		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
 	var s := maxi(int(g.clock), 0)
-	_clock.text = "Final" if g.over else "Q%d %d:%02d" % [g.quarter, s / 60, s % 60]
+	_clock.text = ("Final (OT)" if g.quarter > 4 else "Final") if g.over else g.clock_text()
 	var badge := (Career.mode_badge().to_upper() + "  ·  ") if Career.loaded else ""
 	_sit.text = badge + ("Final" if g.over else "%s ball · %s" % [g.teams[g.poss].get("club", g.teams[g.poss]["name"]), g.situation()])
 
@@ -1401,7 +1401,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		"final":
 			title = "Final"
 		"live":
-			title = "Box score · Q%d" % mini(g.quarter, 4)
+			title = "Box score · %s" % ("OT" if g.quarter > 4 else "Q%d" % g.quarter)
 	var box := _open(title)
 	_back = back
 	if back.is_valid():
@@ -1478,10 +1478,11 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 
 func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
 	var grid := GridContainer.new()
-	grid.columns = 6
+	var nq: int = mini((line[0] as Array).size(), 5)
+	grid.columns = 2 + nq
 	grid.add_theme_constant_override("h_separation", 14)
 	box.add_child(grid)
-	for h in ["", "1", "2", "3", "4", "T"]:
+	for h in (["", "1", "2", "3", "4", "OT", "T"] if nq == 5 else ["", "1", "2", "3", "4", "T"]):
 		var l := _label(h, fs - 1, CYAN)
 		l.autowrap_mode = TextServer.AUTOWRAP_OFF
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -1490,7 +1491,7 @@ func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
 		var nl := _label(names[t], fs, FieldView.COLORS[t].lightened(0.4))
 		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
 		grid.add_child(nl)
-		for q in 4:
+		for q in nq:
 			var l := _label(str(line[t][q]), fs)
 			l.autowrap_mode = TextServer.AUTOWRAP_OFF
 			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

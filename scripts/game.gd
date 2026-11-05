@@ -1296,10 +1296,18 @@ func _player_stats(sim: PlaySim, off_t: int, gain: float) -> void:
 
 func _pts(t: int, n: int) -> void:
 	score[t] += n
-	line[t][clampi(quarter, 1, 4) - 1] += n
+	line[t][clampi(quarter, 1, line[t].size()) - 1] += n
+	if quarter > 4 and not over:
+		# sudden death: the first score in overtime wins it
+		over = true
+		drive["result"] = drive.get("result", "") if drive.get("result", "") != "" else "score"
+		drives.append(drive)
+		_say("%s win it in overtime! Final: %s %d, %s %d" % [teams[t]["name"], teams[0]["name"], score[0], teams[1]["name"], score[1]])
 
 
 func _tick(secs: float, _stops: bool) -> void:
+	if over:
+		return
 	var st: Dictionary = stats[poss]
 	st["top"] = float(st["top"]) + minf(secs, clock)
 	clock -= secs
@@ -1312,6 +1320,12 @@ func _tick(secs: float, _stops: bool) -> void:
 			# second half: the other side receives
 			_kickoff(1 - opened)
 			_say("Second half. %s receive." % teams[poss]["name"])
+		elif quarter == 5 and score[0] == score[1]:
+			# tied after four: sudden-death overtime - a coin toss, a kickoff, next score wins
+			for t in 2:
+				line[t].append(0)
+			_kickoff(rng.randi() % 2)
+			_say("Tied at the end of regulation: OVERTIME. Sudden death - %s win the toss and receive; the next score wins." % teams[poss]["name"])
 		elif quarter > 4:
 			over = true
 			drive["result"] = drive.get("result", "") if drive.get("result", "") != "" else "end of game"

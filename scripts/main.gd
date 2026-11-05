@@ -1077,7 +1077,7 @@ static func _clock_txt(c: float) -> String:
 
 ## The running numbers while it sims: score, clock and each side's running and passing.
 func _sim_line() -> String:
-	var parts: Array = ["Simulating to the end - Q%d %s" % [mini(game.quarter, 4), _clock_txt(game.clock)]]
+	var parts: Array = ["Simulating to the end - %s %s" % ["OT" if game.quarter > 4 else "Q%d" % game.quarter, _clock_txt(game.clock)]]
 	for t in 2:
 		var st: Dictionary = game.stats[t]
 		var nm: String = game.teams[t].get("club", Team.NAMES[t])
