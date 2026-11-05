@@ -85,7 +85,7 @@ func setup(red: Dictionary, blue: Dictionary, quarter_secs: float, seed_v: int) 
 	rng.seed = seed_v
 	for t in 2:
 		stats[t] = {"plays": 0, "pass_att": 0, "comp": 0, "pass_yds": 0.0, "rush_att": 0, "rush_yds": 0.0,
-			"sacks": 0, "sack_yds": 0.0, "ints": 0, "fumbles": 0, "td": 0, "fg": 0, "fg_att": 0, "punts": 0,
+			"sacks": 0, "sack_yds": 0.0, "ints": 0, "fumbles": 0, "td": 0, "fg": 0, "fg_att": 0, "pbu": 0, "bats": 0, "punts": 0,
 			"first_downs": 0, "third_att": 0, "third_conv": 0, "fourth_att": 0, "fourth_conv": 0, "yards": 0.0,
 			"top": 0.0, "explosive": 0, "turnovers": 0}
 	opened = rng.randi() % 2
@@ -1205,7 +1205,7 @@ func _advance_down(gain: float, goal_to_go := false) -> void:
 
 ## The player box score.
 const PSTAT_KEYS := ["cmp", "att", "pyd", "ptd", "int", "sk", "skyd", "car", "ryd", "rtd", "rlong",
-	"tgt", "rec", "recyd", "rectd", "reclong", "tkl", "sack", "dint", "pbu", "ff", "fr", "mt", "dtd", "fum"]
+	"tgt", "rec", "recyd", "rectd", "reclong", "tkl", "sack", "dint", "pbu", "bat", "ff", "fr", "mt", "dtd", "fum"]
 
 
 func _ps(t: int, slot: String) -> Dictionary:
@@ -1281,6 +1281,10 @@ func _player_stats(sim: PlaySim, off_t: int, gain: float) -> void:
 		_add(def_t if offense_carrier else off_t, String(st["tackler"]), "tkl")
 	if st.has("pbu_by"):
 		_add(def_t, String(st["pbu_by"]), "pbu")
+		stats[def_t]["pbu"] = int(stats[def_t].get("pbu", 0)) + 1
+	if st.has("batted_by"):
+		_add(def_t, String(st["batted_by"]), "bat")
+		stats[def_t]["bats"] = int(stats[def_t].get("bats", 0)) + 1
 	if st.has("ff_by"):
 		_add(def_t, String(st["ff_by"]), "ff")
 	if st.has("fr_by"):
@@ -1359,8 +1363,8 @@ func _describe(sim: PlaySim, op: Play, dp: Play, gain: float) -> String:
 	var s := ""
 	var who := String(r["carrier"])
 	match String(r["why"]):
-		"incomplete", "broken up":
-			s = "Pass incomplete" + (" (broken up)" if r["why"] == "broken up" else "")
+		"incomplete", "broken up", "batted down":
+			s = "Pass incomplete" + (" (%s by %s)" % [r["why"], String(r["stat"].get("pbu_by", ""))] if r["why"] != "incomplete" else "")
 		"sack":
 			s = "SACKED for %d" % yd
 		"td":

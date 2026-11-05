@@ -1199,12 +1199,12 @@ func _ball_speed(dist: float) -> float:
 
 
 ## Where the ball would meet the receiver and how long it would fly.
-func _lead(qb: P, r: P) -> Array:
+func _lead(qb: P, r: P, vm := 1.0) -> Array:
 	var c := r.pos
 	var T := 0.3
 	for _i in 3:
 		var dist := qb.pos.distance_to(c)
-		T = 0.18 + dist / _ball_speed(dist) + (0.25 if dist > 28.0 else 0.0)
+		T = 0.18 + dist / (_ball_speed(dist) * vm) + (0.25 if dist > 28.0 and vm <= 1.0 else 0.0)
 		c = _predict(r, T)
 	# never lead him further than he can actually run before the ball gets there (a route that
 	# cuts, or a receiver still speeding up, would otherwise leave the ball landing on nobody)
@@ -1439,6 +1439,21 @@ func _throw(qb: P, r: P) -> bool:
 			break
 	stat["throw_open"] = _open(qb, r)
 	var lc := _lead(qb, r)
+	# a tight window: a bullet gets there before the defender does, but it is harder to catch -
+	# the passer weighs the two (a sharp one reads it right, a dull one guesses)
+	var bullet := false
+	var dist0 := qb.pos.distance_to(lc[0])
+	if dist0 > 6.0 and dist0 < 30.0 and float(K.get("bullet", 1.0)) > 0.0:
+		var bm := 1.25 + 0.15 * float(qb.body.get("arm", QB_ARM))
+		var lb := _lead(qb, r, bm)
+		var w0 := _window(lc[0], float(lc[1]))
+		var w1 := _window(lb[0], float(lb[1]))
+		var keep := _sig(w0)
+		var fire := _sig(w1) * _bullet_catch(r)
+		var qiq := clampf(float(qb.body.get("iq", 1.0)), 0.6, 1.4)
+		if fire + rng.randfn(0.0, 0.12 * (1.45 - qiq)) > keep + 0.03:
+			bullet = true
+			lc = lb
 	var c: Vector2 = lc[0]
 	var T: float = lc[1]
 	var dist := qb.pos.distance_to(c)
@@ -1454,16 +1469,38 @@ func _throw(qb: P, r: P) -> bool:
 	var to := c + err
 	ball_state = "air"
 	thrown = true
-	air = {"from": qb.pos, "to": to, "t0": t, "T": T, "lob": dist > 28.0, "dist": dist, "d0": r.pos.distance_to(to), "spd0": r.spd()}
+	air = {"from": qb.pos, "to": to, "t0": t, "T": T, "lob": dist > 28.0 and not bullet, "dist": dist, "d0": r.pos.distance_to(to), "spd0": r.spd(), "bullet": bullet}
+	if bullet:
+		stat["bullet"] = true
 	air_target = r
 	stat["target"] = r.slot
 	stat["air_y"] = to.y
 	stat["air_dist"] = dist
 	_fx("throw", qb, r, to)
 	_bump("att", qb)
-	_say("%s throws to %s" % [qb.slot, r.slot])
+	_say("%s %s to %s" % [qb.slot, "fires a bullet" if bullet else "throws", r.slot])
 	carrier = null
 	return true
+
+
+## How much room a receiver has where the ball would meet him: yards between the nearest
+## defender and the spot, less what that defender can cover before the ball gets there.
+func _window(c: Vector2, T: float) -> float:
+	var w := 99.0
+	for e: P in dfn:
+		if e.down:
+			continue
+		w = minf(w, e.pos.distance_to(c) - e.spd() * T * 0.9 - REACH)
+	return w
+
+
+func _sig(x: float) -> float:
+	return 1.0 / (1.0 + exp(-x * 1.4))
+
+
+## A bullet comes in hot: good hands hold it, poor hands drop it more.
+func _bullet_catch(r: P) -> float:
+	return clampf(0.66 + 0.3 * float(r.body.get("hands", 0.7)), 0.7, 0.96)
 
 
 var miss_info := {}
@@ -3042,7 +3079,9 @@ func _ball() -> void:
 			var to: Vector2 = air["to"]
 			var u := clampf((t - float(air["t0"])) / float(air["T"]), 0.0, 1.0)
 			ball_pos = from.lerp(to, u)
-			var apex := 2.0 + float(air["dist"]) * (0.18 if air["lob"] else 0.08)
+			var apex := 2.0 + float(air["dist"]) * (0.18 if air["lob"] else (0.03 if air.get("bullet", false) else 0.08))
+			if air.get("bullet", false):
+				apex = 1.0 + float(air["dist"]) * 0.03
 			ball_h = 1.9 + 4.0 * apex * u * (1.0 - u) - 0.6 * u
 			if not air.get("kick", false) and not air.get("away", false) and u > 0.12 and u < 1.0:
 				# the ball meets a defender's body on its way: it can't go on to the receiver
@@ -3142,6 +3181,8 @@ func _arrive() -> void:
 				_incomplete("broken up")
 				return
 		pc *= 1.0 - clampf((float(air.get("dist", 0.0)) - 18.0) * 0.008, 0.0, 0.25)
+		if air.get("bullet", false):
+			pc *= _bullet_catch(best_o)
 		if best_o.manner.get("secure", false):
 			pc *= 1.06
 		if best_o.manner.get("high_point", false) and best_d != null:
@@ -3175,6 +3216,18 @@ func _ball_hits(e: P) -> void:
 		p_int *= 1.3
 	if rng.randf() < p_int:
 		_intercept(e)
+		return
+	# thrown low and right at him: he swats it down to the ground
+	var p_bat := (0.65 if ball_h < 2.0 else 0.3) * (0.6 + 0.6 * float(e.body.get("agility", 0.5)))
+	if air.get("bullet", false):
+		p_bat *= 0.8                  # there and gone
+	if rng.randf() < p_bat:
+		stat["pbu_by"] = e.slot
+		stat["batted_by"] = e.slot
+		_say("batted down by %s" % e.slot)
+		_fx("pbu", e, air_target, ball_pos)
+		air["to"] = ball_pos
+		_incomplete("batted down")
 		return
 	var from: Vector2 = air.get("from", ball_pos)
 	var dir := (ball_pos - from).normalized()
@@ -3414,7 +3467,7 @@ func _end(why: String, spot: Vector2) -> void:
 	var turnover := String(stat.get("turnover", ""))
 	var r := {"why": why, "y": spot.y, "x": spot.x, "t": t, "turnover": turnover, "td": why == "td",
 		"carrier": c.slot if c != null else "", "carrier_side": c.side if c != null else 0, "events": events, "stat": stat,
-		"incomplete": why in ["incomplete", "broken up"], "pass": thrown, "sack": why == "sack"}
+		"incomplete": why in ["incomplete", "broken up", "batted down"], "pass": thrown, "sack": why == "sack"}
 	if why == "td" and c != null and c.side == 1:
 		r["def_td"] = true
 	# a safety: the offense's carrier brought down in his own end zone

@@ -1537,8 +1537,8 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 			func(s): return [fmt.call(v.call(s, "car")), fmt.call(v.call(s, "ryd")), "%.1f" % (float(ps[s]["ryd"]) / maxf(float(ps[s]["car"]), 1.0)), fmt.call(v.call(s, "rtd")), str(int(round(float(ps[s]["rlong"]))))], "ryd"],
 		["Receiving", ["REC/TGT", "YDS", "AVG", "TD", "LNG"], func(s): return v.call(s, "tgt") > 0,
 			func(s): return ["%s/%s" % [fmt.call(v.call(s, "rec")), fmt.call(v.call(s, "tgt"))], fmt.call(v.call(s, "recyd")), "%.1f" % (float(ps[s]["recyd"]) / maxf(float(ps[s]["rec"]), 1.0)), fmt.call(v.call(s, "rectd")), str(int(round(float(ps[s]["reclong"]))))], "recyd"],
-		["Defense", ["TKL", "SK", "INT", "PBU", "FF"], func(s): return Play.DEFENSE_SLOTS.has(s) and (v.call(s, "tkl") + v.call(s, "sack") + v.call(s, "dint") + v.call(s, "pbu") + v.call(s, "ff")) > 0,
-			func(s): return [fmt.call(v.call(s, "tkl")), fmt.call(v.call(s, "sack")), fmt.call(v.call(s, "dint")), fmt.call(v.call(s, "pbu")), fmt.call(v.call(s, "ff"))], "tkl"],
+		["Defense", ["TKL", "SK", "INT", "PBU", "BAT", "FF"], func(s): return Play.DEFENSE_SLOTS.has(s) and (v.call(s, "tkl") + v.call(s, "sack") + v.call(s, "dint") + v.call(s, "pbu") + v.call(s, "ff")) > 0,
+			func(s): return [fmt.call(v.call(s, "tkl")), fmt.call(v.call(s, "sack")), fmt.call(v.call(s, "dint")), fmt.call(v.call(s, "pbu")), fmt.call(v.call(s, "bat")), fmt.call(v.call(s, "ff"))], "tkl"],
 	]
 	for tb in tables:
 		var slots: Array = ps.keys().filter(tb[2])
@@ -1854,6 +1854,8 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 	rows.append(["Returns (yds)", "%.1f (%.0f)" % [f.call(0, "returns"), f.call(0, "ret_yds")], "%.1f (%.0f)" % [f.call(1, "returns"), f.call(1, "ret_yds")]])
 	rows.append(["3rd down", _rate(stats[0], "third_conv", "third_att"), _rate(stats[1], "third_conv", "third_att")])
 	rows.append(["Big plays (20+)", "%.1f" % f.call(0, "explosive"), "%.1f" % f.call(1, "explosive")])
+	rows.append(["Passes broken up (batted)", "%.1f (%.1f)" % [f.call(0, "pbu"), f.call(0, "bats")], "%.1f (%.1f)" % [f.call(1, "pbu"), f.call(1, "bats")]])
+	rows.append(["Field goals", "%.1f/%.1f" % [f.call(0, "fg"), f.call(0, "fg_att")], "%.1f/%.1f" % [f.call(1, "fg"), f.call(1, "fg_att")]])
 	rows.append(["Punts", "%.1f" % f.call(0, "punts"), "%.1f" % f.call(1, "punts")])
 	rows.remove_at(1)
 	for r in rows:
