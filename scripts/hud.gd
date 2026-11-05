@@ -540,6 +540,16 @@ func close_overlay(follow_back := true) -> void:
 var _sc: DragScroll = null
 
 
+## " · purse $1,240" (and any upgrade credit), for the title of every panel where you can buy.
+func _purse() -> String:
+	if not Career.loaded:
+		return ""
+	var t := " · purse $%d" % Career.money(0)
+	if Career.credit(0) > 0:
+		t += " + $%d credit" % Career.credit(0)
+	return t
+
+
 func _open(title: String) -> VBoxContainer:
 	_prev_crumbs = _crumbs.duplicate() if any_overlay() or not _crumbs.is_empty() else []
 	# the same page again (after a purchase, a repair, a tab): stay where you had scrolled to
@@ -692,7 +702,7 @@ func open_teams(pregame := false) -> void:
 				title = ("Season over" if Career.season_over() else "%s: %s vs %s" % [Career.week_label(), Career.team(0)["name"], Career.team(1)["name"]])
 	if Career.loaded and Career.sim_mode():
 		_teams_side = 0
-	var box := _open(title)
+	var box := _open(title + _purse())
 	var lab := Career.loaded and Career.sim_mode()
 	box.add_child(_label("Set up your coach (the AI that calls the plays), the brains at every position (the AI that plays them) and your robots, then Simulate." if lab else "Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
 	if pregame and lab:
@@ -1664,7 +1674,7 @@ func open_next() -> void:
 	var sn := Career.season()
 	var opp := Career.team(1)
 	var me := Career.team(0)
-	var box := _open("%s: %s vs %s" % [Career.week_label(), me["name"], opp["name"]])
+	var box := _open("%s: %s vs %s%s" % [Career.week_label(), me["name"], opp["name"], _purse()])
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
 	box.add_child(top)
@@ -2101,7 +2111,7 @@ func _report_lines(box: Control, lines: Array) -> void:
 
 ## Any club's players, to look at: their schemes, record, ratings and every robot.
 func open_club(c: Dictionary) -> void:
-	var box := _open("%s players" % c["name"])
+	var box := _open("%s players%s" % [c["name"], _purse()])
 	_back = func(): open_roster()
 	box.add_child(_label("%s · %s%s" % [Career.schemes_text(c), Career.ratings_text(c), ("  ·  record " + Career._rec_text(c["rec"])) if c.has("rec") else ""], fs, CYAN))
 	var starters: Dictionary = c["starters"]
@@ -2160,7 +2170,7 @@ func open_robot(id: String) -> void:
 	var t: int = f["team"]
 	var slot: String = f["slot"]
 	var keep_back := _back        # buying a part reopens the page: keep where Close goes
-	var box := _open("#%d %s" % [int(r["number"]), r["name"]])
+	var box := _open("#%d %s%s" % [int(r["number"]), r["name"], _purse()])
 	_back = keep_back
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 12)
@@ -2381,7 +2391,7 @@ func _sell_section(box: Control, r: Dictionary, id: String) -> void:
 ## Their robots at his position: what each is worth against him, and the deal.
 func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 	var g := String(r.get("group", ""))
-	var box := _open("Trade with %s" % c["name"])
+	var box := _open("Trade with %s%s" % [c["name"], _purse()])
 	_back = func(): open_robot(id)
 	box.add_child(_label("Your %s %s (%s, OVR %d, worth $%d) for one of their %s players. They take the deal if what they get is worth at least what they give; if not, you add the difference in cash." % [g, r["name"], g, Robot.overall_if(r, "now"), Career.robot_price(r), g], fs - 1, Color(0.85, 0.88, 0.92)))
 	var theirs: Array = []
@@ -2411,7 +2421,7 @@ func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
-	var box := _open("Broken robots")
+	var box := _open("Broken robots" + _purse())
 	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Each choice shows what his overall would be; junk spares run $12 (an arm) to $25 (a core).", fs - 2, Color(0.8, 0.83, 0.88)))
 	var top := HFlowContainer.new()
 	top.add_theme_constant_override("h_separation", 6)
@@ -2565,7 +2575,7 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 	var seed := randi() % 1000000 + 1
 	var plan := Career.coach_plan(t, purse, 400, focus, seed)
 	var what := "the credit" if not purse else String(Career.FOCUS[focus]["label"])
-	var box := _open("Coach's plan: %s" % what)
+	var box := _open("Coach's plan: %s%s" % [what, _purse()])
 	var rows: Array = plan["rows"]
 	var cost := int(plan["cost"])
 	var from_credit := mini(Career.credit(t), cost)

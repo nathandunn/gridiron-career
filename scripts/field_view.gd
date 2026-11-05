@@ -269,7 +269,9 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 	for p in s.players:
 		_ensure_player(p)
 		_players[p.idx]["root"].visible = true
-		(_players[p.idx]["label"] as Label3D).text = "RET" if kick and p == s.air_target else p.slot
+		# on kicks the units are lined up by kick-team spot, so each robot shows his own position
+		var own := String(p.robot.get("slot", "")) if not p.robot.is_empty() else ""
+		(_players[p.idx]["label"] as Label3D).text = own if kick and own != "" else p.slot
 		_warn(p, _players[p.idx])
 		_prev[p.idx] = p.pos
 		_cur[p.idx] = p.pos
