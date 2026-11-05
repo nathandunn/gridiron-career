@@ -2218,7 +2218,7 @@ func _steer(p: P) -> Vector2:
 		var h := Vector2(sin(a), cos(a) * dir)
 		var prog := h.y * dir
 		var risk := 0.0
-		var shield: bool = air.get("kick", false) and p.side == 0 and float(K.get("ret_shield", 1.0)) > 0.0
+		var shield: bool = air.get("kick", false) and p.side == 0 and float(K.get("ret_shield", 0.0)) > 0.0
 		for e: P in _enemies(p):
 			if e.down:
 				continue
