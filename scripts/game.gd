@@ -4,9 +4,10 @@ extends RefCounted
 ## score. Plays themselves are PlaySims; the game asks for the next one with next_snap() and is
 ## told how it went with finish(result).
 ##
-## A touchdown is 7 points, a safety 7 to the defense. Kickoffs (start of each half and after a
-## score) and punts are rolled, not played out; no field goals. A turnover - on downs, an
-## interception, a fumble - changes hands where the ball is.
+## A touchdown is 7 points; a safety counts as a touchdown for the defense (7 points). A field
+## goal is 3: its distance, the kicker's leg and accuracy decide it, and a miss gives the ball
+## over at the spot of the kick. A turnover - on downs, an interception, a fumble - changes hands
+## where the ball is.
 
 const HASH := 3.08
 
@@ -287,6 +288,8 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 			od["play"] = Library.plays_for("offense")[0]
 	if String(od["kind"]) == "kneel":
 		return _kneel()
+	if String(od["kind"]) == "field_goal" or (String(od["kind"]) == "punt" and String(od.get("punt", "")) == "field_goal"):
+		return _field_goal()
 	if String(od["kind"]) == "punt":
 		return _punt(String(od.get("punt", "punt")) if PUNTS.has(String(od.get("punt", "punt"))) else "punt")
 	var op: Play = Library.play(od["play"])
@@ -766,7 +769,10 @@ func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictio
 				out["kind"] = "punt"
 				return true
 			"field_goal":
-				return false   # no field goals in this game: the next rule decides
+				if not on_offense or fg_distance() > fg_range(poss) + 3.0:
+					return false     # out of his range: the next rule decides
+				out["kind"] = "field_goal"
+				return true
 			"kneel":
 				if not on_offense:
 					return false
@@ -799,6 +805,8 @@ func coach_suggest(on_offense: bool, hand: Array) -> Dictionary:
 	var d := _coach_call(c, on_offense, team, false)
 	if String(d.get("kind", "")) == "punt":
 		return {"index": -1, "call": "punt", "why": _rule_text(c, on_offense, int(d.get("line", -1)))}
+	if String(d.get("kind", "")) == "field_goal":
+		return {"index": -1, "call": "field_goal", "why": _rule_text(c, on_offense, int(d.get("line", -1)))}
 	var want: Play = Library.play(String(d.get("play", "")))
 	if want == null:
 		return {"index": -1, "call": String(d.get("kind", ""))}
@@ -847,7 +855,7 @@ func _coach_sense(id: String, a: Array, team: int, on_offense: bool) -> bool:
 		"to_go_under": return to_go < float(a[0])
 		"goal_to_go": return yl + to_go >= 100.0
 		"goal_within": return to_goal < float(a[0])
-		"fg_range": return to_goal + 17.0 <= 52.0
+		"fg_range": return fg_distance() <= fg_range(poss)
 		"own_goal_within": return yl < float(a[0])
 		"backed_up": return yl < 10.0
 		"red_zone": return to_goal <= 20.0
@@ -931,6 +939,65 @@ func _punt(kind := "punt") -> Dictionary:
 	ball_x = 0.0
 	_tick(9.0, true)
 	var e := {"kind": "punt", "text": text}
+	_log_play(e)
+	return e
+
+
+## How long a field goal from here is: to the goal line, ten yards of end zone, seven back to
+## the hold.
+func fg_distance() -> float:
+	return 100.0 - yl + 17.0
+
+
+## How far this side's kicker can make a field goal more often than not.
+func fg_range(t: int) -> float:
+	return 47.0 + (_leg(t, "K") - 60.0) * 0.5
+
+
+## The chance this side's kicker makes one from `dist` yards: near certain inside 25, falling off
+## toward his range and beyond it fast; accuracy narrows or widens the miss.
+func fg_chance(t: int, dist: float) -> float:
+	var k := _specialist(t, "K")
+	var acc := Robot.eff(k, "accuracy") if not k.is_empty() else 60.0
+	var rng_y := fg_range(t)
+	var x := maxf(dist - 22.0, 0.0) / maxf(rng_y - 22.0, 1.0)     # 1.0 at the edge of his range
+	var p := 0.97 - 0.32 * pow(x, 2.0) * clampf(1.25 - (acc - 60.0) / 100.0, 0.7, 1.5)
+	return clampf(p, 0.03, 0.97)
+
+
+func _field_goal() -> Dictionary:
+	var kicker := poss
+	var k := _specialist(kicker, "K")
+	var who := _who(k, String(offense()["name"]) + "'s kicker")
+	var dist := fg_distance()
+	var st: Dictionary = stats[poss]
+	st["fg_att"] = int(st.get("fg_att", 0)) + 1
+	var text := ""
+	var kick_yl := yl
+	var roll := rng.randf()
+	if roll < 0.025:
+		text = "%s's %d-yard field goal is BLOCKED!" % [who, int(round(dist))]
+		drive["result"] = "missed FG"
+		_take_over(maxf(yl - 7.0, 1.0))
+	elif roll < 0.025 + fg_chance(kicker, dist) * 0.975:
+		st["fg"] = int(st.get("fg", 0)) + 1
+		_pts(kicker, 3)
+		drive["result"] = "FG"
+		text = "%s's %d-yard field goal is GOOD - 3 points!" % [who, int(round(dist))]
+		_tick(5.0, true)
+		text += " " + _kickoff(1 - kicker)
+		var e0 := {"kind": "fg", "good": true, "text": text, "kicker": kicker, "kick_yl": kick_yl, "how": "good"}
+		_log_play(e0)
+		return e0
+	else:
+		var how: String = ["wide left", "wide right", "short"][rng.randi() % 3] if dist < fg_range(kicker) else ["short", "short", "wide right"][rng.randi() % 3]
+		text = "%s's %d-yard field goal is no good - %s." % [who, int(round(dist)), how]
+		drive["result"] = "missed FG"
+		# a miss: the other side takes over at the spot of the kick (their own 20 at worst)
+		_take_over(minf(yl - 7.0, 80.0))
+	ball_x = 0.0
+	_tick(5.0, true)
+	var e := {"kind": "fg", "good": false, "text": text, "kicker": kicker, "kick_yl": kick_yl, "how": text}
 	_log_play(e)
 	return e
 
@@ -1066,8 +1133,14 @@ func finish(sim: PlaySim) -> Dictionary:
 		else:
 			_take_over(spot_y)
 	elif r.get("safety", false):
+		# a safety counts as a touchdown for the defense: 7 points, a TD in the books, and the
+		# man who brought him down gets the touchdown
 		_pts(1 - team, 7)
-		e["text"] += " SAFETY - 7 points!"
+		stats[1 - team]["td"] = int(stats[1 - team]["td"]) + 1
+		var tk := String(r["stat"].get("tackler", ""))
+		if tk != "":
+			_add(1 - team, tk, "dtd")
+		e["text"] += " SAFETY - a touchdown for the defense, 7 points!"
 		drive["result"] = "safety"
 		_tick(elapsed, true)
 		e["text"] += " " + _kickoff(1 - team)

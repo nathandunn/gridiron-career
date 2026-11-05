@@ -5,6 +5,7 @@ offense:
   when game ending and leading by over 0 and clock under 100 -> kneel
   when fourth down and to go over 4 and not past midfield -> punt
   when to go under 3 -> call the best run
+  when fourth down and in field goal range -> field goal
   when third down or fourth down -> call the best play
   when trailing by over 7 and half ending -> call the best pass
   otherwise -> call the best play

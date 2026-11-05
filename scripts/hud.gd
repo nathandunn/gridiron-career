@@ -1099,6 +1099,8 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	var coach_i := int(coach.get("index", -1))
 	if String(coach.get("call", "")) == "punt":
 		box.add_child(_label("COACH'S PICK: punt it away (his rule: %s)." % String(coach.get("why", "")), fs - 1, MAGENTA))
+	elif String(coach.get("call", "")) == "field_goal":
+		box.add_child(_label("COACH'S PICK: kick the field goal (his rule: %s)." % String(coach.get("why", "")), fs - 1, MAGENTA))
 	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
 	if coach_i >= 0:
 		var gtxt := ""
@@ -1115,6 +1117,11 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	if side == "offense" and g.down == 4:
 		for pc in _punt_cards(g, team, cw, String(coach.get("call", "")) == "punt"):
 			grid.add_child(pc)
+		# in reach of the posts: a field goal, with its length and the kicker's chance
+		if g.fg_distance() <= g.fg_range(team) + 8.0:
+			var kr: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
+			var fsub := "%s · %d yards · about %d%% to make it" % [_who_txt(kr, "Your kicker"), int(round(g.fg_distance())), int(round(g.fg_chance(team, g.fg_distance()) * 97.5))]
+			grid.add_child(_text_card(cw, "Field goal", fsub, String(coach.get("call", "")) == "field_goal", func(): main.pick_made("kick", "field_goal")))
 	for ci in hand.size():
 		var g2: Dictionary = hand[ci]
 		var p: Play = g2["play"]

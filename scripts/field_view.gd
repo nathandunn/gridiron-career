@@ -32,6 +32,7 @@ var _pulse: Array = []       # emissive materials that breathe
 var _seen := 0               # sim.actions already acted out
 var _celeb := {}             # a score being celebrated: {team, spot, t0, pos: {idx: Vector2}}
 var _ball_fx := {}           # a loose or dead ball bouncing: {p0, p1, t0, hop}
+var _fg := {}               # a field goal in the air: {p0, p1, t0, dur, peak}
 var _fx_nodes: Array = []    # popups, sparks, speech: {node, t0, life, kind, ...}
 var _spark_mat: Dictionary = {}
 var talk := true             # robots talk trash
@@ -618,6 +619,17 @@ func _process(delta: float) -> void:
 	for m in _pulse:
 		(m as StandardMaterial3D).emission_energy_multiplier = breathe
 	_tick_fx(delta)
+	if not _fg.is_empty():
+		var u := clampf((_t - float(_fg["t0"])) / float(_fg["dur"]), 0.0, 1.0)
+		var p0: Vector3 = _fg["p0"]
+		var p1: Vector3 = _fg["p1"]
+		_ball.visible = true
+		_ball.position = p0.lerp(p1, u) + Vector3(0, float(_fg["peak"]) * 4.0 * u * (1.0 - u), 0)
+		_ball.rotation.x += delta * 12.0
+		if u >= 1.0 and _t - float(_fg["t0"]) > float(_fg["dur"]) + 0.8:
+			if bool(_fg["good"]):
+				_sparks(p1, 30, Color(1.0, 0.85, 0.2))
+			_fg = {}
 	if sim == null:
 		return
 	for p in sim.players:
@@ -819,6 +831,27 @@ func _act_out(a: Dictionary) -> void:
 				_popup(k, pb)
 				_sparks(world(pb.pos, 1.0), 6, Color(1.0, 0.75, 0.3))
 	moment.emit(a)
+
+
+## A field goal flies: from the hold (seven yards behind the line, `kick_yl` from the kicking
+## side's goal) toward the posts at the back of the end zone - through them if good, wide or
+## short if not.
+func field_goal(kicking: int, kick_yl: float, good: bool, how: String) -> void:
+	var a := kick_yl - 7.0 if kicking == 0 else 100.0 - (kick_yl - 7.0)
+	var p0 := Vector3(0, 0.3, a - 50.0)
+	var zp := 60.0 if kicking == 0 else -60.0
+	var p1 := Vector3(0, 5.2, zp)
+	if not good:
+		if how.find("left") >= 0:
+			p1 = Vector3(-4.6 if kicking == 0 else 4.6, 4.6, zp)
+		elif how.find("right") >= 0:
+			p1 = Vector3(4.6 if kicking == 0 else -4.6, 4.6, zp)
+		elif how.find("BLOCKED") >= 0:
+			p1 = p0 + Vector3(randf_range(-3.0, 3.0), -0.15, 4.0 if kicking == 0 else -4.0)
+		else:
+			p1 = Vector3(0, 0.15, zp - (6.0 if kicking == 0 else -6.0))     # short: down before the posts
+	var dist := absf(p1.z - p0.z)
+	_fg = {"p0": p0, "p1": p1, "t0": _t, "dur": clampf(0.6 + dist / 30.0, 0.8, 2.4), "peak": 2.5 + dist * 0.12, "good": good}
 
 
 ## The scorer celebrates (called when a play ends in a touchdown).

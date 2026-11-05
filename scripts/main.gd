@@ -213,6 +213,19 @@ func _ready() -> void:
 				_choice = {"kick": "punt"}
 				_phase = "after"
 				_next()
+			"fg":
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				for tt in 2:
+					game.teams[tt]["calling"] = "coach"
+				game.teams[game.poss]["calling"] = "pick"
+				game.down = 4
+				game.yl = float(args.get("yl", 70.0))
+				game.to_go = 6.0
+				_choice = {"kick": "field_goal"}
+				_phase = "after"
+				_next()
 			"squib", "onside":
 				# a ground kick under way: --at lands mid-bounce
 				hud.close_overlay(false)
@@ -238,6 +251,7 @@ func _ready() -> void:
 			"fourth":
 				game.down = 4
 				game.to_go = 7.0
+				game.yl = float(args.get("yl", game.yl))
 				_open_picker("offense")
 			"sim2end":
 				hud._stats_tab = String(args.get("tab", "team"))
@@ -748,10 +762,10 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	var scored: int = game.score[0] + game.score[1] - score_before[0] - score_before[1]
 	if r.get("def_td", false):
 		hud.toast("PICK SIX!\n%s score" % other if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s score" % other, 2.4)
+	elif r.get("safety", false):
+		hud.toast("SAFETY!\nA touchdown for %s" % other, 2.4)
 	elif r.get("td", false) or scored >= 6:
 		hud.toast("TOUCHDOWN!\n%s" % who, 2.4)
-	elif r.get("safety", false):
-		hud.toast("SAFETY!\n7 points %s" % other, 2.2)
 	elif String(e.get("text", "")).begins_with("Touchback"):
 		hud.toast("TOUCHBACK", 1.6)
 	elif r.get("turnover", "") == "int":
@@ -1149,6 +1163,11 @@ func _next() -> void:
 		if poss_before != game.poss:
 			_skip_drive = false
 		view.set_play(null, game.poss, game.yl, game.to_go)
+		if snap["kind"] == "fg":
+			# watch it from the kick: the camera stays at the line it was kicked from
+			view.set_play(null, int(snap.get("kicker", 0)), float(snap.get("kick_yl", 70.0)), 0.0)
+			view.field_goal(int(snap.get("kicker", 0)), float(snap.get("kick_yl", 70.0)), bool(snap.get("good", false)), String(snap.get("how", "")))
+			_wait = AFTER * 2.2
 		hud.show_state(game)
 		return
 	_start_snap(snap)
