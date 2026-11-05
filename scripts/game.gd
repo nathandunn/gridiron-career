@@ -4,7 +4,7 @@ extends RefCounted
 ## score. Plays themselves are PlaySims; the game asks for the next one with next_snap() and is
 ## told how it went with finish(result).
 ##
-## A touchdown is 7 points; a safety counts as a touchdown for the defense (7 points). A field
+## A touchdown is 7 points; a safety 2 to the defense, who then receive the kick. A field
 ## goal is 3: its distance, the kicker's leg and accuracy decide it, and a miss gives the ball
 ## over at the spot of the kick. A turnover - on downs, an interception, a fumble - changes hands
 ## where the ball is.
@@ -1133,14 +1133,9 @@ func finish(sim: PlaySim) -> Dictionary:
 		else:
 			_take_over(spot_y)
 	elif r.get("safety", false):
-		# a safety counts as a touchdown for the defense: 7 points, a TD in the books, and the
-		# man who brought him down gets the touchdown
-		_pts(1 - team, 7)
-		stats[1 - team]["td"] = int(stats[1 - team]["td"]) + 1
-		var tk := String(r["stat"].get("tackler", ""))
-		if tk != "":
-			_add(1 - team, tk, "dtd")
-		e["text"] += " SAFETY - a touchdown for the defense, 7 points!"
+		# a safety: 2 points to the defense, and they get the ball back on the kick
+		_pts(1 - team, 2)
+		e["text"] += " SAFETY - 2 points!"
 		drive["result"] = "safety"
 		_tick(elapsed, true)
 		e["text"] += " " + _kickoff(1 - team)

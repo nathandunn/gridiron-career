@@ -763,7 +763,7 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	if r.get("def_td", false):
 		hud.toast("PICK SIX!\n%s score" % other if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s score" % other, 2.4)
 	elif r.get("safety", false):
-		hud.toast("SAFETY!\nA touchdown for %s" % other, 2.4)
+		hud.toast("SAFETY!\n2 points %s" % other, 2.4)
 	elif r.get("td", false) or scored >= 6:
 		hud.toast("TOUCHDOWN!\n%s" % who, 2.4)
 	elif String(e.get("text", "")).begins_with("Touchback"):

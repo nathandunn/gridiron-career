@@ -272,6 +272,8 @@ func set_play(s: PlaySim, possession: int, yard_line: float, to_go: float) -> vo
 		# on kicks the units are lined up by kick-team spot, so each robot shows his own position
 		var own := String(p.robot.get("slot", "")) if not p.robot.is_empty() else ""
 		(_players[p.idx]["label"] as Label3D).text = own if kick and own != "" else p.slot
+		# linemen's tags are hidden at the line of scrimmage (a crowd of them); on a kick everyone shows
+		(_players[p.idx]["label"] as Label3D).visible = kick or not p.group in ["OL", "DL"]
 		_warn(p, _players[p.idx])
 		_prev[p.idx] = p.pos
 		_cur[p.idx] = p.pos
