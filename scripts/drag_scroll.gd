@@ -19,6 +19,7 @@ var _pos := 0.0             # where we have scrolled to, in fractions of a pixel
 
 
 var _held: BaseButton = null   # the button the finger went down on, switched off while we scroll
+static var _front: DragScroll = null   # the panel most recently shown: the arrow keys scroll it
 
 
 func _ready() -> void:
@@ -36,6 +37,9 @@ func _ready() -> void:
 	for st in ["grabber", "grabber_highlight", "grabber_pressed"]:
 		bar.add_theme_stylebox_override(st, grab)
 	bar.add_theme_stylebox_override("scroll", StyleBoxEmpty.new())
+	visibility_changed.connect(func(): if is_visible_in_tree(): _front = self)
+	if is_visible_in_tree():
+		_front = self
 
 
 func _over_text_box(pos: Vector2) -> bool:
@@ -120,6 +124,28 @@ func _release() -> bool:
 
 
 func _input(event: InputEvent) -> void:
+	# the keyboard: up and down arrows, page up and down, home and end scroll the panel in front
+	if event is InputEventKey and event.pressed and is_visible_in_tree():
+		if _front != self and is_instance_valid(_front) and _front.is_visible_in_tree():
+			return
+		var fo := get_viewport().gui_get_focus_owner()
+		if fo is LineEdit or fo is TextEdit:
+			return               # typing: the arrows move the cursor
+		var page := size.y * 0.85
+		var step := 0.0
+		match (event as InputEventKey).keycode:
+			KEY_UP: step = -60.0
+			KEY_DOWN: step = 60.0
+			KEY_PAGEUP: step = -page
+			KEY_PAGEDOWN: step = page
+			KEY_HOME: step = -1e7
+			KEY_END: step = 1e7
+		if step != 0.0:
+			_fling = 0.0
+			_pos = float(scroll_vertical)
+			_scroll_to(_pos + step)
+			get_viewport().set_input_as_handled()
+			return
 	# Phones turn each touch into mouse events as well, so the mouse events are all we follow.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
