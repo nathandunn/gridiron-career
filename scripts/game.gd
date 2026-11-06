@@ -4,7 +4,8 @@ extends RefCounted
 ## score. Plays themselves are PlaySims; the game asks for the next one with next_snap() and is
 ## told how it went with finish(result).
 ##
-## A touchdown is 7 points; a safety 2 to the defense, who then receive the kick. A field
+## A touchdown is 6 points and then the try: an extra-point kick from the 15 for 1, or one
+## play from the 2 for 2. A safety is 2 to the defense, who then receive the kick. A field
 ## goal is 3: its distance, the kicker's leg and accuracy decide it, and a miss gives the ball
 ## over at the spot of the kick. A turnover - on downs, an interception, a fumble - changes hands
 ## where the ball is.
@@ -278,6 +279,8 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 		return _do_kickoff(String(choice.get("kickoff", coach_kick())))
 	if not return_due.is_empty():
 		return _return_snap(String(choice.get("return", coach_return())))
+	if not try_due.is_empty():
+		return _do_try(String(choice.get("try", coach_try())))
 	var oc: Coach = offense()["coach"]
 	var dc: Coach = defense().get("dcoach", defense()["coach"])
 	var od := _coach_call(oc, true, poss)
@@ -523,6 +526,10 @@ func make_sim() -> PlaySim:
 		if dfn.has("roster"):
 			dfn = dfn.duplicate()
 			dfn["roster"] = _special_unit(1 - poss, "cover", {})
+			# the kicker (or the punter) is out there too: he takes the free safety's spot
+			var spec := _specialist(1 - poss, "P" if String(pending["return"].get("kind", "")) == "punt" else "K")
+			if not spec.is_empty() and float(PlaySim.K.get("show_kicker", 1.0)) > 0.0:
+				dfn["roster"]["FS"] = spec
 	if pending.has("fg"):
 		# the field goal unit: the kicker lines up in the back's spot, the quarterback holds
 		var kr := _specialist(poss, "K")
@@ -538,9 +545,15 @@ func make_sim() -> PlaySim:
 	sim.setup(off, dfn, pending["off"], pending["def"], ctx, r)
 	if pending.has("return") and pending["return"].has("ground"):
 		var gd: Dictionary = pending["return"]
+		sim.place_kicker(Vector2(0.0, float(gd["from_y"]) + 1.2))
 		sim.start_ground_kick(Vector2(0.0, float(gd["from_y"])), String(gd["ground"]), float(gd["roll"]), float(gd["aim_x"]))
+	elif pending.has("return") and String(pending["return"].get("kind", "")) == "punt":
+		# a punt is played from the snap: the punter fourteen yards deep, the rush can block it
+		var pd: Dictionary = pending["return"]
+		sim.start_punt(float(pd.get("hang", 3.5)), bool(pd.get("fair", false)), bool(pd.get("low", false)))
 	elif pending.has("return"):
 		var rd: Dictionary = pending["return"]
+		sim.place_kicker(Vector2(0.0, float(rd["from_y"]) + 1.2))
 		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)))
 	return sim
 
@@ -663,6 +676,23 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 	var rd: Dictionary = pending["return"]
 	var team := poss
 	var st: Dictionary = stats[team]
+	if String(r["why"]) == "punt_blocked":
+		# blocked: the ball is the receiving side's where it was blocked
+		var by := String(r["stat"].get("punt_blocked_by", ""))
+		var at := clampf(yl + float(r["y"]), 1.0, 99.0)
+		_tick(float(r["t"]), true)
+		stats[1 - team]["punts"] = int(stats[1 - team]["punts"]) + 1
+		drive["result"] = "blocked punt"
+		if by != "":
+			_add(team, by, "bat")
+		yl = at
+		down = 1
+		to_go = 10.0
+		ball_x = clampf(float(r["x"]), -HASH, HASH)
+		var eb := {"kind": "play", "team": team, "off": "Punt rush", "def": "Punt", "gain": 0.0, "why": "punt_blocked", "return": true,
+			"down": 1, "to_go": 10.0, "yl": at, "text": "PUNT BLOCKED%s! %s ball %s." % [(" by " + by) if by != "" else "", teams[team]["name"], _spot_text(at, team)]}
+		_log_play(eb)
+		return eb
 	var catch_y := float(rd["catch"])
 	var spot := yl + float(r["y"])
 	if rd.has("ground"):
@@ -714,12 +744,11 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		_take_over(clampf(spot, 1.0, 99.0))
 	elif r["td"] or spot >= 100.0:
 		st["td"] = int(st["td"]) + 1
-		_pts(team, 7)
 		drive["result"] = "return TD"
 		e["text"] = "%s: %s takes it ALL THE WAY - TOUCHDOWN! (%d yards)" % [nm, who, int(round(100.0 - catch_y))]
 		r["td"] = true
 		_tick(elapsed, true)
-		e["text"] += " " + _kickoff(1 - team)
+		e["text"] += " " + _touchdown(team)
 	else:
 		yl = clampf(spot, 1.0, 99.0)
 		down = 1
@@ -990,6 +1019,8 @@ func _finish_fg(sim: PlaySim) -> Dictionary:
 	var r: Dictionary = sim.result
 	var fd: Dictionary = pending["fg"]
 	var kicker := poss
+	if try_kind == "kick":
+		return _finish_xp(sim)
 	var k := _specialist(kicker, "K")
 	var who := _who(k, String(offense()["name"]) + "'s kicker")
 	var dist := float(fd["dist"])
@@ -1020,6 +1051,94 @@ func _finish_fg(sim: PlaySim) -> Dictionary:
 		# a miss: the other side takes over at the spot of the kick (their own 20 at worst)
 		_take_over(minf(yl - 7.0, 80.0))
 	ball_x = 0.0
+	_log_play(e)
+	return e
+
+
+## ---- the try ---------------------------------------------------------------------------------
+var try_due := {}        # {"team"}: a touchdown was just scored, the try comes next
+var try_kind := ""       # "kick" or "two" while the try is being played
+
+## Six points, then the try (none in sudden death: the touchdown has won it).
+func _touchdown(t: int) -> String:
+	_pts(t, 6)
+	if over:
+		return ""
+	try_due = {"team": t}
+	poss = t
+	return "Now the try: kick for one or go for two."
+
+
+## The coach's choice for the try: kick it, unless late in the game the chart says two (behind
+## by 2, 5, 9, 10 or 13, or ahead by 1, 4 or 5 after the six).
+const TWO_CHART := [-2, -5, -9, -10, -13, 1, 4, 5]
+func coach_try() -> String:
+	var t := int(try_due.get("team", poss))
+	var diff: int = score[t] - score[1 - t]
+	if quarter >= 4 and diff in TWO_CHART:
+		return "two"
+	return "kick"
+
+
+func _do_try(c: String) -> Dictionary:
+	var t := int(try_due["team"])
+	try_due = {}
+	poss = t
+	ball_x = 0.0
+	if c == "two":
+		try_kind = "two"
+		yl = 98.0
+		down = 1
+		to_go = 2.0
+		var e := {"kind": "try", "team": t, "text": "%s go for two from the 2." % teams[t]["name"]}
+		_log_play(e)
+		return e
+	try_kind = "kick"
+	yl = 85.0        # the ball at the 15: a 32-yard kick
+	down = 4
+	to_go = 15.0
+	return _field_goal()
+
+
+func _finish_xp(sim: PlaySim) -> Dictionary:
+	var r: Dictionary = sim.result
+	var kicker := poss
+	var k := _specialist(kicker, "K")
+	var who := _who(k, String(offense()["name"]) + "'s kicker")
+	var st: Dictionary = stats[kicker]
+	st["xp_att"] = int(st.get("xp_att", 0)) + 1
+	var res := String(r.get("fg", "miss"))
+	var e := {"kind": "play", "team": kicker, "off": "Extra point", "def": "Field goal block", "gain": 0.0, "why": String(r["why"]),
+		"down": down, "to_go": to_go, "yl": yl, "fg": res, "xp": true}
+	try_kind = ""
+	if res == "good":
+		st["xp"] = int(st.get("xp", 0)) + 1
+		_pts(kicker, 1)
+		e["text"] = "%s's extra point is GOOD." % who
+	elif res == "blocked":
+		e["text"] = "%s's extra point is BLOCKED!" % who
+	else:
+		e["text"] = "%s's extra point is no good - %s." % [who, String(r.get("fg_how", "wide"))]
+	if not over:
+		e["text"] += " " + _kickoff(1 - kicker)
+	_log_play(e)
+	return e
+
+
+func _finish_two(e: Dictionary, r: Dictionary, gain: float) -> Dictionary:
+	var t := poss
+	try_kind = ""
+	var made: bool = r["turnover"] == "" and not r["incomplete"] and not r.get("safety", false) and (r["td"] or yl + gain >= 100.0)
+	stats[t]["two_att"] = int(stats[t].get("two_att", 0)) + 1
+	e["two"] = made
+	if made:
+		stats[t]["two"] = int(stats[t].get("two", 0)) + 1
+		_pts(t, 2)
+		e["text"] += " The two-point try is GOOD!"
+	else:
+		e["text"] += " The two-point try fails."
+	if not over:
+		e["text"] += " " + _kickoff(1 - t)
 	_log_play(e)
 	return e
 
@@ -1130,16 +1249,17 @@ func finish(sim: PlaySim) -> Dictionary:
 	if not r["td"] and not r["incomplete"] and r["turnover"] == "" and not r.get("safety", false) and yl + gain >= 100.0:
 		r["td"] = true
 		e["text"] += " Over the line!"
+	if try_kind == "two":
+		return _finish_two(e, r, gain)
 	# the outcome
 	if r.get("def_td", false):
 		st["turnovers"] = int(st["turnovers"]) + 1
 		st["ints"] = int(st["ints"]) + (1 if r["turnover"] == "int" else 0)
 		dst["td"] = int(dst["td"]) + 1
-		_pts(1 - team, 7)
 		e["text"] += " Returned for a TOUCHDOWN!"
 		drive["result"] = "pick six"
 		_tick(elapsed, true)
-		e["text"] += " " + _kickoff(team)
+		e["text"] += " " + _touchdown(1 - team)
 	elif r["turnover"] != "":
 		st["turnovers"] = int(st["turnovers"]) + 1
 		if r["turnover"] == "int":
@@ -1167,10 +1287,9 @@ func finish(sim: PlaySim) -> Dictionary:
 		st["td"] = int(st["td"]) + 1
 		st["yards"] = float(st["yards"]) + gain
 		drive["yards"] = float(drive["yards"]) + gain
-		_pts(team, 7)
 		drive["result"] = "TD"
 		_tick(elapsed, true)
-		e["text"] += " " + _kickoff(1 - team)
+		e["text"] += " " + _touchdown(team)
 	else:
 		st["yards"] = float(st["yards"]) + gain
 		drive["yards"] = float(drive["yards"]) + gain

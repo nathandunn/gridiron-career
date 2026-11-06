@@ -1305,7 +1305,7 @@ func show_audibles(g: Game, list: Array) -> void:
 
 func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 	var tname := String(g.teams[team].get("club", g.teams[team]["name"]))
-	var box := _open("%s · %s" % [g.clock_text(), ("%s kick off" if kind == "kickoff" else "%s return") % tname])
+	var box := _open("%s · %s" % [g.clock_text(), ("%s kick off" if kind == "kickoff" else ("%s: the try" if kind == "try" else "%s return")) % tname])
 	var vp := get_viewport().get_visible_rect().size
 	var inner := minf(vp.x - 16.0, 900.0) - 40.0
 	var cols := 2
@@ -1315,6 +1315,13 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
+	if kind == "try":
+		var kk: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
+		box.add_child(_label("Touchdown! %s %d - %d %s. Now the try:" % [g.teams[0]["name"], g.score[0], g.score[1], g.teams[1]["name"]], fs - 1, Color(0.85, 0.88, 0.92)))
+		box.move_child(box.get_child(box.get_child_count() - 1), grid.get_index())
+		grid.add_child(_text_card(cw, "Kick the extra point", "%s from 32 yards: 1 point, about %d%% (it can be blocked)" % [_who_txt(kk, "Your kicker"), int(round(g.fg_chance(team, 32.0) * 97.5))], coach_pick == "kick", func(): main.pick_made("try", "kick")))
+		grid.add_child(_text_card(cw, "Go for two", "One play from the 2: get it in for 2 points, or nothing", coach_pick == "two", func(): main.pick_made("try", "two")))
+		return
 	if kind == "kickoff":
 		var k: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
 		var leg := Robot.eff(k, "leg") if not k.is_empty() else 60.0
@@ -1527,15 +1534,16 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 			var short := ("%s. %s" % [parts[0].substr(0, 1), " ".join(parts.slice(1))]) if parts.size() > 1 else nm
 			if per == 1:
 				# on a phone his rating goes under his name, so the numbers keep their room
-				return "%s (%s)%s%s" % [short, slot, "\n   " if _tbl_narrow else "  ", ovr_change_text(rb, track)[0]]
+				return "%s (%s)  %s" % [short, slot, final_rating(rb, track)]
 			return "%s (%s)" % [short, slot]
 		var b: Brain = (team.get("brains", {}) as Dictionary).get(slot, null)
 		return slot if b == null else "%s %s" % [slot, b.name.split(" ")[0]]
 	if per > 1:
 		box.add_child(_label("Per game, over %d games. LNG is the longest." % per, fs - 2, Color(0.8, 0.82, 0.85)))
 	var tables := [
-		["Passing", ["C/ATT", "YDS", "TD", "INT", "SK"], func(s): return v.call(s, "att") > 0 or v.call(s, "sk") > 0,
-			func(s): return ["%s/%s" % [fmt.call(v.call(s, "cmp")), fmt.call(v.call(s, "att"))], fmt.call(v.call(s, "pyd")), fmt.call(v.call(s, "ptd")), fmt.call(v.call(s, "int")), fmt.call(v.call(s, "sk"))], "pyd"],
+		["Passing", ["C/ATT", "YDS", "TD", "INT", "SK", "RTG"], func(s): return v.call(s, "att") > 0 or v.call(s, "sk") > 0,
+			func(s): return ["%s/%s" % [fmt.call(v.call(s, "cmp")), fmt.call(v.call(s, "att"))], fmt.call(v.call(s, "pyd")), fmt.call(v.call(s, "ptd")), fmt.call(v.call(s, "int")), fmt.call(v.call(s, "sk")),
+				"%.1f" % passer_rating(v.call(s, "cmp"), v.call(s, "att"), v.call(s, "pyd"), v.call(s, "ptd"), v.call(s, "int"))], "pyd"],
 		["Rushing", ["CAR", "YDS", "AVG", "TD", "LNG"], func(s): return v.call(s, "car") > 0,
 			func(s): return [fmt.call(v.call(s, "car")), fmt.call(v.call(s, "ryd")), "%.1f" % (float(ps[s]["ryd"]) / maxf(float(ps[s]["car"]), 1.0)), fmt.call(v.call(s, "rtd")), str(int(round(float(ps[s]["rlong"]))))], "ryd"],
 		["Receiving", ["REC/TGT", "YDS", "AVG", "TD", "LNG"], func(s): return v.call(s, "tgt") > 0,
@@ -1577,6 +1585,28 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 
 ## "80 -3 +2 = 79": his overall at kickoff, what the hits took, what repairs gave back, and
 ## where that leaves him; just "80" when nothing changed. Second value: did he take damage.
+## The NFL passer rating (0 to 158.3) from completions, attempts, yards, touchdowns, interceptions.
+static func passer_rating(cmp: float, att: float, yds: float, td: float, ints: float) -> float:
+	if att <= 0.0:
+		return 0.0
+	var a := clampf((cmp / att - 0.3) * 5.0, 0.0, 2.375)
+	var b := clampf((yds / att - 3.0) * 0.25, 0.0, 2.375)
+	var c := clampf(td / att * 20.0, 0.0, 2.375)
+	var d := clampf(2.375 - ints / att * 25.0, 0.0, 2.375)
+	return (a + b + c + d) / 6.0 * 100.0
+
+
+## "60(-3)": his rating at the final whistle and how it moved over the game; just "60" when it
+## ended where it started.
+static func final_rating(r: Dictionary, track: Dictionary) -> String:
+	var now := Robot.overall_if(r, "now")
+	var tr: Dictionary = track.get(String(r.get("id", "")), {})
+	if tr.is_empty():
+		return str(now)
+	var d := now - int(roundf(float(tr["start"])))
+	return str(now) if d == 0 else "%d(%+d)" % [now, d]
+
+
 static func ovr_change_text(r: Dictionary, track: Dictionary) -> Array:
 	var tr: Dictionary = track.get(String(r.get("id", "")), {})
 	if tr.is_empty():
@@ -1606,7 +1636,7 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 	if roster.is_empty():
 		return
 	_section(box, "Condition")
-	box.add_child(_label("OVR at kickoff - damage + repairs = now (a part knocked off costs overall; junk spares cost a little). Then each part's wear: at 100% it comes off.", fs - 3, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Each robot's rating at the final whistle, with how it moved this game (red if he was hurt), then his parts' wear: at 100% a part comes off.", fs - 3, Color(0.75, 0.8, 0.85)))
 	# one robot to a line - his name and overall - with his parts' wear wrapped underneath, so a
 	# long list of wear never pushes the panel off a phone screen
 	var grid := VBoxContainer.new()
@@ -1650,7 +1680,7 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		line.add_child(nl)
 		var oc := ovr_change_text(r, track)
-		var o_txt: String = oc[0]
+		var o_txt := final_rating(r, track)
 		var hit: bool = oc[1]
 		var ol := _label(o_txt, fs - 2, Color(1.0, 0.55, 0.5) if hit else Color(0.85, 0.88, 0.92))
 		ol.autowrap_mode = TextServer.AUTOWRAP_OFF

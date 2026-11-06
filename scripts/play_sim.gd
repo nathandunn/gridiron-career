@@ -520,8 +520,10 @@ func step() -> void:
 		_ball()
 		_contacts()
 		_check_end()
-	# (a kick return gets longer: the ball's hang time and a run the length of the field)
-	if t > PLAY_CAP + (12.0 if air.get("kick", false) else 0.0) and not over:
+	# (a kick return gets longer: the ball's hang time and a run the length of the field). A man
+	# still running with the ball is never whistled dead: the cap is for a play gone nowhere.
+	var running := carrier != null and carrier.vel.length() > 1.5 and t < PLAY_CAP + 40.0
+	if t > PLAY_CAP + (12.0 if air.get("kick", false) else 0.0) and not over and not running:
 		_end("whistle", carrier.pos if carrier != null else ball_pos)
 
 
@@ -548,6 +550,95 @@ func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void
 			air["contain_r"] = e.idx
 	_say("the kick is away")
 	_fx("kick", null, qb, qb.pos)
+
+
+## The kicker stands at the ball (he plays in the coverage's free-safety spot).
+func place_kicker(at: Vector2) -> void:
+	var k: P = by_slot.get("d:FS")
+	if k != null:
+		k.pos = at
+		k.vel = Vector2.ZERO
+
+
+## A punt from the snap: the punter fourteen yards behind the line, the coverage holding up the
+## rush, the return side's front five coming after him. At the kick a rusher who has got to the
+## spot in front of him may block it (why "punt_blocked"); otherwise it goes up and the return
+## is played as usual.
+var punt := {}
+func start_punt(hang: float, fair := false, low := false) -> void:
+	snapped = true
+	carrier = null
+	ball_state = "punt"
+	var pp: P = by_slot.get("d:FS")
+	if pp != null:
+		pp.pos = Vector2(0.0, 13.5)
+		pp.vel = Vector2.ZERO
+	punt = {"kick_t": t + 1.9, "hang": hang, "fair": fair, "low": low, "spot": Vector2(0.0, 12.6)}
+	air = {"kick": true, "punting": true}
+	ball_pos = Vector2(0.0, 13.5)
+	ball_h = 0.6
+	_say("the snap to the punter...")
+
+
+func _drive_punt(p: P) -> void:
+	var kp: Vector2 = punt["spot"]
+	if p.side == 1:
+		if p.slot == "FS":
+			_set_want(p, Vector2.ZERO)
+			return
+		# the coverage holds its ground in front of the nearest rusher
+		var best: P = null
+		var bd := 4.0
+		for o: P in off:
+			if o.slot in ["LT", "LG", "C", "RG", "RT"] and o.pos.distance_to(p.pos) < bd:
+				bd = o.pos.distance_to(p.pos)
+				best = o
+		if best != null:
+			_toward(p, best.pos + (kp - best.pos).normalized() * 0.8, 0.7, 0.0)
+		else:
+			_set_want(p, Vector2.ZERO)
+		return
+	if p.slot == "RB":
+		_set_want(p, Vector2.ZERO)
+		return
+	if p.slot in (["LG", "C", "RG"] if float(K.get("punt_rush5", 0.0)) <= 0.0 else ["LT", "LG", "C", "RG", "RT"]):
+		# the rush: at the spot, held up by any man in the way
+		var held := false
+		for d: P in dfn:
+			if d.slot != "FS" and d.pos.distance_to(p.pos) < 1.25:
+				held = true
+				break
+		_toward(p, kp, 0.25 if held else 1.0, 0.0)
+		return
+	# the rest drop back to set the wall for the return
+	_toward(p, p.pos + Vector2(0, -3.0), 0.5)
+
+
+func _kick_punt() -> void:
+	var kp: Vector2 = punt["spot"]
+	var best: P = null
+	var bd := 99.0
+	for o: P in off:
+		if o.down:
+			continue
+		var d := o.pos.distance_to(kp)
+		if d < bd:
+			bd = d
+			best = o
+	var reach := float(K.get("punt_block_r", 1.6))
+	var p_block := 0.0
+	if best != null and bd < reach:
+		p_block = (1.0 - bd / reach) * 0.7 * (0.6 + 0.6 * float(best.body.get("agility", 0.5)))
+	if best != null and rng.randf() < p_block:
+		stat["punt_blocked_by"] = best.slot
+		_say("PUNT BLOCKED by %s!" % best.slot)
+		_fx("pbu", best, null, kp)
+		ball_pos = kp
+		_end("punt_blocked", kp)
+		return
+	var pp: P = by_slot.get("d:FS")
+	start_kick(pp.pos if pp != null else Vector2(0, 13.0), float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]))
+	punt = {}
 
 
 ## A field goal: the snap goes back to the holder seven yards behind the line; the protection
@@ -1646,6 +1737,16 @@ func _drive(p: P) -> void:
 	if ball_state == "fg" or (ball_state == "air" and air.get("fg", false)):
 		_drive_fg(p)
 		return
+	if ball_state == "punt":
+		_drive_punt(p)
+		return
+	# the kicker (or punter) on a kick: the last man back - he trails the coverage as a safety,
+	# fifteen yards behind it, and only comes up when the returner breaks toward him
+	if air.get("kick", false) and p.side == 1 and p.slot == "FS" and not air.has("fg") and not p.down and p.engaged == null:
+		var thr: Vector2 = carrier.pos if carrier != null else (air_target.pos if air_target != null else ball_pos)
+		if carrier == null or p.pos.distance_to(thr) > 9.0:
+			_toward(p, Vector2(thr.x * 0.6, thr.y + 15.0), 0.75 if carrier == null else 0.9)
+			return
 	if ball_state == "dead":
 		p.mem["_want"] = Vector2.ZERO
 		return
@@ -2205,6 +2306,7 @@ func _steer(p: P) -> Vector2:
 	var wide_side := -1.0 if p.pos.x > 0 else 1.0
 	var sight := (7.0 + 9.0 * vision) * float(K["sight"])
 	var seen: Array = []
+	var crowd := 0
 	for e: P in _enemies(p):
 		if e.down:
 			continue
@@ -2213,6 +2315,13 @@ func _steer(p: P) -> Vector2:
 		# he sees what is ahead of him and close by; a man coming from behind is a surprise
 		if dd < 2.5 or (dd < sight and rel.normalized().dot(p.heading) > 0.25):
 			seen.append(e)
+		if dd < 5.0 and e.engaged == null:
+			crowd += 1
+	# a kick returner boxed in takes what's there: a smart one stops dancing and gets north for
+	# what yards he can (a dull one keeps looking for the big one)
+	var take_it := 0.0
+	if air.get("kick", false) and p == carrier and p.side == 0 and crowd >= 2:
+		take_it = clampf(float(p.body.get("iq", 1.0)) - 0.4, 0.0, 1.0) * float(K.get("ret_north", 2.5))
 	for ad in angs:
 		var a := deg_to_rad(float(ad))
 		var h := Vector2(sin(a), cos(a) * dir)
@@ -2236,6 +2345,8 @@ func _steer(p: P) -> Vector2:
 		var end: Vector2 = p.pos + h * p.spd() * 1.2
 		var oob := absf(end.x) > SIDELINE - 0.5
 		var s := prog * (2.2 + 0.6 * (1.0 - vision)) - risk * (0.25 + 0.45 * vision) * float(K["evade"])
+		if take_it > 0.0:
+			s += prog * take_it - maxf(-prog, 0.0) * take_it * 2.0
 		match p.intent:
 			"cut_upfield":
 				s += prog * 2.0
@@ -3192,6 +3303,13 @@ func _move_all() -> void:
 ## ---- the ball --------------------------------------------------------------------------------
 
 func _ball() -> void:
+	if ball_state == "punt":
+		var pp: P = by_slot.get("d:FS")
+		ball_pos = (pp.pos if pp != null else Vector2(0, 13.5)) + Vector2(0, -0.4)
+		ball_h = 0.9
+		if t >= float(punt["kick_t"]):
+			_kick_punt()
+		return
 	if ball_state == "fg":
 		ball_pos = by_slot["o:QB"].pos + Vector2(0, 0.6)
 		ball_h = 0.3

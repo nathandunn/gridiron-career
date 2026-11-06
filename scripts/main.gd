@@ -684,7 +684,7 @@ func _open_special(kind: String, team: int) -> void:
 	_special_team = team
 	_skip_drive = false
 	_phase = "special"
-	var coach := game.coach_kick() if kind == "kickoff" else game.coach_return()
+	var coach := game.coach_kick() if kind == "kickoff" else (game.coach_try() if kind == "try" else game.coach_return())
 	hud.open_special(game, team, kind, coach)
 	if OS.get_cmdline_user_args().has("--autopick"):
 		(func(): pick_made(kind, coach)).call_deferred()
@@ -761,7 +761,13 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	var st: Dictionary = r.get("stat", {})
 	var scored: int = game.score[0] + game.score[1] - score_before[0] - score_before[1]
 	if r.has("fg"):
-		hud.toast({"good": "FIELD GOAL IS GOOD!", "blocked": "BLOCKED!"}.get(String(r["fg"]), "NO GOOD!\n" + String(r.get("fg_how", "")).to_upper()), 2.4)
+		if e.get("xp", false):
+			hud.toast({"good": "EXTRA POINT GOOD", "blocked": "BLOCKED!"}.get(String(r["fg"]), "EXTRA POINT NO GOOD"), 1.8)
+		else:
+			hud.toast({"good": "FIELD GOAL IS GOOD!", "blocked": "BLOCKED!"}.get(String(r["fg"]), "NO GOOD!\n" + String(r.get("fg_how", "")).to_upper()), 2.4)
+		return
+	if e.has("two"):
+		hud.toast("TWO-POINT TRY GOOD!" if bool(e["two"]) else "TWO-POINT TRY FAILS", 2.2)
 		return
 	if r.get("def_td", false):
 		hud.toast("PICK SIX!\n%s score" % other if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s score" % other, 2.4)
@@ -1131,6 +1137,12 @@ func _next() -> void:
 		hud.show_game_over(game)
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
+	# after a touchdown, the try: the scoring side picks the kick or going for two
+	if not game.try_due.is_empty():
+		var tt := int(game.try_due["team"])
+		if String(game.teams[tt].get("calling", "coach")) == "pick" and not _choice.has("try"):
+			_open_special("try", tt)
+			return
 	# kickoffs and returns: the side that calls its own plays picks the kick, or the return
 	if not game.kick_due.is_empty():
 		var kt := 1 - int(game.kick_due["receiver"])

@@ -123,6 +123,15 @@ func _input(event: InputEvent) -> void:
 	# Phones turn each touch into mouse events as well, so the mouse events are all we follow.
 	if event is InputEventMouseButton:
 		var mb := event as InputEventMouseButton
+		# the mouse wheel scrolls the panel wherever the pointer is - over a button too (a button
+		# would otherwise swallow the wheel, and a list of buttons could not be scrolled)
+		if mb.pressed and mb.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] \
+				and is_visible_in_tree() and get_global_rect().has_point(mb.position):
+			_fling = 0.0
+			_pos = float(scroll_vertical)
+			_scroll_to(_pos + (-1.0 if mb.button_index == MOUSE_BUTTON_WHEEL_UP else 1.0) * 70.0 * maxf(mb.factor, 1.0))
+			get_viewport().set_input_as_handled()
+			return
 		if mb.button_index != MOUSE_BUTTON_LEFT:
 			return
 		if mb.position.x < -9000.0:
