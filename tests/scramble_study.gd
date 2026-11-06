@@ -52,6 +52,9 @@ func _init() -> void:
 				st["att"] += 1
 				if not res["incomplete"] and res["turnover"] == "":
 					st["comp"] += 1
+			if not scr and res["carrier"] == "QB" and not bool(res["pass"]) and not res["sack"] and s.qb_runner:
+				st["hole"] = int(st.get("hole", 0)) + 1
+				st["hole_yds"] = float(st.get("hole_yds", 0.0)) + y
 			if scr:
 				st["scr"] += 1
 				st["scr_yds"] += y
@@ -69,5 +72,6 @@ func _init() -> void:
 			if String(k).begins_with("how_"):
 				hows[String(k).substr(4)] = st[k]
 		print("      sacks while scrambling %d; how: %s" % [int(st.get("sack_scr", 0)), hows])
+		print("      ran through a hole from the pocket: %d of %d dropbacks, %.1f yds a run" % [int(st.get("hole", 0)), n, float(st.get("hole_yds", 0.0)) / maxf(float(st.get("hole", 0)), 1.0)])
 	print("OK")
 	quit()

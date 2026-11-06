@@ -2033,6 +2033,21 @@ func _qb_default(p: P) -> void:
 		stat["path"] = "qb2"
 		_throw(p, cur)
 		return
+	# nobody open yet, and a hole in front of him: he can take the yards himself. Any quarterback
+	# can (a quick one more readily); a smart one sees the hole sooner
+	if not scrambling and pass_play and t > 1.0 and float(K.get("qb_run", 0.0)) > 0.0:
+		# a real hole: wide open, and nobody free bearing down on him
+		var free := _nearest_enemy(p, true)
+		var hole := _hole_ahead(p, 9.0, float(K.get("pocket_hole", 2.0))) if (free == null or free.pos.distance_to(p.pos) > 4.0) else Vector2.INF
+		if hole != Vector2.INF:
+			var take := (0.15 + 0.2 * maxf(_mobility(p), 0.0) + 0.25 * (qiq - 0.8)) * float(K.get("qb_run", 1.0))
+			if rng.randf() < clampf(take, 0.03, 0.6):
+				qb_runner = true          # he is a runner now: he runs like one
+				p.intent = "daylight"
+				_set_want(p, (hole - p.pos).normalized() * p.spd())
+				_say("QB sees the hole and takes off")
+				stat["scramble"] = true
+				return
 	var look := clampf(0.25 * float(p.dial.get("vision", 0.5)) + float(K.get("qb_look", 0.6)) * (qiq - 0.8), 0.05, 0.6)
 	if rng.randf() < look:
 		# he takes in the field beyond his current read: a man open anywhere gets it
@@ -2074,21 +2089,27 @@ func _qb_default(p: P) -> void:
 
 ## A hole upfield for a scrambling quarterback: the clearest spot 3 yards past the line within
 ## 6 yards of him across (INF if every one has a free defender near it).
-func _hole_ahead(p: P) -> Vector2:
+func _hole_ahead(p: P, depth := -1.0, min_gap := -1.0) -> Vector2:
 	var best := Vector2.INF
-	var best_gap := float(K.get("hole_gap", 2.6))
-	if p.pos.y < -float(K.get("hole_depth", 6.5)):
+	var best_gap := min_gap if min_gap > 0.0 else float(K.get("hole_gap", 2.6))
+	if p.pos.y < -(depth if depth > 0.0 else float(K.get("hole_depth", 6.5))):
 		return best              # too deep in the backfield to run it from here
 	for dx in [-3.0, -1.5, 0.0, 1.5, 3.0]:
 		var spot := Vector2(clampf(p.pos.x + dx, -SIDELINE + 2.0, SIDELINE - 2.0), 0.5)
 		var gap := 99.0
+		# from the pocket (min_gap given) it must still be open when he gets there: each defender's
+		# distance to the spot less how far he can go while the quarterback runs to it
+		var arrive := p.pos.distance_to(spot) / maxf(p.spd(), 0.1) if min_gap > 0.0 else 0.0
 		for e: P in dfn:
 			if e.down:
 				continue
-			gap = minf(gap, e.pos.distance_to(spot))
+			var lag := (0.25 if e.engaged != null else 0.85) * e.spd() * arrive
+			gap = minf(gap, e.pos.distance_to(spot) - lag + (1.1 if e.engaged != null and min_gap > 0.0 else 0.0))
 		for o: P in off:
 			if o != p and o.engaged != null:
-				gap = minf(gap, o.pos.distance_to(spot) + 0.4)   # a block in progress fills the gap too
+				# a block in progress fills the gap too (from the pocket: he can slip between two
+				# blocks if there is a yard of room)
+				gap = minf(gap, o.pos.distance_to(spot) + (0.4 if min_gap <= 0.0 else 1.1))
 		# and nobody free standing on the way there
 		var path_ok := true
 		for e2: P in dfn:
@@ -2208,7 +2229,7 @@ func _drive_scramble(p: P) -> void:
 	var hole := _hole_ahead(p)
 	if hole == Vector2.INF and outside and _lane_ahead(p):
 		hole = p.pos + Vector2(side * 0.5, 5.0)      # outside the pocket with room: up the edge
-	if mob > 0.0 and hole != Vector2.INF and rng.randf() < (0.1 + 0.25 * mob) * DT * 10.0:
+	if mob > -0.4 and hole != Vector2.INF and rng.randf() < (0.15 + 0.25 * maxf(mob, 0.0)) * DT * 10.0:
 		qb_runner = true
 		p.intent = "daylight"
 		_set_want(p, (hole - p.pos).normalized() * p.spd())
