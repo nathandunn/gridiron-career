@@ -1345,7 +1345,8 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		if rd.has("ground"):
 			box.get_child(grid.get_index() - 1).text = "%s is coming along the ground - field it on the bounce, then run it back." % ("An onside kick" if String(rd["ground"]) == "onside" else "A squib kick")
 		for c in Game.RETURNS:
-			if c == "fair" and rd.has("ground"):
+			# no fair catch on a ball along the ground, and nobody takes a knee in the end zone
+			if c == "fair" and (rd.has("ground") or deep):
 				continue
 			var title := "Take a knee" if c == "fair" and deep else ("Fair catch" if c == "fair" else String(Game.RETURNS[c]))
 			grid.add_child(_text_card(cw, title, subs[c], c == coach_pick, func(): main.pick_made("return", c)))

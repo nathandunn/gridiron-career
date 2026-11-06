@@ -2,7 +2,6 @@ coach "Adaptive"
 about "Keeps calling whatever is working, drops what isn't, and defends what the other side keeps doing."
 
 offense:
-  when game ending and leading by over 0 and clock under 100 -> kneel
   when fourth down and to go over 3 and not past midfield -> punt
   when fourth down and to go under 2 and past midfield -> call "QB Sneak" or "Power"
   when fourth down and in field goal range -> field goal

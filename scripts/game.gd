@@ -175,7 +175,7 @@ func _kickoff(receiver: int) -> String:
 
 
 const KICKS := {"deep": "Deep kick", "squib": "Squib kick", "onside": "Onside kick"}
-const RETURNS := {"middle": "Return up the middle", "left": "Return left", "right": "Return right", "fair": "Fair catch / take a knee"}
+const RETURNS := {"middle": "Return up the middle", "left": "Return left", "right": "Return right", "fair": "Fair catch"}
 const PUNTS := {"punt": "Punt", "coffin": "Coffin corner", "pooch": "Pooch punt"}
 
 
@@ -191,8 +191,6 @@ func coach_kick() -> String:
 ## What the returning side's coach calls.
 func coach_return() -> String:
 	var rd := return_due
-	if String(rd.get("kind", "")) == "kickoff" and float(rd.get("catch", 0.0)) < -3.0:
-		return "fair"          # deep in the end zone: take a knee
 	if String(rd.get("kind", "")) == "punt" and float(rd.get("catch", 50.0)) < 10.0:
 		return "fair"
 	if bool(rd.get("pooch", false)):
@@ -616,8 +614,8 @@ var return_due := {}       # set by a kickoff or punt that is fielded: the next 
 func _return_snap(call := "middle") -> Dictionary:
 	var rd := return_due
 	return_due = {}
-	if rd.has("ground") and call == "fair":
-		call = "middle"            # no fair catch on a ball bouncing along the ground
+	if call == "fair" and (rd.has("ground") or (String(rd["kind"]) == "kickoff" and float(rd["catch"]) <= 0.0)):
+		call = "middle"            # no fair catch on a ball along the ground, and no knee in the end zone
 	rd["call"] = call
 	rd["fair"] = call == "fair"
 	var catch_y := float(rd["catch"])
@@ -826,10 +824,7 @@ func _coach_call(c: Coach, on_offense: bool, team: int, count := true) -> Dictio
 				out["kind"] = "field_goal"
 				return true
 			"kneel":
-				if not on_offense:
-					return false
-				out["kind"] = id
-				return true
+				return false     # nobody takes a knee in this game: the next rule decides
 			"go_for_it":
 				return true
 		return false
