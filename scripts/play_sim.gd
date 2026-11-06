@@ -565,7 +565,7 @@ func place_kicker(at: Vector2) -> void:
 ## spot in front of him may block it (why "punt_blocked"); otherwise it goes up and the return
 ## is played as usual.
 var punt := {}
-func start_punt(hang: float, fair := false, low := false) -> void:
+func start_punt(hang: float, fair := false, low := false, mode := "return", side := 1.0) -> void:
 	snapped = true
 	carrier = null
 	ball_state = "punt"
@@ -573,7 +573,7 @@ func start_punt(hang: float, fair := false, low := false) -> void:
 	if pp != null:
 		pp.pos = Vector2(0.0, 13.5)
 		pp.vel = Vector2.ZERO
-	punt = {"kick_t": t + 1.9, "hang": hang, "fair": fair, "low": low, "spot": Vector2(0.0, 12.6)}
+	punt = {"kick_t": t + 1.9, "hang": hang, "fair": fair, "low": low, "spot": Vector2(0.0, 12.6), "mode": mode, "side": side}
 	air = {"kick": true, "punting": true}
 	ball_pos = Vector2(0.0, 13.5)
 	ball_h = 0.6
@@ -637,7 +637,22 @@ func _kick_punt() -> void:
 		_end("punt_blocked", kp)
 		return
 	var pp: P = by_slot.get("d:FS")
-	start_kick(pp.pos if pp != null else Vector2(0, 13.0), float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]))
+	var from: Vector2 = pp.pos if pp != null else Vector2(0, 13.0)
+	var mode := String(punt.get("mode", "return"))
+	if mode != "return":
+		# no return: angled out at the sideline, or let go to come down and be downed
+		var ret: P = by_slot["o:RB"]
+		var land := Vector2(float(punt["side"]) * (SIDELINE + 0.6), ret.pos.y + rng.randf_range(-2.0, 2.0)) if mode == "out" \
+			else Vector2(rng.randf_range(-6.0, 6.0), ret.pos.y)
+		ball_state = "air"
+		air = {"from": from, "to": land, "t0": t, "T": float(punt["hang"]), "lob": true, "dist": from.distance_to(land), "kick": true,
+			"punt_land": mode}
+		air_target = null
+		_say("a coffin corner, angled at the sideline" if mode == "out" else "a high one, left to come down")
+		_fx("kick", pp, null, land)
+		punt = {}
+		return
+	start_kick(from, float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]))
 	punt = {}
 
 
@@ -1739,6 +1754,13 @@ func _drive(p: P) -> void:
 		return
 	if ball_state == "punt":
 		_drive_punt(p)
+		return
+	if ball_state == "air" and air.has("punt_land"):
+		var land2: Vector2 = air["to"]
+		if p.side == 1:
+			_toward(p, land2 + Vector2(0, 1.0), 1.0)
+		else:
+			_toward(p, Vector2(clampf(land2.x, -SIDELINE + 2.0, SIDELINE - 2.0), land2.y - 6.0), 0.6)
 		return
 	# the kicker (or punter) on a kick: the last man back - he trails the coverage as a safety,
 	# fifteen yards behind it, and only comes up when the returner breaks toward him
@@ -3315,6 +3337,19 @@ func _ball() -> void:
 		ball_h = 0.3
 		if t >= float(fg["kick_t"]):
 			_kick_fg()
+		return
+	if ball_state == "air" and air.has("punt_land"):
+		var u2 := clampf((t - float(air["t0"])) / float(air["T"]), 0.0, 1.0)
+		ball_pos = (air["from"] as Vector2).lerp(air["to"], u2)
+		ball_h = 0.6 + 4.0 * (3.0 + float(air["dist"]) * 0.22) * u2 * (1.0 - u2)
+		if u2 >= 1.0:
+			if String(air["punt_land"]) == "out":
+				_end("punt_out", Vector2(signf(ball_pos.x) * SIDELINE, ball_pos.y))
+			else:
+				# it bounces on toward the goal line before the coverage gets a hand on it
+				var spot := ball_pos + Vector2(0, -rng.randf_range(0.0, 5.0))
+				ball_pos = spot
+				_end("punt_downed", spot)
 		return
 	if ball_state == "air" and air.get("fg", false):
 		var u := clampf((t - float(air["t0"])) / float(air["T"]), 0.0, 1.0)

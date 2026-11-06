@@ -550,7 +550,7 @@ func make_sim() -> PlaySim:
 	elif pending.has("return") and String(pending["return"].get("kind", "")) == "punt":
 		# a punt is played from the snap: the punter fourteen yards deep, the rush can block it
 		var pd: Dictionary = pending["return"]
-		sim.start_punt(float(pd.get("hang", 3.5)), bool(pd.get("fair", false)), bool(pd.get("low", false)))
+		sim.start_punt(float(pd.get("hang", 3.5)), bool(pd.get("fair", false)), bool(pd.get("low", false)), String(pd.get("mode", "return")), float(pd.get("side", 1.0)))
 	elif pending.has("return"):
 		var rd: Dictionary = pending["return"]
 		sim.place_kicker(Vector2(0.0, float(rd["from_y"]) + 1.2))
@@ -676,6 +676,19 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 	var rd: Dictionary = pending["return"]
 	var team := poss
 	var st: Dictionary = stats[team]
+	if String(r["why"]) in ["punt_out", "punt_downed"]:
+		var at2 := yl + float(r["y"])
+		_tick(float(r["t"]), true)
+		var tb := at2 <= 0.0
+		yl = 20.0 if tb else clampf(at2, 1.0, 99.0)
+		down = 1
+		to_go = 10.0
+		ball_x = 0.0 if tb else clampf(float(r["x"]), -HASH, HASH)
+		var what := "Touchback" if tb else ("Out of bounds" if String(r["why"]) == "punt_out" else "Downed")
+		var eo := {"kind": "play", "team": team, "off": "Punt", "def": "Coverage", "gain": 0.0, "why": String(r["why"]), "return": true,
+			"down": 1, "to_go": 10.0, "yl": yl, "text": "%s: %s ball %s." % [what, teams[team]["name"], _spot_text(yl, team)]}
+		_log_play(eo)
+		return eo
 	if String(r["why"]) == "punt_blocked":
 		# blocked: the ball is the receiving side's where it was blocked
 		var by := String(r["stat"].get("punt_blocked_by", ""))
@@ -955,26 +968,21 @@ func _punt(kind := "punt") -> Dictionary:
 	var who: String = offense()["name"]
 	var text := ""
 	drive["result"] = "punt"
-	if land >= 100.0:
-		poss = 1 - poss
-		yl = 20.0
-		down = 1
-		to_go = 10.0
-		_new_drive()
-		text = "%s punt into the end zone. Touchback." % who
-	else:
-		_take_over(land)
-		if kind == "coffin":
-			text = "%s angles it out of bounds: a %d-yard coffin corner, out at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
-		elif land < 95.0:
-			# he fields it: the punt and the return are played out as the next snap
-			# the return starts from where it was punted: the line is the punting team's, the punter
-			# 13 yards behind it, the returner as far downfield as the kick goes
-			return_due = {"kind": "punt", "kicker": kicker, "catch": yl, "from_los": gross, "back": 13.0,
-				"hang": 5.0 if kind == "pooch" else 4.8, "pooch": kind == "pooch"}
-			text = "%s punts it away." % _who(pr, who)
-		else:
-			text = "%s punts %d yards, downed at the %s." % [_who(pr, who), int(round(gross)), _spot_text(yl, poss)]
+	# every punt is played out from the snap: a normal punt is fielded and run back; a coffin
+	# corner is angled out of bounds; one that comes down inside the ten (a pooch, or a big one)
+	# is let go and downed by the coverage - or bounces into the end zone for a touchback
+	var mode := "return"
+	if kind == "coffin":
+		mode = "out"
+	elif land >= 95.0:
+		mode = "down"
+	_take_over(minf(land, 99.0))
+	return_due = {"kind": "punt", "kicker": kicker, "catch": 100.0 - land, "from_los": gross, "back": 13.0,
+		"hang": 5.0 if kind == "pooch" else 4.8, "pooch": kind == "pooch", "mode": mode, "punt_kind": kind,
+		"side": (-1.0 if rng.randf() < 0.5 else 1.0)}
+	if mode != "return":
+		return_due["fair"] = true
+	text = "%s %s." % [_who(pr, who), {"coffin": "angles a coffin corner at the sideline", "pooch": "lofts a pooch punt"}.get(kind, "punts it away")]
 	ball_x = 0.0
 	_tick(9.0, true)
 	var e := {"kind": "punt", "text": text}

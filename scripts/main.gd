@@ -213,6 +213,20 @@ func _ready() -> void:
 				_choice = {"kick": "punt"}
 				_phase = "after"
 				_next()
+			"punt":
+				# a punt under way: --kind=punt/coffin/pooch, --yl sets the line
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				for tt in 2:
+					game.teams[tt]["calling"] = "coach"
+				game.down = 4
+				game.yl = float(args.get("yl", 50.0))
+				game.to_go = 8.0
+				_choice = {"kick": String(args.get("kind", "coffin"))}
+				game.teams[game.poss]["calling"] = "pick"
+				_phase = "after"
+				_next()
 			"fg":
 				hud.close_overlay(false)
 				game.kick_due = {}
@@ -1149,7 +1163,7 @@ func _next() -> void:
 		if String(game.teams[kt].get("calling", "coach")) == "pick" and not _choice.has("kickoff"):
 			_open_special("kickoff", kt)
 			return
-	if not game.return_due.is_empty() and String(game.teams[game.poss].get("calling", "coach")) == "pick" and not _choice.has("return"):
+	if not game.return_due.is_empty() and String(game.return_due.get("mode", "return")) == "return" and String(game.teams[game.poss].get("calling", "coach")) == "pick" and not _choice.has("return"):
 		_open_special("return", game.poss)
 		return
 	# a kickoff or a return comes next: no play to call from scrimmage yet
