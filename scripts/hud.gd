@@ -2552,7 +2552,18 @@ func open_menu() -> void:
 	col.add_child(row)
 	var ex := _button("Exhibition", func(): Career.ensure(); Career.data["mode"] = "exhibition"; Career.new_exhibition(); main.choose_mode("exhibition"))
 	var lab := _button("Sim lab", func(): main.choose_mode("sim"))
-	for b in [ex, lab]:
+	# a new season, right here: tap twice (it wipes this one)
+	var ns := _button("Sure? Tap again" if _confirm_new_season else "New season", func():
+		if _confirm_new_season:
+			_confirm_new_season = false
+			Career.new_season()
+			main.choose_mode("season")
+		else:
+			_confirm_new_season = true
+			open_menu())
+	if _confirm_new_season:
+		ns.add_theme_color_override("font_color", BAD)
+	for b in [ex, lab, ns]:
 		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		b.custom_minimum_size.y = 46
 		b.add_theme_font_override("font", DISP)
