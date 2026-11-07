@@ -2365,6 +2365,14 @@ func _steer(p: P) -> Vector2:
 	var take_it := 0.0
 	if air.get("kick", false) and p == carrier and p.side == 0 and crowd >= 2:
 		take_it = clampf(float(p.body.get("iq", 1.0)) - 0.4, 0.0, 1.0) * float(K.get("ret_north", 2.5))
+	# a runner heading for the sideline who sees a defender will beat him to the edge turns it
+	# up for what he can get instead of running out of room going sideways (the brighter he is,
+	# the sooner he sees it)
+	var turn_up := 0.0
+	var lat := signf(p.heading.x)
+	if not air.get("kick", false) and p == carrier and p.side == 0 and absf(p.heading.x) > 0.55 \
+			and float(K.get("run_north", 2.0)) > 0.0 and _edge_lost(p, lat, dir):
+		turn_up = clampf(float(p.body.get("iq", 1.0)) - 0.4, 0.0, 1.0) * float(K.get("run_north", 2.0))
 	for ad in angs:
 		var a := deg_to_rad(float(ad))
 		var h := Vector2(sin(a), cos(a) * dir)
@@ -2390,6 +2398,8 @@ func _steer(p: P) -> Vector2:
 		var s := prog * (2.2 + 0.6 * (1.0 - vision)) - risk * (0.25 + 0.45 * vision) * float(K["evade"])
 		if take_it > 0.0:
 			s += prog * take_it - maxf(-prog, 0.0) * take_it * 2.0
+		if turn_up > 0.0:
+			s += prog * turn_up - maxf(h.x * lat, 0.0) * turn_up * 0.8 - maxf(-prog, 0.0) * turn_up * 2.0
 		match p.intent:
 			"cut_upfield":
 				s += prog * 2.0
@@ -2424,6 +2434,25 @@ func _steer(p: P) -> Vector2:
 			bs = s
 			best = h
 	return best
+
+
+## Will a free defender get to the edge first? The corner is where the runner would turn up,
+## a few yards on the way he is going; a defender level with or outside him, ahead of him or
+## near the line, who can get there sooner, has the edge.
+func _edge_lost(p: P, lat: float, dir: float) -> bool:
+	var corner := p.pos + Vector2(lat * 5.0, dir * 1.0)
+	var mine := p.pos.distance_to(corner) / maxf(p.spd(), 0.1)
+	for e: P in _enemies(p):
+		if e.down or e.engaged != null:
+			continue
+		if (e.pos.x - p.pos.x) * lat < -1.0:
+			continue          # inside him: chasing, not containing
+		var ahead := (e.pos.y - p.pos.y) * dir
+		if ahead < -1.0 or ahead > 9.0:
+			continue
+		if e.pos.distance_to(corner) / maxf(e.spd(), 0.1) <= mine + 0.1:
+			return true
+	return false
 
 
 ## Where a kick returner aims to follow his lead blockers: just behind the pair of them, while
