@@ -9,6 +9,9 @@ func _init() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--reps="):
 			R = int(a.substr(7))
+		elif a.begins_with("--") and a.contains("="):
+			var kv := a.substr(2).split("=")
+			PlaySim.K[kv[0]] = float(kv[1])
 	var tot := {"games": 0, "team_games": 0, "rush_att": 0, "rush_yds": 0.0, "pass_att": 0, "comp": 0, "pass_yds": 0.0, "sacks": 0, "sack_yds": 0.0, "ints": 0, "pts": 0, "plays": 0, "first_downs": 0}
 	var per_coach := {}
 	var seed := 900

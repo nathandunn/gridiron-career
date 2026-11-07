@@ -3123,7 +3123,7 @@ func _resolve_blocks() -> void:
 		var run_block := not pass_play or handed or ball_out_of_qb()
 		var rate := 0.35 + (epow - bpow) * 3.0 + (eskill - bskill) * float(K.get("skill_push", 1.2))
 		if run_block:
-			rate -= 0.5
+			rate -= float(K.get("run_edge", 0.35))     # the line knows the snap count on a run
 		if double:
 			rate -= 0.6
 		if not run_block and rate > 0.0:
@@ -3139,7 +3139,8 @@ func _resolve_blocks() -> void:
 				hole = ball_x + gap_x_of(carrier.assign)
 			var away := signf(e.pos.x - hole) if absf(e.pos.x - hole) > 0.1 else signf(e.pos.x - b.pos.x + 0.001)
 			var pd := Vector2(away, 0.6).normalized()
-			e.mem["_push"] = pd * -rate
+			# a run block that is won is seen: the man is driven off the ball, out of the hole
+			e.mem["_push"] = pd * -rate * float(K.get("run_push", 2.5))
 			e.mem["_bface"] = -pd
 		else:
 			e.mem["_push"] = dirE * rate
