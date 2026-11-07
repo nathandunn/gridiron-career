@@ -2120,124 +2120,314 @@ func show_game_over(g: Game) -> void:
 ## After the game: who is damaged and what it costs, the coach's buttons, and the robot market.
 ## Between games: last week, the table, who is next, and getting the team ready - repairs,
 ## upgrades, the market - then Kick off.
+## A card that holds a section: a dark tile with a small heading.
+func _card(box: Control, head := "", accent := Color(0, 0, 0, 0)) -> VBoxContainer:
+	var pc := PanelContainer.new()
+	var sb := flat(SURF2, 12, LINE, 1)
+	sb.set_content_margin_all(12)
+	if accent.a > 0.0:
+		sb.border_color = accent
+		sb.set_border_width_all(0)
+		sb.border_width_left = 4
+	pc.add_theme_stylebox_override("panel", sb)
+	box.add_child(pc)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 6)
+	pc.add_child(v)
+	if head != "":
+		v.add_child(_eyebrow(head))
+	return v
+
+
+## An award as a card: what it is in gold, who in bold, his club's colour down the side.
+func _award_card(box: Control, head: String, b: Dictionary, side: String) -> void:
+	var ours := String(b["team"]) == String(Career.team(0)["name"])
+	var card := PanelContainer.new()
+	var sb := flat(SURF2, 12)
+	sb.border_color = TEAM_COL[0 if ours else 1]
+	sb.border_width_left = 5
+	sb.content_margin_left = 12
+	sb.content_margin_right = 10
+	sb.content_margin_top = 7
+	sb.content_margin_bottom = 8
+	card.add_theme_stylebox_override("panel", sb)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 1)
+	card.add_child(v)
+	v.add_child(_eyebrow(head, MAGENTA))
+	var nl := _label("%s %s" % [b["slot"], b["name"]], fs + 1, Color.WHITE)
+	nl.add_theme_font_override("font", BODY_B)
+	v.add_child(nl)
+	v.add_child(_label("%s · %s" % [b["team"], Career.stat_line(b["stats"], side)], fs - 2, DIM))
+	box.add_child(card)
+
+
+## The matchup across the top: the two clubs on their colours, record and OVR, VS between.
+func _matchup(box: Control, me: Dictionary, my_rec: Dictionary, opp: Dictionary) -> void:
+	var hero := HBoxContainer.new()
+	hero.add_theme_constant_override("separation", 0)
+	box.add_child(hero)
+	var teams := [[me, my_rec], [opp, opp.get("rec", {"w": 0, "l": 0, "t": 0})]]
+	for t in 2:
+		var tm: Dictionary = teams[t][0]
+		var half := PanelContainer.new()
+		var sb := flat(TEAM_COL[t].darkened(0.6), 0)
+		if t == 0:
+			sb.corner_radius_top_left = 14
+			sb.corner_radius_bottom_left = 14
+		else:
+			sb.corner_radius_top_right = 14
+			sb.corner_radius_bottom_right = 14
+		sb.set_content_margin_all(12)
+		half.add_theme_stylebox_override("panel", sb)
+		half.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hero.add_child(half)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 0)
+		half.add_child(v)
+		var al := HORIZONTAL_ALIGNMENT_LEFT if t == 0 else HORIZONTAL_ALIGNMENT_RIGHT
+		var nm := _disp(String(tm["name"]).to_upper(), fs + 4, Color.WHITE)
+		nm.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nm.horizontal_alignment = al
+		v.add_child(nm)
+		var rt := Career.team_ratings(tm)
+		var big := _disp(str(int(rt["ovr"])), fs + 22, Color.WHITE, false)
+		big.horizontal_alignment = al
+		v.add_child(big)
+		var sub := _label("OVR  ·  %s  ·  off %d  def %d" % [Career._rec_text(teams[t][1]), int(rt["off"]), int(rt["def"])], fs - 3, Color(1, 1, 1, 0.7))
+		sub.horizontal_alignment = al
+		v.add_child(sub)
+		if t == 1:
+			var sch := _label(Career.schemes_text(tm), fs - 3, Color(1, 1, 1, 0.6))
+			sch.horizontal_alignment = al
+			v.add_child(sch)
+
+
+## Between games: the matchup and Kick off on top, then repairs, the scouting report as
+## unit-against-unit bars, the table, last week and the market.
 func open_next() -> void:
 	Career.ensure()
 	var sn := Career.season()
 	var opp := Career.team(1)
 	var me := Career.team(0)
-	var box := _open("%s: %s vs %s%s" % [Career.week_label(), me["name"], opp["name"], _purse()])
-	var top := HFlowContainer.new()
-	top.add_theme_constant_override("h_separation", 6)
-	box.add_child(top)
-	var ko := _button("Kick off  »", func(): close_overlay(false); main.new_game(true))
-	ko.add_theme_font_size_override("font_size", fs + 4)
-	top.add_child(ko)
-	top.add_child(_button("Coach, brains and play calling", func(): open_teams(true)))
-	top.add_child(_button("Menu", func(): main.show_menu()))
+	var box := _open("%s%s" % [Career.week_label(), _purse()])
+	_matchup(box, me, sn.get("you", {"w": 0, "l": 0, "t": 0}), opp)
+	var ko := _primary(_button("KICK OFF", func(): close_overlay(false); main.new_game(true)))
+	box.add_child(ko)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
+	for bd in [["Coach & plays", func(): open_teams(true)], ["Roster", func(): open_roster(0); _back = func(): open_next()], ["Menu", func(): main.show_menu()]]:
+		var b := _button(bd[0], bd[1])
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+	_garage(box, func(): open_next())
+	# scouting: each unit against theirs as a bar, then their schemes
+	var sc := _card(box, "Scouting report")
+	var re := RegEx.new()
+	re.compile("^(.*?) \\((\\d+) vs (\\d+)\\): (.*)$")
+	for ln in Analysis.pregame(me, opp):
+		var txt := String(ln[0])
+		var col := GOOD if ln[1] == "good" else (BAD if ln[1] == "bad" else DIM)
+		var m := re.search(txt)
+		if m == null:
+			var nl := _label(txt, fs - 2, col if ln[1] != "note" else Color(0.8, 0.83, 0.88))
+			sc.add_child(nl)
+			continue
+		var head := m.get_string(1).replace("Your ", "").replace(" vs their ", "  vs  ")
+		head = head[0].to_upper() + head.substr(1)
+		var a := int(m.get_string(2))
+		var b2 := int(m.get_string(3))
+		var hr := HBoxContainer.new()
+		sc.add_child(hr)
+		var hl := _label(head, fs - 1, Color(0.94, 0.95, 0.97))
+		hl.add_theme_font_override("font", BODY_B)
+		hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hr.add_child(hl)
+		hr.add_child(_disp("%d" % a, fs + 2, TEAM_COL[0].lightened(0.25), false))
+		var vsl := _label(" vs ", fs - 3, DIM)
+		vsl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		hr.add_child(vsl)
+		hr.add_child(_disp("%d" % b2, fs + 2, TEAM_COL[1].lightened(0.25), false))
+		# a tug-of-war bar: your share against theirs, centred on even
+		var bar := ProgressBar.new()
+		bar.min_value = -10
+		bar.max_value = 10
+		bar.value = clampf(float(a - b2), -10.0, 10.0)
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(0, 6)
+		bar.add_theme_stylebox_override("fill", flat(col if ln[1] != "note" else SURF3.lightened(0.2), 3))
+		bar.add_theme_stylebox_override("background", flat(SURF3, 3))
+		bar.value = 10.0 + clampf(float(a - b2), -10.0, 10.0)
+		bar.min_value = 0
+		bar.max_value = 20
+		sc.add_child(bar)
+		var adv := m.get_string(4)
+		if adv != "even":
+			sc.add_child(_label(adv[0].to_upper() + adv.substr(1), fs - 3, col))
+	# the table
+	var st := _card(box, "Standings")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 4)
+	st.add_child(grid)
+	for h in ["Club", "W-L-T", "PF-PA", "OVR"]:
+		var hl2 := _label(h, fs - 3, DIM)
+		hl2.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if h == "Club":
+			hl2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(hl2)
+	for r in Career.standings():
+		var c := MAGENTA if r["you"] else Color(0.9, 0.92, 0.95)
+		var n := _label(String(r["name"]), fs - 1, c)
+		n.add_theme_font_override("font", BODY_B if r["you"] else BODY)
+		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(n)
+		for tx in [[Career._rec_text(r["rec"]), c], ["%d-%d" % [int(r["rec"]["pf"]), int(r["rec"]["pa"])], DIM]]:
+			var gl := _label(tx[0], fs - 1, tx[1])
+			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			grid.add_child(gl)
+		var tmr: Dictionary = me if r["you"] else {}
+		if not r["you"]:
+			for cl in sn.get("clubs", []):
+				if String(cl["name"]) == String(r["name"]):
+					tmr = cl
+		grid.add_child(_disp(str(int(Career.team_ratings(tmr)["ovr"])) if not tmr.is_empty() else "-", fs, c, false))
 	var results: Array = sn.get("results", [])
 	if not results.is_empty():
-		_section(box, "Last week")
+		var lw := _card(box, "Last week")
 		for ln in results.slice(maxi(results.size() - 2, 0)):
-			box.add_child(_label(String(ln), fs - 1, Color(0.85, 0.9, 0.95)))
+			lw.add_child(_label(String(ln), fs - 1, Color(0.85, 0.9, 0.95)))
 	var potw: Dictionary = sn.get("potw", {})
 	if not potw.is_empty():
 		_section(box, "Players of the week")
 		for side in ["off", "def"]:
 			if potw.has(side):
-				var b: Dictionary = potw[side]
-				box.add_child(_label("%s: %s %s (%s) - %s" % ["Offense" if side == "off" else "Defense", b["slot"], b["name"], b["team"], Career.stat_line(b["stats"], side)], fs - 1, YELLOW if String(b["team"]) == String(me["name"]) else Color(0.85, 0.9, 0.95)))
-	_section(box, "Standings")
-	for r in Career.standings():
-		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
+				_award_card(box, "Offense" if side == "off" else "Defense", potw[side], side)
 	if Career.season_over() and not (sn.get("tally", {}) as Dictionary).is_empty():
 		_section(box, "Season awards")
 		for aw in Career.season_awards():
-			var row2: Dictionary = aw[1]
-			box.add_child(_label("%s: %s %s (%s) - %s" % [aw[0], row2["slot"], row2["name"], row2["team"], Career.stat_line(row2["stats"], String(row2["side"]))], fs - 1, YELLOW if String(row2["team"]) == String(me["name"]) else Color(0.85, 0.9, 0.95)))
+			_award_card(box, String(aw[0]), aw[1], String(aw[1]["side"]))
 	elif not (sn.get("tally", {}) as Dictionary).is_empty():
-		_section(box, "Season leaders")
+		var sl := _card(box, "Season leaders")
 		for side in ["off", "def"]:
 			var i := 0
-			for row in Career.season_leaders(side):
+			for r2 in Career.season_leaders(side):
 				i += 1
-				box.add_child(_label("%s %d. %s %s (%s) - %s" % ["Offense" if side == "off" else "Defense", i, row["slot"], row["name"], row["team"], Career.stat_line(row["stats"], side)], fs - 2, YELLOW if String(row["team"]) == String(me["name"]) else Color(0.8, 0.85, 0.9)))
-	_section(box, "Scouting report")
-	_report_lines(box, Analysis.pregame(me, opp))
-	_section(box, "This week's opponent")
-	var ovr := 0.0
-	for s0 in opp["starters"]:
-		ovr += Robot.overall(opp["starters"][s0])
-	box.add_child(_label("%s · %s · record %s · %s" % [opp["name"], Career.schemes_text(opp), Career._rec_text(opp.get("rec", {"w": 0, "l": 0, "t": 0})), Career.ratings_text(opp)], fs, Color(0.9, 0.93, 1.0)))
-	var my := 0.0
-	for s1 in me["starters"]:
-		my += Robot.overall(me["starters"][s1])
-	box.add_child(_label("%s · %s · purse $%d" % [me["name"], Career.ratings_text(me), Career.money(0)], fs, YELLOW))
-	_garage(box, func(): open_next())
+				var ours := String(r2["team"]) == String(me["name"])
+				sl.add_child(_label("%d. %s %s (%s) - %s" % [i, r2["slot"], r2["name"], r2["team"], Career.stat_line(r2["stats"], side)], fs - 2, MAGENTA if ours else Color(0.82, 0.86, 0.9)))
+	_market(box, func(): open_next())
 
 
+## Repairs: Fix everybody first (grey when the purse won't cover it), then each damaged robot.
 func _garage(box: Control, refresh: Callable) -> void:
-	_section(box, "Damage - fix up for the next game")
 	var tm := Career.team(0)
-	var any := false
 	var all_cost := 0
 	var who: Array = []
 	for s in tm["starters"]:
 		who.append([tm["starters"][s], s])
 	for r0 in tm["bench"]:
-		who.append([r0, "bench " + String(r0["group"])])
+		who.append([r0, String(r0["group"])])
+	var hurt: Array = []
 	for w in who:
-		var r: Dictionary = w[0]
-		var s: String = w[1]
-		var c := Career.fix_all_cost(r)
-		if c <= 0:
-			continue
-		any = true
-		all_cost += c
-		var row := HBoxContainer.new()
-		box.add_child(row)
-		var rb := _robot_row(r, s)
-		rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		rb.custom_minimum_size.x = 120
-		rb.text = "#%d %s %s  %s" % [int(r["number"]), s, r["name"], _damage_text(r)]
-		row.add_child(rb)
-		var rid := String(r["id"])
-		var fix := _button("Fix $%d" % c, func():
-			var rr: Dictionary = Career.find(rid).get("robot", {})
-			if rr.is_empty():
-				return
-			var ok := true
-			for k in Robot.PARTS:
-				if Career.fix_cost(rr, k) > 0:
-					ok = Career.buy_repair(0, rr, k) and ok
-			if not ok:
-				toast("NOT ENOUGH MONEY", 1.6)
-			refresh.call())
-		fix.disabled = Career.money(0) < c
-		row.add_child(fix)
-	if not any:
-		box.add_child(_label("Nobody is damaged.", fs - 1, Color(0.8, 0.85, 0.9)))
+		var c := Career.fix_all_cost(w[0])
+		if c > 0:
+			hurt.append([w[0], w[1], c])
+			all_cost += c
+	var gc := _card(box, "Repairs" if not hurt.is_empty() else "", WARN if not hurt.is_empty() else Color(0, 0, 0, 0))
+	if hurt.is_empty():
+		var ok := _label("Nobody is damaged. Ready to play.", fs - 1, GOOD)
+		ok.add_theme_font_override("font", BODY_B)
+		gc.add_child(ok)
 	else:
-		var fa := _button("Fix everybody $%d (purse $%d)" % [all_cost, Career.money(0)], func():
+		var fa := _button("Fix everybody  $%s" % _commas(all_cost), func():
 			for w in who:
 				for k in Robot.PARTS:
 					if Career.fix_cost(w[0], k) > 0:
 						Career.buy_repair(0, w[0], k)
 			refresh.call())
-		fa.disabled = Career.money(0) <= 0
-		box.add_child(fa)
-	_section(box, "Upgrades")
-	var ur := HFlowContainer.new()
-	ur.add_theme_constant_override("h_separation", 6)
-	box.add_child(ur)
-	ur.add_child(_button("Roster, swaps and upgrades", func(): open_roster(0); _back = refresh))
-	_spend_row(box, 0, refresh)
-	_section(box, "Robot market (joins your bench)")
+		if Career.money(0) >= all_cost:
+			_primary(fa, fs + 2)
+		else:
+			fa.disabled = true
+			fa.text = "Fix everybody  $%s  (purse $%s)" % [_commas(all_cost), _commas(Career.money(0))]
+		gc.add_child(fa)
+		for h in hurt:
+			var r: Dictionary = h[0]
+			var line := HBoxContainer.new()
+			line.add_theme_constant_override("separation", 8)
+			gc.add_child(line)
+			var badge := _disp(String(h[1]), fs - 1, Color(0.45, 0.68, 1.0), false)
+			badge.custom_minimum_size.x = 36
+			line.add_child(badge)
+			var v := VBoxContainer.new()
+			v.add_theme_constant_override("separation", 0)
+			v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			line.add_child(v)
+			var nl := _label(String(r["name"]), fs - 1, Color(0.94, 0.95, 0.97))
+			nl.add_theme_font_override("font", BODY_B)
+			v.add_child(nl)
+			var lost := Robot.lost_parts(r)
+			var cnd := Robot.condition(r)
+			var dt := ("No " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))) if not lost.is_empty() \
+				else "Condition %d%%" % int(roundf(100.0 * float(cnd[0]) / maxf(float(cnd[1]), 1.0)))
+			var dl := _label(dt, fs - 3, BAD if not lost.is_empty() else WARN)
+			dl.tooltip_text = _damage_text(r)
+			v.add_child(dl)
+			var rid := String(r["id"])
+			var c2 := int(h[2])
+			var fix := _button("Fix $%d" % c2, func():
+				var rr: Dictionary = Career.find(rid).get("robot", {})
+				if rr.is_empty():
+					return
+				for k in Robot.PARTS:
+					if Career.fix_cost(rr, k) > 0:
+						Career.buy_repair(0, rr, k)
+				refresh.call())
+			fix.disabled = Career.money(0) < c2
+			fix.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			line.add_child(fix)
+
+
+## Upgrades and the robot market.
+func _market(box: Control, refresh: Callable) -> void:
+	var up := _card(box, "Upgrades")
+	var ur := HBoxContainer.new()
+	ur.add_theme_constant_override("separation", 6)
+	up.add_child(ur)
+	var rb := _button("Roster & upgrades", func(): open_roster(0); _back = refresh)
+	rb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ur.add_child(rb)
+	var inner := VBoxContainer.new()
+	inner.add_theme_constant_override("separation", 6)
+	inner.visible = _buys_open
+	if Career.money(0) > 400 or Career.credit(0) > 0:
+		var cb := _button("Coach buys  " + ("-" if _buys_open else "+"), func():
+			_buys_open = not _buys_open
+			refresh.call())
+		cb.add_theme_color_override("font_color", MAGENTA)
+		cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		ur.add_child(cb)
+	up.add_child(inner)
+	_spend_row(inner, 0, refresh)
+	var mk := _card(box, "Robot market  ·  joins your bench")
 	for r in Career.market():
 		var row := HBoxContainer.new()
-		box.add_child(row)
-		var info := _label("%s  %s  OVR %d  ARMOUR %d  %s" % [r["group"], r["name"], Robot.overall(r), Robot.armour(r), Robot.tiers_text(r, true)], fs - 1, Color(0.85, 0.9, 0.95))
-		info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(info)
+		row.add_theme_constant_override("separation", 8)
+		mk.add_child(row)
+		var badge := _disp(String(r["group"]), fs - 1, Color(0.45, 0.68, 1.0), false)
+		badge.custom_minimum_size.x = 36
+		row.add_child(badge)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 0)
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(v)
+		var nl := _label(String(r["name"]), fs - 1, Color(0.94, 0.95, 0.97))
+		nl.add_theme_font_override("font", BODY_B)
+		v.add_child(nl)
+		v.add_child(_label("Armour %d  ·  %s" % [Robot.armour(r), Robot.tiers_text(r)], fs - 3, DIM))
+		row.add_child(_disp(str(Robot.overall(r)), fs + 6, Color.WHITE, false))
 		var rid := String(r["id"])
 		var price := int(r["price"])
 		var buy := _button("Buy $%d" % price, func():
@@ -2245,6 +2435,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 				toast("SIGNED", 1.4)
 			refresh.call())
 		buy.disabled = Career.money(0) < price
+		buy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(buy)
 
 
