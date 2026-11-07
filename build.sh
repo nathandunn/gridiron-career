@@ -48,6 +48,9 @@ $GODOT --headless --export-release "Web" dist/index.html
 echo "verifying the exported pack…"
 $GODOT --headless --main-pack dist/index.pck --quit-after 150
 
+# the home-screen app manifest (Share > Add to Home Screen opens it full screen, like an app)
+cp web/manifest.json dist/manifest.json
+
 # pre-compress the big three; keep only the .gz
 for f in dist/index.wasm dist/index.js dist/index.pck; do
   [ -f "$f" ] || continue
@@ -58,3 +61,21 @@ printf '%-34s %10s\n' "artefact" "bytes"
 for f in dist/*; do printf '%-34s %10s\n' "$(basename "$f")" "$(stat -c%s "$f")"; done
 echo
 echo "total: $(du -sh dist | cut -f1)"
+
+##
+## Desktop downloads (optional): DESKTOP=1 ./build.sh also exports Linux and Mac builds and
+## zips them into $DOWNLOADS (default /workspace/data/gridiron-career-downloads), which the
+## container serves at /downloads/. They are kept out of git - they are 60-100 MB apiece.
+## Needs the Linux and macOS export templates (the full templates .tpz).
+##
+if [ "${DESKTOP:-0}" = "1" ]; then
+  DL="${DOWNLOADS:-/workspace/data/gridiron-career-downloads}"
+  mkdir -p "$DL" build/linux build/mac
+  echo "desktop: linux"
+  $GODOT --headless --export-release "Linux" build/linux/gridiron-career.x86_64
+  (cd build/linux && zip -q -r -9 "$DL/gridiron-career-linux.zip.tmp" .) && mv "$DL/gridiron-career-linux.zip.tmp" "$DL/gridiron-career-linux.zip"
+  echo "desktop: mac"
+  $GODOT --headless --export-release "macOS" build/mac/gridiron-career.zip
+  mv build/mac/gridiron-career.zip "$DL/gridiron-career-mac.zip"
+  ls -la "$DL"
+fi

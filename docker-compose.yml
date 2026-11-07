@@ -1,5 +1,7 @@
-# The static game behind nginx, plus a host folder for the usage-tracking log so it
-# survives redeploys (see nginx.conf and scripts/ux.gd).
+# The static game behind nginx, plus: a host folder for the usage-tracking log (see nginx.conf
+# and scripts/ux.gd); the desktop downloads folder (DESKTOP=1 ./build.sh); and the cloud-save
+# service (saves/server.py, scripts/cloud.gd) with its saves in a host folder. All three host
+# folders outlive redeploys.
 services:
   web:
     build: .
@@ -7,6 +9,19 @@ services:
     restart: unless-stopped
     volumes:
       - /workspace/data/gridiron-career-ux:/var/log/ux
+      - /workspace/data/gridiron-career-downloads:/downloads:ro
+    networks: [web]
+  saves:
+    image: python:3.12-alpine
+    container_name: gridiron-career-saves
+    restart: unless-stopped
+    command: ["python", "/app/server.py"]
+    environment:
+      SAVES_DIR: /data
+      PORT: "8080"
+    volumes:
+      - ./saves:/app:ro
+      - /workspace/data/gridiron-career-saves:/data
     networks: [web]
 networks:
   web:

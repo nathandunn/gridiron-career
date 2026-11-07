@@ -95,6 +95,7 @@ func setup(m: Node) -> void:
 	_build_controls()
 	_build_watermark()
 	Ux.start(self)
+	CloudSave.start(self)
 	_toast = Label.new()
 	_toast.set_anchors_preset(Control.PRESET_CENTER)
 	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2047,6 +2048,56 @@ func open_menu() -> void:
 	_section(box, "Sim lab")
 	box.add_child(_label("Choose schemes and tune a lab team's roster, then simulate a game against each of ten opponents and read the results. Copies only: nothing breaks, no pay.", fs - 2, Color(0.75, 0.8, 0.85)))
 	box.add_child(_button("Open the sim lab", func(): main.choose_mode("sim")))
+	_cloud_section(box)
+
+
+## Cloud save: the save code, how it went, the link to keep, and loading another code.
+func _cloud_section(box: Container) -> void:
+	var cs := CloudSave.me
+	if cs == null:
+		return
+	_section(box, "Cloud save")
+	var code := cs.ensure_code()
+	box.add_child(_label("Your save code: %s" % code, fs + 2, YELLOW))
+	box.add_child(_label(cs.status_text(), fs - 2, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Every save goes to the cloud under this code. Keep the code (or the link) and your career is never lost: open the link, or type the code on another phone or computer.", fs - 2, Color(0.75, 0.8, 0.85)))
+	var link := LineEdit.new()
+	link.text = cs.link()
+	link.editable = false
+	link.add_theme_font_size_override("font_size", fs - 2)
+	box.add_child(link)
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 6)
+	box.add_child(row)
+	row.add_child(_button("Copy the link", func():
+		DisplayServer.clipboard_set(cs.link())
+		toast("Link copied", 1.2)))
+	row.add_child(_button("Save to the cloud now", func():
+		Career.save()
+		CloudSave.me._due = 0.01
+		toast("Saving...", 1.0)))
+	var lr := HFlowContainer.new()
+	lr.add_theme_constant_override("h_separation", 6)
+	box.add_child(lr)
+	var inp := LineEdit.new()
+	inp.placeholder_text = "XXXX-XXXX-XXXX"
+	inp.custom_minimum_size = Vector2(220, 0)
+	inp.add_theme_font_size_override("font_size", fs)
+	lr.add_child(inp)
+	var msg := _label("", fs - 2, Color(1.0, 0.6, 0.5))
+	lr.add_child(_button("Load this save code", func():
+		msg.text = "Loading..."
+		cs.load_code(inp.text, func(ok: bool, m: String): msg.text = "" if ok else m)))
+	box.add_child(msg)
+	box.add_child(_label("Loading a code replaces the career on this device with that one (yours stays safe in the cloud under your own code).", fs - 3, Color(0.7, 0.72, 0.75)))
+	if OS.has_feature("web"):
+		_section(box, "Download the game")
+		box.add_child(_label("Play it as an app on a computer - the same game and the same cloud saves.", fs - 2, Color(0.75, 0.8, 0.85)))
+		var dr := HFlowContainer.new()
+		dr.add_theme_constant_override("h_separation", 6)
+		box.add_child(dr)
+		dr.add_child(_button("Mac", func(): OS.shell_open(CloudSave.SITE + "/downloads/gridiron-career-mac.zip")))
+		dr.add_child(_button("Linux", func(): OS.shell_open(CloudSave.SITE + "/downloads/gridiron-career-linux.zip")))
 
 
 ## The sim lab's results: one game against each opponent.

@@ -112,6 +112,8 @@ static func save() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(data))
+		f.close()
+		CloudSave.queue()     # and up to the cloud shortly (see cloud.gd)
 
 
 static func new_team(t: int, seed_v := -1, fit := true) -> Dictionary:
