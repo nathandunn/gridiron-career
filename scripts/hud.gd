@@ -41,10 +41,62 @@ var _ed_example: Label
 ## The interface palette: a stadium broadcast look - dark slate panels, stadium-light amber for
 ## what matters (titles, the selected choice), sky blue for headings, gold for highlights. (The
 ## names are kept from the first neon palette so nothing else has to change.)
-const CYAN := Color(0.5, 0.8, 1.0)          # headings, information
-const MAGENTA := Color(1.0, 0.64, 0.16)     # the accent: titles, selected, the coach's pick
-const YELLOW := Color(1.0, 0.86, 0.36)      # highlights
-const INK := Color(0.08, 0.07, 0.06)        # text on the accent
+const CYAN := Color(0.62, 0.74, 0.95)       # headings, information
+const MAGENTA := Color(0.96, 0.72, 0.18)    # the accent (gold): money, the selected choice, the coach's pick
+const YELLOW := Color(1.0, 0.83, 0.42)      # highlights
+const INK := Color(0.1, 0.07, 0.0)          # text on the accent
+## The broadcast look (v1.207): night-navy surfaces, team red and blue, gold for money and the
+## main action, green / amber / red only for condition.
+const NIGHT := Color(0.04, 0.055, 0.086)
+const SURF1 := Color(0.07, 0.094, 0.137)
+const SURF2 := Color(0.102, 0.133, 0.196)
+const SURF3 := Color(0.133, 0.173, 0.251)
+const LINE := Color(0.165, 0.208, 0.314)
+const DIM := Color(0.553, 0.6, 0.678)
+const GOOD := Color(0.3, 0.83, 0.48)
+const WARN := Color(1.0, 0.69, 0.18)
+const BAD := Color(1.0, 0.35, 0.31)
+const TEAM_COL := [Color(0.91, 0.28, 0.23), Color(0.25, 0.55, 1.0)]
+## The fonts (Barlow and Barlow Condensed, SIL Open Font License - fonts/OFL.txt).
+static var BODY: Font = null
+static var BODY_B: Font = null
+static var DISP: Font = null       # condensed bold italic: titles, scores, banners
+static var NUM: Font = null        # condensed bold: big numbers
+
+
+static func load_fonts() -> void:
+	if DISP != null:
+		return
+	BODY = load("res://fonts/Barlow-Regular.ttf")
+	BODY_B = load("res://fonts/Barlow-SemiBold.ttf")
+	DISP = load("res://fonts/BarlowCondensed-BoldItalic.ttf")
+	NUM = load("res://fonts/BarlowCondensed-Bold.ttf")
+
+
+## A label in the display face: "TOUCHDOWN", a panel title, a score.
+func _disp(text: String, size: int, color := Color(0.94, 0.95, 0.97), italic := true) -> Label:
+	var l := _label(text, size, color)
+	l.add_theme_font_override("font", DISP if italic else NUM)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
+## Small spaced capitals over a section ("PLAYERS OF THE GAME").
+func _eyebrow(text: String, color := DIM) -> Label:
+	var l := _label(text.to_upper(), fs - 2, color)
+	l.add_theme_font_override("font", BODY_B)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+
+static func flat(bg: Color, radius := 10, border := Color(0, 0, 0, 0), bw := 0) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_corner_radius_all(radius)
+	if bw > 0:
+		sb.border_color = border
+		sb.set_border_width_all(bw)
+	return sb
 const KIND_LABEL := {"coach": "Coaches", "defense": "Defenses", "play": "Plays", "ai": "Position brains"}
 const PLAY_HELP := """Assignments, one line per position (OL, WR, DL, LB, CB, S set the whole group):
 QB: pass drop 3|5|7 read WR1 WR2 ... · play action drop 7 read ... · handoff · run sneak
@@ -84,6 +136,7 @@ func _build_watermark() -> void:
 
 func setup(m: Node) -> void:
 	main = m
+	load_fonts()
 	var vp := get_viewport().get_visible_rect().size
 	fs = 15 if vp.x > 700 else 14
 	_root = Control.new()
@@ -96,63 +149,61 @@ func setup(m: Node) -> void:
 	_build_watermark()
 	Ux.start(self)
 	CloudSave.start(self)
-	_toast = Label.new()
-	_toast.set_anchors_preset(Control.PRESET_CENTER)
-	_toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast.autowrap_mode = TextServer.AUTOWRAP_OFF
-	_toast.add_theme_font_size_override("font_size", fs + 22)
-	_toast.add_theme_color_override("font_color", YELLOW)
-	_toast.add_theme_color_override("font_outline_color", Color(0.12, 0.06, 0.0))
-	_toast.add_theme_constant_override("outline_size", 12)
-	_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_toast.visible = false
-	_root.add_child(_toast)
+	_build_banner()
 	_build_caption()
 
 
 func _make_theme() -> Theme:
 	var th := Theme.new()
+	th.default_font = BODY
 	th.default_font_size = fs
-	var mk := func(bg: Color, border: Color, glow := 0) -> StyleBoxFlat:
+	# buttons: rounded tiles with a darker lip underneath, so they look pressable
+	var mk := func(bg: Color, lip: Color, border := Color(0, 0, 0, 0)) -> StyleBoxFlat:
 		var sb := StyleBoxFlat.new()
 		sb.bg_color = bg
-		sb.border_color = border
-		sb.set_border_width_all(2)
-		sb.set_corner_radius_all(4)
-		sb.content_margin_left = 10
-		sb.content_margin_right = 10
-		sb.content_margin_top = 5
-		sb.content_margin_bottom = 5
-		if glow > 0:
-			sb.shadow_color = Color(border, 0.45)
-			sb.shadow_size = glow
+		sb.set_corner_radius_all(9)
+		sb.border_color = lip
+		sb.border_width_bottom = 3
+		if border.a > 0.0:
+			sb.border_color = border
+			sb.set_border_width_all(2)
+			sb.border_width_bottom = 3
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+		sb.content_margin_top = 6
+		sb.content_margin_bottom = 6
 		return sb
-	th.set_stylebox("normal", "Button", mk.call(Color(0.15, 0.18, 0.24, 0.96), Color(0.3, 0.35, 0.44)))
-	th.set_stylebox("hover", "Button", mk.call(Color(0.2, 0.24, 0.32, 0.98), CYAN, 3))
-	th.set_stylebox("pressed", "Button", mk.call(MAGENTA, Color(1.0, 0.8, 0.45), 4))
-	th.set_stylebox("hover_pressed", "Button", mk.call(MAGENTA.lightened(0.1), Color(1.0, 0.85, 0.55), 4))
-	th.set_stylebox("disabled", "Button", mk.call(Color(0.1, 0.11, 0.14, 0.85), Color(0.2, 0.22, 0.26)))
+	th.set_stylebox("normal", "Button", mk.call(SURF3, Color(0.06, 0.08, 0.12)))
+	th.set_stylebox("hover", "Button", mk.call(SURF3.lightened(0.08), Color(0.06, 0.08, 0.12)))
+	var down: StyleBoxFlat = mk.call(MAGENTA, Color(0.66, 0.48, 0.08))
+	th.set_stylebox("pressed", "Button", down)
+	th.set_stylebox("hover_pressed", "Button", mk.call(MAGENTA.lightened(0.08), Color(0.66, 0.48, 0.08)))
+	th.set_stylebox("disabled", "Button", mk.call(Color(SURF2, 0.9), Color(0.05, 0.06, 0.09)))
 	th.set_stylebox("focus", "Button", StyleBoxEmpty.new())
+	th.set_font("font", "Button", BODY_B)
 	th.set_color("font_color", "Button", Color(0.94, 0.95, 0.97))
 	th.set_color("font_hover_color", "Button", Color.WHITE)
 	th.set_color("font_pressed_color", "Button", INK)
 	th.set_color("font_hover_pressed_color", "Button", INK)
-	th.set_color("font_disabled_color", "Button", Color(0.48, 0.5, 0.55))
+	th.set_color("font_disabled_color", "Button", Color(0.45, 0.49, 0.56))
 	var panel := StyleBoxFlat.new()
-	panel.bg_color = Color(0.07, 0.09, 0.13, 0.97)
-	panel.border_color = Color(0.26, 0.31, 0.4)
+	panel.bg_color = Color(SURF1, 0.98)
+	panel.border_color = LINE
 	panel.set_border_width_all(1)
-	panel.border_width_top = 4
-	panel.border_color = MAGENTA          # an amber bar across the top of every panel
-	panel.set_corner_radius_all(8)
-	panel.set_content_margin_all(12)
-	panel.shadow_color = Color(0, 0, 0, 0.55)
-	panel.shadow_size = 12
+	panel.set_corner_radius_all(14)
+	panel.set_content_margin_all(14)
+	panel.shadow_color = Color(0, 0, 0, 0.6)
+	panel.shadow_size = 16
 	th.set_stylebox("panel", "PanelContainer", panel)
-	for cls in ["OptionButton"]:
-		th.set_stylebox("normal", cls, mk.call(Color(0.15, 0.18, 0.24, 0.96), Color(0.3, 0.35, 0.44)))
-		th.set_stylebox("hover", cls, mk.call(Color(0.2, 0.24, 0.32, 0.98), CYAN, 3))
-		th.set_stylebox("pressed", cls, mk.call(Color(0.2, 0.24, 0.32, 0.98), MAGENTA, 3))
+	th.set_stylebox("normal", "OptionButton", mk.call(SURF3, Color(0.06, 0.08, 0.12)))
+	th.set_stylebox("hover", "OptionButton", mk.call(SURF3.lightened(0.08), Color(0.06, 0.08, 0.12)))
+	th.set_stylebox("pressed", "OptionButton", mk.call(SURF3, Color(0.06, 0.08, 0.12), MAGENTA))
+	th.set_font("font", "OptionButton", BODY_B)
+	th.set_color("default_color", "RichTextLabel", Color(0.9, 0.92, 0.95))
+	th.set_font("bold_font", "RichTextLabel", BODY_B)
+	th.set_font("normal_font", "RichTextLabel", BODY)
+	var le := mk.call(NIGHT, LINE, LINE) as StyleBoxFlat
+	th.set_stylebox("normal", "LineEdit", le)
 	return th
 
 
@@ -184,76 +235,129 @@ func _button(text: String, cb: Callable, toggle := false) -> Button:
 
 ## ---- scoreboard ----------------------------------------------------------------------------
 
+var _abbr := [null, null]
+var _poss_dot := [null, null]
+
+
+## The broadcast scorebug: [RIV][14][Q2 3:12 / 2ND & 6 OWN 31][17][HOG], with the call, the
+## result and any progress in a strip under it.
 func _build_scoreboard() -> void:
-	var top := PanelContainer.new()
+	var top := VBoxContainer.new()
 	_board = top
 	top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	top.offset_left = 8
 	top.offset_right = -8
-	top.offset_top = 46
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.07, 0.09, 0.13, 0.9)
-	sb.border_color = MAGENTA
-	sb.set_border_width_all(0)
-	sb.border_width_bottom = 3
-	sb.set_corner_radius_all(6)
-	sb.set_content_margin_all(8)
-	sb.shadow_color = Color(0, 0, 0, 0.5)
-	sb.shadow_size = 8
-	top.add_theme_stylebox_override("panel", sb)
+	top.offset_top = 18
+	top.add_theme_constant_override("separation", 6)
 	top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(top)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 2)
-	top.add_child(v)
+	var bug := PanelContainer.new()
+	var bsb := flat(Color(0.03, 0.045, 0.07, 0.96), 9)
+	bsb.shadow_color = Color(0, 0, 0, 0.55)
+	bsb.shadow_size = 10
+	bug.add_theme_stylebox_override("panel", bsb)
+	bug.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(bug)
 	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_child(row)
+	row.add_theme_constant_override("separation", 0)
+	bug.add_child(row)
 	var narrow := get_viewport().get_visible_rect().size.x < 520.0
-	for t in 2:
-		var l := _label("", fs + (3 if narrow else 6), FieldView.NEON[t].lightened(0.25))
-		l.add_theme_color_override("font_outline_color", Color(FieldView.NEON[t], 0.5))
-		l.add_theme_constant_override("outline_size", 4)
-		l.autowrap_mode = TextServer.AUTOWRAP_OFF
-		# never wider than its share of the board: a long club name trims rather than push it off
-		l.clip_text = true
-		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if t == 0 else HORIZONTAL_ALIGNMENT_RIGHT
-		_score[t] = l
-		if t == 1:
-			_clock = _label("", fs + (1 if narrow else 3), YELLOW)
-			_clock.autowrap_mode = TextServer.AUTOWRAP_OFF
-			_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			row.add_child(_clock)
-		row.add_child(l)
-	row.move_child(_score[0], 0)
-	_sit = _label("", fs, Color(0.85, 0.97, 1.0))
+	var h := 46.0 if narrow else 54.0
+	var mid := VBoxContainer.new()
+	mid.alignment = BoxContainer.ALIGNMENT_CENTER
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.add_theme_constant_override("separation", -2)
+	_clock = _disp("", fs + 2, Color(0.95, 0.96, 0.98), false)
+	_clock.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mid.add_child(_clock)
+	_sit = _label("", fs - 3, MAGENTA)
+	_sit.add_theme_font_override("font", BODY_B)
+	_sit.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_sit.clip_text = true
+	_sit.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_sit.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(_sit)
-	_call = _label("", fs - 2, Color(0.8, 0.85, 0.9))
-	_call.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(_call)
+	mid.add_child(_sit)
+	for t in 2:
+		var tag := PanelContainer.new()
+		var tsb := flat(TEAM_COL[t], 0)
+		if t == 0:
+			tsb.corner_radius_top_left = 9
+			tsb.corner_radius_bottom_left = 9
+		else:
+			tsb.corner_radius_top_right = 9
+			tsb.corner_radius_bottom_right = 9
+		tsb.content_margin_left = 10
+		tsb.content_margin_right = 10
+		tag.add_theme_stylebox_override("panel", tsb)
+		tag.custom_minimum_size = Vector2(0, h)
+		tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var th := HBoxContainer.new()
+		th.alignment = BoxContainer.ALIGNMENT_CENTER
+		th.add_theme_constant_override("separation", 5)
+		tag.add_child(th)
+		var dot := _disp("•", fs + 2, Color(1.0, 0.85, 0.3), false)
+		dot.modulate.a = 0.0
+		_poss_dot[t] = dot
+		_abbr[t] = _disp("", fs + 1, Color.WHITE)
+		if t == 0:
+			th.add_child(dot)
+			th.add_child(_abbr[t])
+		else:
+			th.add_child(_abbr[t])
+			th.add_child(dot)
+		var sc := _disp("0", fs + (11 if narrow else 15), Color.WHITE, false)
+		sc.custom_minimum_size = Vector2(40 if narrow else 52, 0)
+		sc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_score[t] = sc
+		if t == 0:
+			row.add_child(tag)
+			row.add_child(sc)
+			row.add_child(mid)
+		else:
+			row.add_child(sc)
+			row.add_child(tag)
+	var strip := HFlowContainer.new()
+	strip.alignment = FlowContainer.ALIGNMENT_CENTER
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	top.add_child(strip)
+	_call = _label("", fs - 2, Color(0.88, 0.9, 0.94))
 	_result = _label("", fs - 1, Color(1, 1, 1))
-	_result.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	v.add_child(_result)
-	_progress = _label("", fs - 1, Color(0.7, 1, 0.7))
-	_progress.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_progress = _label("", fs - 1, GOOD)
 	_progress.visible = false
-	v.add_child(_progress)
+	for l in [_call, _result, _progress]:
+		var chip := PanelContainer.new()
+		var csb := flat(Color(0.03, 0.045, 0.07, 0.82), 12, LINE, 1)
+		csb.content_margin_left = 10
+		csb.content_margin_right = 10
+		csb.content_margin_top = 2
+		csb.content_margin_bottom = 3
+		chip.add_theme_stylebox_override("panel", csb)
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		(l as Label).horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		(l as Label).autowrap_mode = TextServer.AUTOWRAP_OFF
+		(l as Label).clip_text = true
+		(l as Label).text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		chip.add_child(l)
+		chip.visible = false
+		strip.add_child(chip)
+
+
+## "Sprocket City Sparks" -> "SPA": three letters of the club's last word.
+static func abbr(name: String) -> String:
+	var w := name.strip_edges().split(" ")
+	return String(w[-1]).substr(0, 3).to_upper() if w.size() > 0 else "???"
 
 
 func show_state(g: Game) -> void:
 	for t in 2:
 		var has := g.poss == t and not g.over
 		var cn: String = String(g.teams[t].get("club", Career.team(t)["name"])) if Career.loaded else (g.teams[t]["coach"] as Coach).name
-		if get_viewport().get_visible_rect().size.x < 520.0:
-			cn = cn.split(" ")[-1]          # a phone: "Sparks", not "Sprocket City Sparks"
-		_score[t].text = ("%s %d%s" % [cn, g.score[t], " «" if has else ""]) if t == 0 else ("%s%s %d" % ["» " if has else "", cn, g.score[t]])
-	var s := maxi(int(g.clock), 0)
-	_clock.text = ("Final (OT)" if g.in_ot() else "Final") if g.over else g.clock_text()
-	var badge := (Career.mode_badge().to_upper() + "  ·  ") if Career.loaded else ""
-	_sit.text = badge + ("Final" if g.over else "%s ball · %s" % [g.teams[g.poss].get("club", g.teams[g.poss]["name"]), g.situation()])
+		_abbr[t].text = abbr(cn)
+		_score[t].text = str(g.score[t])
+		_poss_dot[t].modulate.a = 1.0 if has else 0.0
+	_clock.text = ("FINAL (OT)" if g.in_ot() else "FINAL") if g.over else g.clock_text().to_upper()
+	var badge := (Career.mode_badge().to_upper() + " · ") if Career.loaded and get_viewport().get_visible_rect().size.x >= 520.0 else ""
+	_sit.text = badge + ("" if g.over else g.situation().to_upper().replace(",", " ·"))
 
 
 ## Fade the scoreboard out for the play and back in after the whistle.
@@ -268,31 +372,149 @@ func show_board(on: bool) -> void:
 
 
 func show_call(text: String) -> void:
-	_call.text = text
+	_chip_text(_call, text)
 
 
 func show_result(text: String) -> void:
-	_result.text = text
+	_chip_text(_result, text)
 
 
+## A strip chip's text, as wide as it needs up to the screen (then it trims with "...").
+func _chip_text(l: Label, text: String) -> void:
+	l.text = text
+	l.get_parent().visible = text != ""
+	var f := l.get_theme_font("font")
+	var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.get_theme_font_size("font_size")).x + 2.0
+	l.custom_minimum_size.x = minf(w, get_viewport().get_visible_rect().size.x - 44.0)
+
+
+## ---- banners: the TV lower-third ------------------------------------------------------------
+
+var _ban: Control
+var _ban_tag: PanelContainer
+var _ban_tag_l: Label
+var _ban_msg: PanelContainer
+var _ban_msg_l: Label
+var _ban_tw: Tween
+
+
+func _build_banner() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 110          # over any panel, so "SIGNED" shows on the roster too
+	add_child(layer)
+	var hold := Control.new()
+	hold.set_anchors_preset(Control.PRESET_FULL_RECT)
+	hold.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hold.theme = _root.theme
+	layer.add_child(hold)
+	_ban = HBoxContainer.new()
+	_ban.add_theme_constant_override("separation", 0)
+	_ban.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hold.add_child(_ban)
+	_ban_tag = PanelContainer.new()
+	_ban_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ban_tag_l = _disp("", fs + 6, Color.WHITE)
+	_ban_tag.add_child(_ban_tag_l)
+	_ban.add_child(_ban_tag)
+	_ban_msg = PanelContainer.new()
+	_ban_msg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ban_msg.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var msb := flat(Color(0.03, 0.045, 0.07, 0.94), 0)
+	msb.content_margin_left = 12
+	msb.content_margin_right = 12
+	msb.content_margin_top = 6
+	msb.content_margin_bottom = 6
+	_ban_msg.add_theme_stylebox_override("panel", msb)
+	_ban_msg_l = _label("", fs, Color(0.94, 0.95, 0.97))
+	_ban_msg_l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_ban_msg_l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_ban_msg_l.clip_text = true
+	_ban_msg_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_ban_msg_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ban_msg.add_child(_ban_msg_l)
+	_ban.add_child(_ban_msg)
+	_ban.visible = false
+	_toast = _ban_tag_l
+
+
+## The colour of a banner's tag, from what it says.
+static func banner_color(head: String) -> Color:
+	var h := head.to_upper()
+	if h.contains("NO GOOD") or h.contains("NOT ") or h.contains("COULDN") or h.contains("NOTHING"):
+		return Color(0.85, 0.2, 0.17)
+	for k in ["TOUCHDOWN", "GOOD", "FIELD GOAL", "SIGNED", "SOLD", "TRADED", "SAVED", "COACH"]:
+		if h.contains(k):
+			return Color(0.85, 0.6, 0.06)
+	for k in ["INTERCEPT", "FUMBLE", "PICK SIX", "SCOOP", "BLOCKED", "NO GOOD", "FAILS", "TURNOVER", "SAFETY", "SACK", "NOT ENOUGH", "COULDN", "NOT SAVED", "BROKE", "LOST", "OFF", "DOWN!"]:
+			if h.contains(k) and not h.contains("FIRST DOWN"):
+				return Color(0.85, 0.2, 0.17)
+	return Color(0.16, 0.42, 0.85)
+
+
+## A TV lower-third: the first line is the tag ("TOUCHDOWN!"), the rest the message beside it.
+## It slides in over the bottom of the field, holds, and slides away.
 func toast(text: String, secs := 1.6) -> void:
-	_toast.text = text
-	# as big as fits: shrink the type until the longest line fits the screen with a margin
-	var avail := get_viewport().get_visible_rect().size.x - 28.0
-	var font := _toast.get_theme_font("font")
-	var size := fs + 22
-	while size > fs:
-		var widest := 0.0
-		for ln in text.split("\n"):
-			widest = maxf(widest, font.get_string_size(ln, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x)
-		if widest + 24.0 <= avail:
-			break
-		size -= 2
-	_toast.add_theme_font_size_override("font_size", size)
-	_toast.reset_size()
-	_toast.visible = true
-	_toast.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - _toast.size.x * 0.5, get_viewport().get_visible_rect().size.y * 0.42)
-	_toast_t = secs
+	var lines := text.split("\n")
+	var head := String(lines[0])
+	var rest := " · ".join(lines.slice(1)) if lines.size() > 1 else ""
+	var vp := get_viewport().get_visible_rect().size
+	_ban_tag_l.text = head.to_upper() if head.length() <= 28 else head
+	var big := head.length() <= 28
+	_ban_tag_l.add_theme_font_override("font", DISP if big else BODY_B)
+	_ban_tag_l.add_theme_font_size_override("font_size", fs + 6 if big else fs)
+	_ban_tag_l.autowrap_mode = TextServer.AUTOWRAP_OFF if big else TextServer.AUTOWRAP_WORD_SMART
+	var tsb := flat(banner_color(head), 0)
+	tsb.content_margin_left = 14
+	tsb.content_margin_right = 14
+	tsb.content_margin_top = 6
+	tsb.content_margin_bottom = 6
+	_ban_tag.add_theme_stylebox_override("panel", tsb)
+	_ban_msg_l.text = rest
+	_ban_msg.visible = rest != ""
+	_ban_tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL if rest == "" else Control.SIZE_FILL
+	_ban_tag_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if rest == "" else HORIZONTAL_ALIGNMENT_LEFT
+	# a phone: the whole width; a wide screen: a broadcast strip in the lower left
+	var w := vp.x if vp.x < 700.0 else minf(vp.x * 0.62, 760.0)
+	_ban_tag_l.custom_minimum_size = Vector2(0, 0)
+	if not big:
+		_ban_tag_l.custom_minimum_size = Vector2(w - 28.0, 0)
+	_ban.custom_minimum_size = Vector2(w, 0)
+	_ban.size = Vector2(w, 0)
+	_ban.reset_size()
+	_ban.size.x = w
+	var y := vp.y - _ban.get_combined_minimum_size().y - (_bar_h() + 22.0)
+	_ban.visible = true
+	_ban.modulate.a = 1.0
+	if _ban_tw != null and _ban_tw.is_valid():
+		_ban_tw.kill()
+	_ban.position = Vector2(-w, y)
+	var x0 := 0.0 if vp.x < 700.0 else 16.0
+	_ban_tw = create_tween()
+	_ban_tw.tween_property(_ban, "position:x", x0, 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_ban_tw.tween_interval(maxf(secs, 0.8))
+	_ban_tw.tween_property(_ban, "modulate:a", 0.0, 0.3)
+	_ban_tw.tween_callback(func(): _ban.visible = false)
+	_banner_sound(head)
+
+
+func _banner_sound(head: String) -> void:
+	if main == null or not ("sfx" in main) or main.sfx == null:
+		return
+	var h := head.to_upper()
+	if h.contains("TOUCHDOWN") or h.contains("PICK SIX") or h.contains("SCOOP"):
+		main.sfx.play("roar", -4.0)
+		main.sfx.play("whistle", -12.0, 1.1)
+	elif h.contains("INTERCEPT") or h.contains("FUMBLE") or h.contains("TURNOVER") or h.contains("BLOCKED"):
+		main.sfx.play("whistle", -10.0)
+		main.sfx.play("clank", -10.0, 0.7)
+	elif h.contains("GOOD") or h.contains("SAFETY"):
+		main.sfx.play("roar", -9.0)
+	elif h.contains("SIGNED") or h.contains("SOLD") or h.contains("TRADED"):
+		main.sfx.play("clink", -8.0, 1.3)
+
+
+func _bar_h() -> float:
+	return _bar.size.y if _bar != null and _bar.visible else 0.0
 
 
 ## ---- play-by-play captions ----------------------------------------------------------------
@@ -386,14 +608,14 @@ func show_resume(on: bool, text: String) -> void:
 
 
 func set_progress(text: String) -> void:
-	_progress.text = text
+	_chip_text(_progress, text)
 	_progress.visible = text != ""
 
 
 func _process(delta: float) -> void:
 	if _cap_box != null and _cap_box.visible:
 		# under the scoreboard when it is up, in its place while the ball is live
-		var want := 46.0 + ((_board.size.y + 6.0) if _board_on else 0.0)
+		var want := 18.0 + ((_board.size.y + 6.0) if _board_on else 0.0)
 		_cap_box.offset_top = lerpf(_cap_box.offset_top, want, minf(delta * 10.0, 1.0))
 		_cap_box.offset_bottom = _cap_box.offset_top
 		_cap_t -= delta
@@ -402,56 +624,124 @@ func _process(delta: float) -> void:
 		if _cap_t <= 0.0:
 			_cap_box.visible = false
 			_cap_lines.clear()
-	if _toast_t > 0.0:
-		_toast_t -= delta
-		_toast.position = Vector2(get_viewport().get_visible_rect().size.x * 0.5 - _toast.size.x * 0.5, get_viewport().get_visible_rect().size.y * 0.42)
-		if _toast_t <= 0.0:
-			_toast.visible = false
 
 
 ## ---- controls ------------------------------------------------------------------------------
 
+var _bar: Control = null
+var _speed_btn: Button = null
+var _more: PanelContainer = null
+const SPEEDS := [1.0, 2.0, 4.0, 8.0]
+
+
+## One of the five keys along the bottom: a glyph on a tile with its name under it.
+func _key(glyph: String, name: String, cb: Callable) -> Button:
+	var b := _button(glyph, cb)
+	b.add_theme_font_override("font", NUM)
+	b.add_theme_font_size_override("font_size", fs + 3)
+	b.custom_minimum_size = Vector2(54, 34)
+	b.tooltip_text = name
+	return b
+
+
+## The slim bar over the field: Pause, Speed, Skip, Audible and More (the rest, in a drawer).
 func _build_controls() -> void:
-	var bar := HFlowContainer.new()
-	bar.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
-	bar.offset_left = 8
-	bar.offset_right = -8
-	bar.offset_bottom = -10
+	var bar := PanelContainer.new()
+	_bar = bar
+	bar.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+	var bsb := flat(Color(0.03, 0.045, 0.07, 0.93), 14, LINE, 1)
+	bsb.set_content_margin_all(6)
+	bsb.content_margin_left = 10
+	bsb.content_margin_right = 10
+	bar.add_theme_stylebox_override("panel", bsb)
+	bar.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
-	bar.alignment = FlowContainer.ALIGNMENT_CENTER
-	bar.add_theme_constant_override("h_separation", 6)
-	bar.add_theme_constant_override("v_separation", 6)
+	bar.offset_bottom = -10
 	_root.add_child(bar)
-	_pause_btn = _button("Pause", func(): main.toggle_pause())
-	bar.add_child(_pause_btn)
-	for s in [1.0, 2.0, 4.0, 8.0]:
-		var b := _button("%d×" % int(s), func(): main.set_speed(s), true)
-		_speed_btns[s] = b
-		bar.add_child(b)
-	bar.add_child(_button("Skip drive", func(): main.skip_drive()))
-	bar.add_child(_button("Sim to end", func(): main.sim_to_end()))
-	_view_btn = _button("Cam: Behind", func(): _view_btn.text = "Cam: " + main.next_view())
-	bar.add_child(_view_btn)
-	_sound_btn = _button("Sound: voice", func(): _sound_btn.text = main.next_sound())
-	bar.add_child(_sound_btn)
-	_aud_toggle = _button(main.audible_label(), func(): _aud_toggle.text = main.toggle_audibles())
-	bar.add_child(_aud_toggle)
-	bar.add_child(_button("Teams", func(): open_teams()))
-	bar.add_child(_button("Roster", func(): open_roster()))
-	bar.add_child(_button("Edit AI", func(): open_editor()))
-	bar.add_child(_button("Box score", func(): if main.game != null: show_stats(main.game, "live", {}, main.reopen_panel())))
-	bar.add_child(_button("Log", func(): open_log()))
-	bar.add_child(_button("Menu", func(): main.show_menu()))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	bar.add_child(row)
+	var col := func(btn: Button, name: String) -> void:
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 1)
+		v.add_child(btn)
+		var l := _label(name, fs - 4, DIM)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		v.add_child(l)
+		row.add_child(v)
+	_pause_btn = _key("II", "Pause", func(): main.toggle_pause())
+	col.call(_pause_btn, "Pause")
+	_speed_btn = _key("1x", "Speed", func():
+		var i := 0
+		for k in SPEEDS.size():
+			if is_equal_approx(SPEEDS[k], main.speed):
+				i = k
+		main.set_speed(SPEEDS[(i + 1) % SPEEDS.size()]))
+	col.call(_speed_btn, "Speed")
+	col.call(_key(">>", "Skip drive", func(): main.skip_drive()), "Skip drive")
+	_aud_toggle = _key("A", "Audibles", func():
+		main.toggle_audibles()
+		_mark_aud())
+	col.call(_aud_toggle, "Audibles")
+	col.call(_key("...", "More", func(): _toggle_more()), "More")
+	_build_more()
+	_mark_aud()
 	mark_speed(1.0)
 
 
+func _mark_aud() -> void:
+	if _aud_toggle == null:
+		return
+	var on: bool = main.audibles_on()
+	_aud_toggle.add_theme_color_override("font_color", MAGENTA if on else DIM)
+	_aud_toggle.tooltip_text = "Audibles: on" if on else "Audibles: off"
+
+
+## The drawer above the bar: everything that used to crowd it.
+func _build_more() -> void:
+	_more = PanelContainer.new()
+	_more.visible = false
+	_root.add_child(_more)
+	var g := GridContainer.new()
+	g.columns = 3
+	g.add_theme_constant_override("h_separation", 8)
+	g.add_theme_constant_override("v_separation", 8)
+	_more.add_child(g)
+	var add := func(t: String, cb: Callable) -> Button:
+		var b := _button(t, func():
+			_more.visible = false
+			cb.call())
+		b.custom_minimum_size = Vector2(112, 40)
+		g.add_child(b)
+		return b
+	add.call("Sim to end", func(): main.sim_to_end())
+	_view_btn = add.call("Cam: Behind", func(): _view_btn.text = "Cam: " + main.next_view())
+	_sound_btn = add.call("Sound: voice", func(): _sound_btn.text = main.next_sound())
+	add.call("Roster", func(): open_roster())
+	add.call("Teams", func(): open_teams())
+	add.call("Box score", func(): if main.game != null: show_stats(main.game, "live", {}, main.reopen_panel()))
+	add.call("Play log", func(): open_log())
+	add.call("Edit AI", func(): open_editor())
+	add.call("Menu", func(): main.show_menu())
+
+
+func _toggle_more() -> void:
+	_more.visible = not _more.visible
+	if _more.visible:
+		_more.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_more.position = Vector2((vp.x - _more.size.x) * 0.5, vp.y - _bar_h() - 20.0 - _more.size.y)
+
+
 func mark_speed(s: float) -> void:
-	for k in _speed_btns:
-		_speed_btns[k].button_pressed = is_equal_approx(k, s)
+	if _speed_btn != null:
+		_speed_btn.text = "%dx" % int(s)
+		_speed_btn.add_theme_color_override("font_color", MAGENTA if s > 1.0 else Color(0.94, 0.95, 0.97))
 
 
 func mark_paused(p: bool) -> void:
-	_pause_btn.text = "Play" if p else "Pause"
+	_pause_btn.text = ">" if p else "II"
 
 
 func mark_view(v: String) -> void:
@@ -571,17 +861,37 @@ func _open(title: String) -> VBoxContainer:
 	var vp := get_viewport().get_visible_rect().size
 	var w := minf(vp.x - 16.0, 900.0)
 	var pc := PanelContainer.new()
-	pc.position = Vector2((vp.x - w) * 0.5, 40)
+	# in a game the scorebug stays up over the panel: the clock and the down are never hidden
+	var top := 40.0
+	var in_game: bool = main != null and main.game != null and not main.game.over and _board != null \
+			and main._phase in ["picking", "special", "qbreak", "injury", "audible"]
+	if in_game:
+		_board.modulate.a = 1.0
+		_root.move_child(_board, -1)
+		top = _board.position.y + _board.get_child(0).size.y + 8.0
+	pc.position = Vector2((vp.x - w) * 0.5, top)
 	pc.custom_minimum_size = Vector2(w, 0)
-	pc.size = Vector2(w, vp.y - 60)
+	pc.size = Vector2(w, vp.y - top - 20.0)
 	dim.add_child(pc)
 	var outer := VBoxContainer.new()
 	pc.add_child(outer)
 	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 10)
 	outer.add_child(head)
-	var tl := _label(title, fs + 4, MAGENTA)
+	var tv := VBoxContainer.new()
+	tv.add_theme_constant_override("separation", 0)
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(tv)
+	var main_t := title.get_slice(" · ", 0)
+	var tl := _disp(main_t.to_upper(), fs + 9)
+	tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	tl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	head.add_child(tl)
+	tv.add_child(tl)
+	if title.length() > main_t.length():
+		var rest := title.substr(main_t.length() + 3)
+		var sub := _label(rest, fs - 2, MAGENTA if rest.contains("purse") else DIM)
+		sub.add_theme_font_override("font", BODY_B)
+		tv.add_child(sub)
 	_close_btn = _button("× Close", func(): close_overlay())
 	head.add_child(_close_btn)
 	_crumb_lbl = _label("", fs - 3, Color(0.65, 0.72, 0.82))
@@ -599,7 +909,7 @@ func _open(title: String) -> VBoxContainer:
 	box.add_theme_constant_override("separation", 8)
 	sc.add_child(box)
 	# the panel is as tall as what is in it, up to the screen; past that it scrolls
-	var refit := func() -> void: _fit_panel(pc, sc, box, vp.y - 60.0)
+	var refit := func() -> void: _fit_panel(pc, sc, box, vp.y - top - 20.0)
 	box.minimum_size_changed.connect(refit)
 	refit.call_deferred()
 	main.overlay_changed(true)
@@ -623,8 +933,12 @@ func _fit_panel(pc: PanelContainer, sc: Control, box: Control, max_h: float) -> 
 
 
 func _section(box: Control, text: String) -> void:
-	var l := _label(text, fs + 1, CYAN)
-	box.add_child(l)
+	var l := _eyebrow(text, CYAN)
+	l.add_theme_font_size_override("font_size", fs - 1)
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_top", 6)
+	m.add_child(l)
+	box.add_child(m)
 
 
 func _chips(box: Control, names: Array, current: String, cb: Callable) -> HFlowContainer:
@@ -1093,39 +1407,134 @@ func _save_generated(text: String) -> void:
 
 ## ---- calling your own plays ---------------------------------------------------------------
 
+## A play card's look: a dark tile, gold-edged when it's the coach's pick.
+func _card_style(card: Button, gold: bool) -> void:
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		var sb := flat(SURF1 if st == "normal" else SURF2, 12, MAGENTA if gold else LINE, 2 if gold else 1)
+		sb.set_content_margin_all(0)
+		if st == "pressed":
+			sb.border_color = MAGENTA
+			sb.set_border_width_all(2)
+		card.add_theme_stylebox_override(st, sb)
+
+
 func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionary = {}) -> void:
-	# the clock and the down stay in the title, so they are always on screen while you choose
-	var title := "%s · %s · %s %s" % [g.clock_text(), g.situation(), Team.NAMES[team], side]
+	# the clock and the down are on the scorebug, which stays up over this panel
+	var title: String = ("Call a play" if side == "offense" else "Call a defense") + " · " + String(Team.NAMES[team]) + " " + side
 	var box := _open(title)
-	box.add_child(_label("%s %d - %d %s.  Pick a play - all made up just now." % [
-		(g.teams[0]["coach"] as Coach).name, g.score[0], g.score[1], (g.teams[1]["coach"] as Coach).name], fs - 2, Color(0.8, 0.82, 0.85)))
 	var vp := get_viewport().get_visible_rect().size
-	var inner := minf(vp.x - 16.0, 900.0) - 40.0
+	var inner := minf(vp.x - 16.0, 900.0) - 44.0
 	var cols := 2 if inner < 560.0 else 4
 	var cw := floorf((inner - 8.0 * (cols - 1)) / cols)
+	var coach_i := int(coach.get("index", -1))
+	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
+	# the coach's pick in one line; the reasons behind a tap
+	var why := ""
+	var line := ""
+	if String(coach.get("call", "")) == "punt":
+		line = "Coach's pick: punt it away"
+		why = "His rule: %s." % String(coach.get("why", ""))
+	elif String(coach.get("call", "")) == "field_goal":
+		line = "Coach's pick: kick the field goal"
+		why = "His rule: %s." % String(coach.get("why", ""))
+	elif coach_i >= 0:
+		var gd: Dictionary = coach.get("grade", {})
+		line = "Coach's pick: %s" % String(coach.get("call", ""))
+		if not gd.is_empty():
+			line += "  ·  %d%%  ·  grade %s" % [int(round(float(gd["p"]) * 100)), gd["grade"]]
+			var need := float(coach.get("need", 10.0))
+			why = "%s's rule: %s. The gold card is the closest to it in this hand.\n%s %d%% (±%d) to %s %d yards, #%d of %d in the playbook (best: %s %d%%, average %d%%)." % [
+				coach_name, String(coach.get("why", "-")), String(coach.get("call", "")), int(round(float(gd["p"]) * 100)), int(round(float(gd["margin"]) * 100)),
+				"hold them under" if side == "defense" else "gain", int(ceil(need)), int(gd["rank"]), int(gd["of"]),
+				gd["best"], int(round(float(gd["best_p"]) * 100)), int(round(float(gd["avg_p"]) * 100))]
+		else:
+			why = "%s's rule: %s. The gold card is the closest to it in this hand." % [coach_name, String(coach.get("why", "-"))]
+	if line != "":
+		var lr := HBoxContainer.new()
+		box.add_child(lr)
+		var ll := _label(line, fs - 1, MAGENTA)
+		ll.add_theme_font_override("font", BODY_B)
+		ll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lr.add_child(ll)
+		var wl := _label(why, fs - 2, DIM)
+		wl.visible = false
+		var wb := _button("Why?", func(): wl.visible = not wl.visible)
+		wb.add_theme_font_size_override("font_size", fs - 2)
+		lr.add_child(wb)
+		box.add_child(wl)
+	var make := func(ci: int, w: float, hero: bool) -> Button:
+		var g2: Dictionary = hand[ci]
+		var p: Play = g2["play"]
+		var card := Button.new()
+		var gold := ci == coach_i
+		_card_style(card, gold)
+		card.focus_mode = Control.FOCUS_NONE
+		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		var dh := w * (0.36 if hero else 0.62)
+		card.custom_minimum_size = Vector2(w, dh + fs * 2.9 + 14.0)
+		var v := VBoxContainer.new()
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.offset_left = 3
+		v.offset_right = -3
+		v.offset_top = 3
+		v.offset_bottom = -6
+		v.add_theme_constant_override("separation", 1)
+		card.add_child(v)
+		var d := PlayDiagram.new()
+		d.custom_minimum_size = Vector2(w - 6.0, dh)
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		v.add_child(d)
+		d.setup(p)
+		if gold:
+			var badge := _label("COACH'S PICK", fs - 3, INK)
+			badge.add_theme_font_override("font", BODY_B)
+			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			var bsb := flat(MAGENTA, 5)
+			bsb.content_margin_left = 7
+			bsb.content_margin_right = 7
+			bsb.content_margin_top = 1
+			bsb.content_margin_bottom = 1
+			badge.add_theme_stylebox_override("normal", bsb)
+			badge.autowrap_mode = TextServer.AUTOWRAP_OFF
+			badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
+			badge.size = Vector2.ZERO
+			badge.position = Vector2(9, 9)
+			badge.z_index = 1
+			card.add_child.call_deferred(badge)
+		var nm := (("%s · %s" % [p.name, "run" if p.kind == "run" else "pass"]) if side == "offense" else p.name).to_upper()
+		var nl := _disp(nm, fs + (4 if hero else 1))
+		nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		nl.clip_text = true
+		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		var nmc := MarginContainer.new()
+		nmc.add_theme_constant_override("margin_left", 8)
+		nmc.add_theme_constant_override("margin_right", 8)
+		nmc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		nmc.add_child(nl)
+		v.add_child(nmc)
+		var sl := _label(_play_subline(p), fs - 3, DIM)
+		sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		sl.clip_text = true
+		sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		var slc := MarginContainer.new()
+		slc.add_theme_constant_override("margin_left", 8)
+		slc.add_theme_constant_override("margin_right", 8)
+		slc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		slc.add_child(sl)
+		v.add_child(slc)
+		card.pressed.connect(func(): main.pick_made("off" if side == "offense" else "def", g2))
+		return card
+	# the coach's pick big on top (on a phone), the rest two by two
+	var hero := coach_i >= 0 and coach_i < hand.size() and cols == 2
+	if hero:
+		box.add_child(make.call(coach_i, inner, true))
 	var grid := GridContainer.new()
 	grid.columns = cols
 	grid.add_theme_constant_override("h_separation", 8)
 	grid.add_theme_constant_override("v_separation", 8)
 	box.add_child(grid)
-	var coach_i := int(coach.get("index", -1))
-	if String(coach.get("call", "")) == "punt":
-		box.add_child(_label("COACH'S PICK: punt it away (his rule: %s)." % String(coach.get("why", "")), fs - 1, MAGENTA))
-	elif String(coach.get("call", "")) == "field_goal":
-		box.add_child(_label("COACH'S PICK: kick the field goal (his rule: %s)." % String(coach.get("why", "")), fs - 1, MAGENTA))
-	var coach_name: String = ((g.teams[team]["coach"]) as Coach).name
-	if coach_i >= 0:
-		var gtxt := ""
-		var gd: Dictionary = coach.get("grade", {})
-		if not gd.is_empty():
-			var need := float(coach.get("need", 10.0))
-			gtxt = "\nBy the numbers: grade %s - %s %d%% (±%d) to %s %d yards (a successful play on this down), #%d of %d in the playbook (best: %s %d%%, average %d%%)." % [
-				gd["grade"], String(coach.get("call", "")), int(round(float(gd["p"]) * 100)), int(round(float(gd["margin"]) * 100)),
-				"hold them under" if side == "defense" else "gain", int(ceil(need)), int(gd["rank"]), int(gd["of"]),
-				gd["best"], int(round(float(gd["best_p"]) * 100)), int(round(float(gd["avg_p"]) * 100))]
-		var cl := _label("COACH'S PICK: %s would call %s (his rule: %s). The marked card is the closest to it in this hand.%s" % [coach_name, String(coach.get("call", "")), String(coach.get("why", "-")), gtxt], fs - 1, MAGENTA)
-		box.add_child(cl)
-		box.move_child(cl, grid.get_index())
 	if side == "offense" and g.down == 4:
 		for pc in _punt_cards(g, team, cw, String(coach.get("call", "")) == "punt"):
 			grid.add_child(pc)
@@ -1135,73 +1544,16 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 			var fsub := "%s · %d yards · about %d%% to make it" % [_who_txt(kr, "Your kicker"), int(round(g.fg_distance())), int(round(g.fg_chance(team, g.fg_distance()) * 97.5))]
 			grid.add_child(_text_card(cw, "Field goal", fsub, String(coach.get("call", "")) == "field_goal", func(): main.pick_made("kick", "field_goal")))
 	for ci in hand.size():
-		var g2: Dictionary = hand[ci]
-		var p: Play = g2["play"]
-		var card := Button.new()
-		if ci == coach_i:
-			for st in ["normal", "hover", "pressed"]:
-				var sb := (card.get_theme_stylebox(st) as StyleBoxFlat)
-				if sb != null:
-					sb = sb.duplicate()
-					sb.border_color = MAGENTA
-					sb.set_border_width_all(3)
-					sb.shadow_color = Color(MAGENTA, 0.45)
-					sb.shadow_size = 8
-					card.add_theme_stylebox_override(st, sb)
-		card.focus_mode = Control.FOCUS_NONE
-		card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-		card.custom_minimum_size = Vector2(cw, cw * 0.62 + fs * 2.6 + 10.0)
-		var v := VBoxContainer.new()
-		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.set_anchors_preset(Control.PRESET_FULL_RECT)
-		v.offset_left = 4
-		v.offset_right = -4
-		v.offset_top = 4
-		v.offset_bottom = -4
-		v.add_theme_constant_override("separation", 2)
-		card.add_child(v)
-		var d := PlayDiagram.new()
-		d.custom_minimum_size = Vector2(cw - 8.0, cw * 0.62)
-		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		v.add_child(d)
-		d.setup(p)
-		if ci == coach_i:
-			var badge := _label("COACH'S PICK", fs - 2, Color(0.05, 0.02, 0.08))
-			badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			var bsb := StyleBoxFlat.new()
-			bsb.bg_color = MAGENTA
-			bsb.set_corner_radius_all(3)
-			bsb.set_content_margin_all(2)
-			badge.add_theme_stylebox_override("normal", bsb)
-			# over the top of the diagram, so the card keeps its size
-			badge.autowrap_mode = TextServer.AUTOWRAP_OFF
-			badge.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-			badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
-			badge.size = Vector2.ZERO
-			badge.position = Vector2(6, 6)
-			badge.z_index = 1
-			card.add_child.call_deferred(badge)
-		var nl := _label((("%s · %s" % [p.name, "run" if p.kind == "run" else "pass"]) if side == "offense" else p.name), fs - 2, MAGENTA if ci == coach_i else YELLOW)
-		nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		nl.clip_text = true
-		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		v.add_child(nl)
-		var sl := _label(_play_subline(p), fs - 3, Color(0.78, 0.82, 0.86))
-		sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		sl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		sl.clip_text = true
-		v.add_child(sl)
-		card.pressed.connect(func(): main.pick_made("off" if side == "offense" else "def", g2))
-		grid.add_child(card)
+		if hero and ci == coach_i:
+			continue
+		grid.add_child(make.call(ci, cw, false))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	row.add_theme_constant_override("v_separation", 6)
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
-	box.add_child(_label("Yellow is the run, the blue line is the line of scrimmage. Defense: shaded zones, dashed lines for man coverage, pink arrows for blitzers.", fs - 3, Color(0.7, 0.74, 0.78)))
+	box.add_child(_label("Yellow is the run, blue the line of scrimmage. Defense: shaded zones, dashed lines for man, pink arrows for blitzers.", fs - 3, Color(0.5, 0.55, 0.62)))
 
 
 ## 4th down: the punt, as the first card in the hand.
@@ -1210,14 +1562,8 @@ func _text_card(cw: float, title: String, sub: String, coach_pick: bool, on_pick
 	var card := Button.new()
 	card.focus_mode = Control.FOCUS_NONE
 	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	card.custom_minimum_size = Vector2(cw, cw * 0.62 + fs * 2.6 + 10.0)
-	for st in ["normal", "hover", "pressed"]:
-		var sb := (card.get_theme_stylebox(st) as StyleBoxFlat)
-		if sb != null:
-			sb = sb.duplicate()
-			sb.border_color = MAGENTA if coach_pick else YELLOW
-			sb.set_border_width_all(3 if coach_pick else 2)
-			card.add_theme_stylebox_override(st, sb)
+	card.custom_minimum_size = Vector2(cw, cw * 0.62 + fs * 2.9 + 14.0)
+	_card_style(card, coach_pick)
 	var v := VBoxContainer.new()
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1225,7 +1571,7 @@ func _text_card(cw: float, title: String, sub: String, coach_pick: bool, on_pick
 	v.offset_right = -6
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
 	card.add_child(v)
-	var big := _label(title.to_upper(), fs + 8, YELLOW)
+	var big := _disp(title.to_upper(), fs + 10, YELLOW)
 	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	big.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(big)
@@ -1381,7 +1727,26 @@ func _award_sections(box: Container, g: Game) -> void:
 		return
 	var mine := String(Career.team(0)["name"])
 	var row_label := func(head: String, b: Dictionary, side: String) -> void:
-		box.add_child(_label("%s: %s %s (%s) - %s" % [head, b["slot"], b["name"], b["team"], Career.stat_line(b["stats"], side)], fs - 1, YELLOW if String(b["team"]) == mine else Color(0.88, 0.92, 1.0)))
+		# an award card: what it is in gold, who in bold (his club's colour bar on the left), his line
+		var ours := String(b["team"]) == mine
+		var card := PanelContainer.new()
+		var sb := flat(SURF2, 12)
+		sb.border_color = TEAM_COL[0 if ours else 1]
+		sb.border_width_left = 5
+		sb.content_margin_left = 12
+		sb.content_margin_right = 10
+		sb.content_margin_top = 7
+		sb.content_margin_bottom = 8
+		card.add_theme_stylebox_override("panel", sb)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 1)
+		card.add_child(v)
+		v.add_child(_eyebrow(head, MAGENTA))
+		var nl := _label("%s %s" % [b["slot"], b["name"]], fs + 1, Color.WHITE)
+		nl.add_theme_font_override("font", BODY_B)
+		v.add_child(nl)
+		v.add_child(_label("%s · %s" % [b["team"], Career.stat_line(b["stats"], side)], fs - 2, DIM))
+		box.add_child(card)
 	var gs: Dictionary = game_stars if not game_stars.is_empty() else Career.game_stars(g)
 	if not (gs["off"] as Dictionary).is_empty() or not (gs["def"] as Dictionary).is_empty():
 		_section(box, "Players of the game")
@@ -1401,6 +1766,52 @@ func _award_sections(box: Container, g: Game) -> void:
 		_section(box, "Season awards")
 		for aw in Career.season_awards():
 			row_label.call(String(aw[0]), aw[1], String(aw[1]["side"]))
+
+
+## The final score, big, on the two clubs' colours; the loser dimmed; WIN / LOSS / TIE under it.
+func _final_hero(box: Control, g: Game, names: Array, score: Array) -> void:
+	var w := g.winner()
+	var hero := HBoxContainer.new()
+	hero.add_theme_constant_override("separation", 0)
+	box.add_child(hero)
+	for t in 2:
+		var half := PanelContainer.new()
+		var sb := flat(TEAM_COL[t].darkened(0.6), 0)
+		if t == 0:
+			sb.corner_radius_top_left = 14
+			sb.corner_radius_bottom_left = 14
+		else:
+			sb.corner_radius_top_right = 14
+			sb.corner_radius_bottom_right = 14
+		sb.set_content_margin_all(10)
+		half.add_theme_stylebox_override("panel", sb)
+		half.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hero.add_child(half)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", -6)
+		half.add_child(v)
+		var nm := _disp(String(names[t]).to_upper(), fs, Color.WHITE)
+		nm.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(nm)
+		var sc := _disp(str(score[t]), fs + 40, Color.WHITE, false)
+		sc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		v.add_child(sc)
+		if w >= 0 and w != t:
+			half.modulate = Color(1, 1, 1, 0.55)
+	var res := "TIE" if w < 0 else ("WIN" if w == 0 else "LOSS")
+	if Career.loaded and not Career.exhibition():
+		res += "  ·  " + Career._rec_text(Career.season().get("you", {"w": 0, "l": 0, "t": 0}))
+	var bl := _disp(res, fs + 2, Color(0.03, 0.12, 0.05) if w == 0 else Color.WHITE)
+	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var bp := PanelContainer.new()
+	var bsb := flat(GOOD if w == 0 else (BAD if w == 1 else SURF3), 6)
+	bsb.content_margin_left = 14
+	bsb.content_margin_right = 14
+	bp.add_theme_stylebox_override("panel", bsb)
+	bp.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	bp.add_child(bl)
+	box.add_child(bp)
 
 
 func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()) -> void:
@@ -1429,8 +1840,7 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		box.add_child(bk)
 		_back_buttons.append(bk)
 	if mode == "final":
-		var w := g.winner()
-		box.add_child(_label("Tie game" if w < 0 else "%s win" % names[w], fs + 3, MAGENTA))
+		_final_hero(box, g, names, score)
 	_line_score(box, names, line, score)
 	if mode == "final":
 		_award_sections(box, g)
@@ -2004,51 +2414,216 @@ func show_batch(agg: Dictionary, names: Array) -> void:
 
 ## ---- the start menu -------------------------------------------------------------------------
 
+## A big gold button: the one thing to do next on a screen.
+func _primary(b: Button, size := 0) -> Button:
+	var sb := flat(MAGENTA, 11)
+	sb.border_color = Color(0.66, 0.48, 0.08)
+	sb.border_width_bottom = 4
+	sb.content_margin_left = 16
+	sb.content_margin_right = 16
+	sb.content_margin_top = 8
+	sb.content_margin_bottom = 8
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		b.add_theme_stylebox_override(st, sb if st != "hover" else _lit(sb))
+	b.add_theme_font_override("font", DISP)
+	b.add_theme_font_size_override("font_size", size if size > 0 else fs + 6)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(c, INK)
+	b.custom_minimum_size.y = 50
+	return b
+
+
+static func _lit(sb: StyleBoxFlat) -> StyleBoxFlat:
+	var l := sb.duplicate() as StyleBoxFlat
+	l.bg_color = sb.bg_color.lightened(0.1)
+	return l
+
+
+## A full-screen page of our own (the title screen), in place of a floating panel.
+func _open_page() -> Control:
+	_prev_crumbs = []
+	close_overlay(false)
+	Ux.panel("menu")
+	_back = Callable()
+	_cur_title = "Gridiron Career"
+	_back_buttons = []
+	var page := Panel.new()
+	page.add_theme_stylebox_override("panel", flat(NIGHT, 0))
+	page.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_root.add_child(page)
+	_overlay = page
+	_close_btn = null
+	main.overlay_changed(true)
+	return page
+
+
+## The title screen: the name, the next game as a matchup card with one gold button, and
+## Exhibition / Sim lab under it. Cloud save and the rest are behind "Save code & settings".
 func open_menu() -> void:
 	Career.ensure()
-	var box := _open("Gridiron Career")
-	box.add_child(_label("Pick how you want to play. Each mode keeps its own teams and money: an exhibition or the sim lab never touches your season.", fs - 1, Color(0.8, 0.82, 0.85)))
-	# season
-	_section(box, "Season")
+	var page := _open_page()
+	var vp := get_viewport().get_visible_rect().size
+	# the field glow behind, faded to night
+	var glow := TextureRect.new()
+	var gt := GradientTexture2D.new()
+	var gr := Gradient.new()
+	gr.set_color(0, Color(0.16, 0.05, 0.05, 1.0))
+	gr.set_color(1, Color(NIGHT, 1.0))
+	gt.gradient = gr
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.25)
+	gt.fill_to = Vector2(1.1, 0.9)
+	glow.texture = gt
+	glow.set_anchors_preset(Control.PRESET_FULL_RECT)
+	glow.stretch_mode = TextureRect.STRETCH_SCALE
+	glow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	page.add_child(glow)
+	var w := minf(vp.x - 32.0, 520.0)
+	var col := VBoxContainer.new()
+	col.position = Vector2((vp.x - w) * 0.5, 0)
+	col.size = Vector2(w, vp.y)
+	col.add_theme_constant_override("separation", 12)
+	page.add_child(col)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = maxf(vp.y * 0.08, 30.0)
+	col.add_child(gap)
+	var big := clampi(int(w / 6.0), 44, 84)
+	var t1 := _disp("GRIDIRON", big)
+	t1.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t1.add_theme_color_override("font_shadow_color", TEAM_COL[0])
+	t1.add_theme_constant_override("shadow_offset_x", 0)
+	t1.add_theme_constant_override("shadow_offset_y", 4)
+	col.add_child(t1)
+	var t2 := _disp("C A R E E R", int(big * 0.55), MAGENTA)
+	t2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(t2)
+	var t3 := _eyebrow("Robot football  ·  eleven a side")
+	t3.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(t3)
+	var fill := Control.new()
+	fill.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	col.add_child(fill)
+	# the season card
+	var card := PanelContainer.new()
+	col.add_child(card)
+	var cv := VBoxContainer.new()
+	cv.add_theme_constant_override("separation", 10)
+	card.add_child(cv)
+	var top := HBoxContainer.new()
+	cv.add_child(top)
 	var sn := Career.season()
 	var you: Dictionary = Career.data["teams"][0]
 	var rec := Career._rec_text(sn.get("you", {"w": 0, "l": 0, "t": 0}))
-	var line := ""
+	var wk := _eyebrow("Season over" if Career.season_over() else "Season · " + Career.week_label())
+	wk.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(wk)
+	top.add_child(_money_chip(int(Career.data["money"][0])))
+	var mu := HBoxContainer.new()
+	mu.add_theme_constant_override("separation", 10)
+	cv.add_child(mu)
+	var side := func(nm: String, sub: String, t: int) -> void:
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 0)
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var n := _disp(nm.to_upper(), fs + 5, TEAM_COL[t].lightened(0.15))
+		n.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT if t == 0 else HORIZONTAL_ALIGNMENT_RIGHT
+		v.add_child(n)
+		var s := _label(sub, fs - 2, DIM)
+		s.horizontal_alignment = n.horizontal_alignment
+		v.add_child(s)
+		mu.add_child(v)
+	side.call(String(you["name"]), "%s · OVR %d" % [rec, int(Career.team_ratings(you)["ovr"])], 0)
 	if Career.season_over():
-		line = "Season over - champions: %s. Your record %s. Next: a new season - same robots, $5,000 more." % [sn.get("champion", "?"), rec]
+		var ch := _label("Champions: %s" % sn.get("champion", "?"), fs - 1, MAGENTA)
+		ch.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		ch.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		mu.add_child(ch)
 	else:
+		var vs := _disp("VS", fs, Color(0.4, 0.45, 0.55))
+		vs.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		mu.add_child(vs)
 		var opp: Dictionary = sn["clubs"][int(sn.get("opp", 0))]
-		line = "%s · %s %s · purse $%d · next: %s (%s)" % [Career.week_label(), you["name"], rec, int(Career.data["money"][0]), opp["name"], Career.schemes_text(opp)]
-	box.add_child(_label(line, fs, Color(0.9, 0.93, 1.0)))
-	box.add_child(_label("Six weeks against three rival clubs. Your robots, money and damage carry from week to week; you are paid for wins and what you do in each game.", fs - 2, Color(0.75, 0.8, 0.85)))
-	var sr := HFlowContainer.new()
-	sr.add_theme_constant_override("h_separation", 6)
-	box.add_child(sr)
-	var cont := _button("Continue season" if not Career.season_over() else "Start next season", func(): main.choose_mode("season"))
-	cont.add_theme_font_size_override("font_size", fs + 3)
-	sr.add_child(cont)
-	sr.add_child(_button("Really wipe it? Tap again" if _confirm_new_season else "New season (wipes this one)", func():
+		side.call(String(opp["name"]), "OVR %d" % int(Career.team_ratings(opp)["ovr"]) if opp.has("starters") else "", 1)
+	var cont := _primary(_button("CONTINUE SEASON" if not Career.season_over() else "START NEXT SEASON", func(): main.choose_mode("season")))
+	cv.add_child(cont)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	col.add_child(row)
+	var ex := _button("Exhibition", func(): Career.ensure(); Career.data["mode"] = "exhibition"; Career.new_exhibition(); main.choose_mode("exhibition"))
+	var lab := _button("Sim lab", func(): main.choose_mode("sim"))
+	for b in [ex, lab]:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.custom_minimum_size.y = 46
+		b.add_theme_font_override("font", DISP)
+		b.add_theme_font_size_override("font_size", fs + 3)
+		row.add_child(b)
+	if Career.data.has("exhibition"):
+		var last := _button("Back to the last exhibition", func(): main.choose_mode("exhibition"))
+		col.add_child(last)
+	var foot := HBoxContainer.new()
+	col.add_child(foot)
+	var cs := CloudSave.me
+	var code_l := _label(("Cloud save  " + cs.ensure_code()) if cs != null else "", fs - 3, Color(0.45, 0.5, 0.6))
+	code_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	code_l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	foot.add_child(code_l)
+	var more := _button("Save code & settings", func(): open_settings())
+	more.flat = true
+	more.add_theme_font_size_override("font_size", fs - 2)
+	more.add_theme_color_override("font_color", DIM)
+	foot.add_child(more)
+	var pad := Control.new()
+	pad.custom_minimum_size.y = 14
+	col.add_child(pad)
+
+
+## A gold coin and an amount: the purse.
+func _money_chip(amount: int) -> PanelContainer:
+	var chip := PanelContainer.new()
+	var sb := flat(SURF2, 14, LINE, 1)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 12
+	sb.content_margin_top = 2
+	sb.content_margin_bottom = 2
+	chip.add_theme_stylebox_override("panel", sb)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	chip.add_child(h)
+	var coin := Panel.new()
+	coin.add_theme_stylebox_override("panel", flat(MAGENTA, 7, Color(1.0, 0.88, 0.5), 1))
+	coin.custom_minimum_size = Vector2(14, 14)
+	coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(coin)
+	h.add_child(_disp("$" + _commas(amount), fs + 1, Color.WHITE, false))
+	return chip
+
+
+static func _commas(n: int) -> String:
+	var s := str(absi(n))
+	var out := ""
+	while s.length() > 3:
+		out = "," + s.substr(s.length() - 3) + out
+		s = s.substr(0, s.length() - 3)
+	return ("-" if n < 0 else "") + s + out
+
+
+## Cloud save, downloads and starting the season over: what used to crowd the menu.
+func open_settings() -> void:
+	var box := _open("Save code & settings")
+	_cloud_section(box)
+	_section(box, "Start over")
+	box.add_child(_label("A new season wipes this one: a fresh draft, $5,000.", fs - 2, DIM))
+	box.add_child(_button("Really wipe it? Tap again" if _confirm_new_season else "New season (wipes this one)", func():
 		if _confirm_new_season:
 			_confirm_new_season = false
 			Career.new_season()
 			main.choose_mode("season")
 		else:
 			_confirm_new_season = true
-			open_menu()))
-	# exhibition
-	_section(box, "Exhibition")
-	box.add_child(_label("One game. Both teams drafted fresh with $2,000 each to spend; no pay, nothing carries over.", fs - 2, Color(0.75, 0.8, 0.85)))
-	var er := HFlowContainer.new()
-	er.add_theme_constant_override("h_separation", 6)
-	box.add_child(er)
-	er.add_child(_button("New exhibition", func(): Career.ensure(); Career.data["mode"] = "exhibition"; Career.new_exhibition(); main.choose_mode("exhibition")))
-	if Career.data.has("exhibition"):
-		er.add_child(_button("Back to the last one", func(): main.choose_mode("exhibition")))
-	# sim lab
-	_section(box, "Sim lab")
-	box.add_child(_label("Choose schemes and tune a lab team's roster, then simulate a game against each of ten opponents and read the results. Copies only: nothing breaks, no pay.", fs - 2, Color(0.75, 0.8, 0.85)))
-	box.add_child(_button("Open the sim lab", func(): main.choose_mode("sim")))
-	_cloud_section(box)
+			open_settings()))
+	_back = func(): main.show_menu()
+	_refresh_nav.call_deferred()
 
 
 ## Cloud save: the save code, how it went, the link to keep, and loading another code.
@@ -2136,30 +2711,126 @@ var _draft_armed := false
 const SIDE_GROUPS := [["Offense", ["QB", "RB", "WR", "TE", "OL"]], ["Defense", ["DL", "LB", "CB", "S"]]]
 
 
+var _roster_tab := "Offense"
+var _buys_open := false
+const TIER_COL := {"Junk": Color(0.5, 0.36, 0.28), "Stock": Color(0.55, 0.59, 0.66), "Mk II": Color(0.25, 0.7, 1.0),
+	"Mk III": Color(0.73, 0.55, 1.0), "Prototype": Color(0.96, 0.72, 0.18), "lost": Color(1.0, 0.35, 0.31)}
+
+
 func open_roster(t := -1) -> void:
 	if t >= 0:
 		_roster_team = t
 	Career.ensure()
 	var tm := Career.team(_roster_team)
 	var keep_back := _back        # refreshing the roster (a purchase, a tab) keeps where Close goes
-	var box := _open("Roster · %s · purse $%d%s" % [tm["name"], Career.money(_roster_team),
-		("  ·  credit $%d" % Career.credit(_roster_team)) if Career.credit(_roster_team) > 0 else ""])
+	var box := _open("%s · %s" % [tm["name"], Career.ratings_text(tm)])
 	_back = keep_back
-	_spend_row(box, _roster_team, func(): open_roster())
+	var mine := _roster_team == 0
+	# purse, coach buys, repairs
+	var top := HFlowContainer.new()
+	top.add_theme_constant_override("h_separation", 8)
+	top.add_theme_constant_override("v_separation", 6)
+	box.add_child(top)
+	if Career.loaded:
+		top.add_child(_money_chip(Career.money(_roster_team)))
+		if Career.credit(_roster_team) > 0:
+			var cl := _label("+ $%d credit" % Career.credit(_roster_team), fs - 2, MAGENTA)
+			cl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			top.add_child(cl)
+	var buys := VBoxContainer.new()
+	buys.add_theme_constant_override("separation", 6)
+	buys.visible = _buys_open
+	if mine and (Career.money(0) > 400 or Career.credit(0) > 0):
+		var bb := _button("Coach buys  " + ("-" if _buys_open else "+"), func():
+			_buys_open = not _buys_open
+			open_roster())
+		bb.add_theme_color_override("font_color", MAGENTA)
+		top.add_child(bb)
+		if Career.credit(0) > 0:
+			buys.add_child(_button("Coach spends the credit", func(): _open_plan(0, false, "", func(): open_roster())))
+		if Career.money(0) > 400:
+			buys.add_child(_label("He keeps $400 back. Pick what he shops for:", fs - 2, DIM))
+			var fr := GridContainer.new()
+			fr.columns = 2
+			fr.add_theme_constant_override("h_separation", 6)
+			fr.add_theme_constant_override("v_separation", 6)
+			buys.add_child(fr)
+			for fk in Career.FOCUS:
+				var fkey: String = fk
+				var fb := _button(String(Career.FOCUS[fkey]["label"]).replace(" (", "\n("), func(): _open_plan(0, true, fkey, func(): open_roster()))
+				fb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				fb.add_theme_font_size_override("font_size", fs - 2)
+				fr.add_child(fb)
+	var hurt := 0
+	for sl in tm["starters"]:
+		var rr: Dictionary = tm["starters"][sl]
+		if not rr.is_empty():
+			var cnd := Robot.condition(rr)
+			if not Robot.lost_parts(rr).is_empty() or float(cnd[0]) < float(cnd[1]) * 0.5:
+				hurt += 1
+	if hurt > 0:
+		var hl := _label("%d need repair" % hurt, fs - 2, WARN)
+		hl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		top.add_child(hl)
+	box.add_child(buys)
+	# the tabs
+	var seg := HBoxContainer.new()
+	seg.add_theme_constant_override("separation", 4)
+	box.add_child(seg)
+	for tab in ["Offense", "Defense", "Kickers", "Bench"]:
+		var tb := _button(tab, func(): _roster_tab = tab; open_roster(), true)
+		tb.button_pressed = tab == _roster_tab
+		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		tb.add_theme_font_size_override("font_size", fs - 1)
+		seg.add_child(tb)
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 4)
+	box.add_child(list)
+	var starters: Dictionary = tm["starters"]
+	match _roster_tab:
+		"Offense", "Defense":
+			for g in SIDE_GROUPS[0 if _roster_tab == "Offense" else 1][1]:
+				for s2 in Play.GROUP_SLOTS.get(g, [g]):
+					list.add_child(_robot_row(starters[s2], s2, true))
+		"Kickers":
+			var sp := Career.special(_roster_team)
+			for s2 in ["K", "P"]:
+				list.add_child(_robot_row(sp[s2], s2, true))
+		"Bench":
+			for r in tm["bench"]:
+				list.add_child(_robot_row(r, "", true))
+			if (tm["bench"] as Array).is_empty():
+				list.add_child(_label("Nobody on the bench.", fs - 1, DIM))
+	# the parts key
+	var key := HFlowContainer.new()
+	key.add_theme_constant_override("h_separation", 6)
+	box.add_child(key)
+	key.add_child(_label("Parts:", fs - 3, DIM))
+	for tier in Robot.TIERS:
+		var sw := Panel.new()
+		sw.add_theme_stylebox_override("panel", flat(TIER_COL[tier], 2))
+		sw.custom_minimum_size = Vector2(14, 5)
+		sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		key.add_child(sw)
+		key.add_child(_label(tier, fs - 3, DIM))
+	# other clubs and options, out of the way at the bottom
+	_section(box, "Clubs")
 	var tabs := HFlowContainer.new()
 	tabs.add_theme_constant_override("h_separation", 6)
+	tabs.add_theme_constant_override("v_separation", 6)
 	box.add_child(tabs)
-	for i in 2:
-		var b := _button(String(Career.team(i)["name"]) + (" (you)" if i == 0 else ""), func(): _draft_armed = false; open_roster(i), true)
-		b.button_pressed = i == _roster_team
+	for i2 in 2:
+		var b := _button(String(Career.team(i2)["name"]) + (" (you)" if i2 == 0 else ""), func(): _draft_armed = false; open_roster(i2), true)
+		b.button_pressed = i2 == _roster_team
 		tabs.add_child(b)
 	for c in Career.other_clubs():
 		var cc: Dictionary = c
 		tabs.add_child(_button(String(cc["name"]), func(): open_club(cc)))
-	var fair := _button("Fair bodies: %s" % ("on" if Career.fair() else "off"), func():
-		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
-	fair.button_pressed = Career.fair()
-	tabs.add_child(fair)
+	_section(box, "Options")
+	var opts := HFlowContainer.new()
+	opts.add_theme_constant_override("h_separation", 6)
+	opts.add_theme_constant_override("v_separation", 6)
+	box.add_child(opts)
 	var auto_on := bool(Career.data.get("auto_lineup", true))
 	var al := _button("Coach sets the lineup: %s" % ("on" if auto_on else "off"), func():
 		Career.data["auto_lineup"] = not bool(Career.data.get("auto_lineup", true))
@@ -2167,23 +2838,11 @@ func open_roster(t := -1) -> void:
 			Career.best_lineup(Career.team(0))
 		Career.save(); main.library_changed(); open_roster(), true)
 	al.button_pressed = auto_on
-	tabs.add_child(al)
-	box.add_child(_label("Tap a robot for his details. Ratings run 1-100 and suit the position: corners are quick but light, linemen slow but strong. OVR is measured against his position, so 60 is an average one of his kind. ARMOUR is his toughness (with what his core adds): how well he stands up to hits; then his parts by tier. With Fair bodies on, everyone plays as a 60 so only the brains differ.", fs - 3, Color(0.75, 0.8, 0.85)))
-	var starters: Dictionary = tm["starters"]
-	for sg in SIDE_GROUPS:
-		_section(box, sg[0])
-		for g in sg[1]:
-			for s in Play.GROUP_SLOTS.get(g, [g]):
-				box.add_child(_robot_row(starters[s], s, true))
-	_section(box, "Special teams")
-	var sp := Career.special(_roster_team)
-	for s in ["K", "P"]:
-		box.add_child(_robot_row(sp[s], s, true))
-	_section(box, "Bench")
-	for r in tm["bench"]:
-		box.add_child(_robot_row(r, "", true))
-	var row := HFlowContainer.new()
-	box.add_child(row)
+	opts.add_child(al)
+	var fair := _button("Fair bodies: %s" % ("on" if Career.fair() else "off"), func():
+		Career.set_fair(not Career.fair()); main.library_changed(); open_roster(), true)
+	fair.button_pressed = Career.fair()
+	opts.add_child(fair)
 	var draft := _button("Are you sure? Tap again to scrap this team" if _draft_armed else "Draft a whole new team", func():
 		if _draft_armed:
 			_draft_armed = false
@@ -2192,7 +2851,8 @@ func open_roster(t := -1) -> void:
 		else:
 			_draft_armed = true
 		open_roster())
-	row.add_child(draft)
+	opts.add_child(draft)
+	box.add_child(_label("Tap a robot for his parts and upgrades. OVR is against his position: 60 is an average one of his kind. Fair bodies: everyone plays as a 60, so only the brains differ.", fs - 3, Color(0.5, 0.55, 0.62)))
 
 
 ## Report lines in colour: green went well, red needs fixing, grey to note.
@@ -2222,26 +2882,92 @@ func open_club(c: Dictionary) -> void:
 		box.add_child(b2)
 
 
+## A roster row: position badge, name over his six part pips (coloured by tier), and a big OVR
+## with what is wrong under it.
 func _robot_row(r: Dictionary, slot: String, from_roster := false) -> Button:
 	var b := Button.new()
 	b.focus_mode = Control.FOCUS_NONE
-	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	b.clip_text = true
-	var bits: Array = []
-	for k in Robot.keys(r):
-		bits.append("%s %d" % [String(Robot.LABEL[k]).substr(0, 3), int(Robot.eff(r, k))])   # with what his parts add
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	for st in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
+		var sb := flat(SURF2 if st in ["hover", "pressed", "hover_pressed"] else Color(SURF1, 0.0), 10)
+		b.add_theme_stylebox_override(st, sb)
+	b.custom_minimum_size.y = 50
+	var h := HBoxContainer.new()
+	h.set_anchors_preset(Control.PRESET_FULL_RECT)
+	h.offset_left = 6
+	h.offset_right = -8
+	h.add_theme_constant_override("separation", 10)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(h)
+	var badge := PanelContainer.new()
+	badge.add_theme_stylebox_override("panel", flat(SURF3, 7))
+	badge.custom_minimum_size = Vector2(44, 30)
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bl := _disp(slot if slot != "" else String(r["group"]), fs - 1, Color(0.45, 0.68, 1.0), false)
+	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	badge.add_child(bl)
+	h.add_child(badge)
+	var mid := VBoxContainer.new()
+	mid.alignment = BoxContainer.ALIGNMENT_CENTER
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.add_theme_constant_override("separation", 5)
+	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(mid)
+	var nl := _label("#%d  %s" % [int(r["number"]), r["name"]], fs, Color(0.94, 0.95, 0.97))
+	nl.add_theme_font_override("font", BODY_B)
+	nl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	nl.clip_text = true
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mid.add_child(nl)
+	var pips := HBoxContainer.new()
+	pips.add_theme_constant_override("separation", 3)
+	pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mid.add_child(pips)
+	for k in Robot.PARTS:
+		var pt: Dictionary = Robot.ensure_parts(r)[k]
+		var tier := "lost" if Robot.part_lost(r, k) else String(pt["tier"])
+		var pip := Panel.new()
+		var c: Color = TIER_COL[tier]
+		var f := clampf(float(pt["hp"]) / float(Robot.TIER_HP.get(String(pt["tier"]), 100)), 0.0, 1.0)
+		if tier != "lost" and f < 0.5:
+			c = c.darkened(0.45)          # worn: dimmer
+		pip.add_theme_stylebox_override("panel", flat(c, 2))
+		pip.custom_minimum_size = Vector2(16, 5)
+		pip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pips.add_child(pip)
+	var right := VBoxContainer.new()
+	right.alignment = BoxContainer.ALIGNMENT_CENTER
+	right.add_theme_constant_override("separation", -3)
+	right.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(right)
+	var now := Robot.overall_if(r, "now")
+	var full := Robot.overall(r)
+	var oc := MAGENTA if now >= 70 else (Color.WHITE if now >= 65 else Color(0.85, 0.87, 0.9))
+	var ol := _disp(str(now), fs + 9, oc, false)
+	ol.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	ol.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	right.add_child(ol)
 	var lost := Robot.lost_parts(r)
 	var junk := 0
 	for k in Robot.PARTS:
 		if Robot.part_junk(r, k):
 			junk += 1
-	var hurt := ""
+	var note := ""
 	if not lost.is_empty():
-		hurt = "   NO " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_upper()))
-	b.text = "#%d  %s  %s   OVR %d   ARMOUR %d   %s%s   ·   %s" % [int(r["number"]), slot if slot != "" else String(r["group"]), r["name"], Robot.overall(r),
-		Robot.armour(r), Robot.tiers_text(r), hurt, "  ".join(bits)]
-	if not lost.is_empty():
-		b.add_theme_color_override("font_color", Color(1.0, 0.5, 0.5))
+		note = "no " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))
+	elif junk > 0:
+		note = "junk x%d" % junk
+	elif now < full:
+		note = "%d hurt" % (now - full)
+	if note != "":
+		var nt := _label(note, fs - 4, BAD if not lost.is_empty() else WARN)
+		nt.autowrap_mode = TextServer.AUTOWRAP_OFF
+		nt.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		nt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		right.add_child(nt)
 	var id := String(r["id"])
 	if from_roster:
 		# Close on his page comes back to the roster (and Close there goes where it went before)
@@ -2263,15 +2989,26 @@ func open_robot(id: String) -> void:
 	var t: int = f["team"]
 	var slot: String = f["slot"]
 	var keep_back := _back        # buying a part reopens the page: keep where Close goes
-	var box := _open("#%d %s%s" % [int(r["number"]), r["name"], _purse()])
+	var box := _open("%s%s" % [Career.team(t)["name"], _purse()])
 	_back = keep_back
+	var hero := PanelContainer.new()
+	var hsb := flat(Color(TEAM_COL[t].darkened(0.62), 1.0), 14)
+	hsb.bg_color = TEAM_COL[t].darkened(0.68)
+	hsb.border_color = TEAM_COL[t].darkened(0.3)
+	hsb.border_width_bottom = 3
+	hsb.content_margin_left = 6
+	hsb.content_margin_right = 12
+	hsb.content_margin_top = 6
+	hsb.content_margin_bottom = 8
+	hero.add_theme_stylebox_override("panel", hsb)
+	box.add_child(hero)
 	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 12)
-	box.add_child(top)
+	top.add_theme_constant_override("separation", 10)
+	hero.add_child(top)
 	# the model, turning slowly
 	var svc := SubViewportContainer.new()
 	var narrow := get_viewport().get_visible_rect().size.x < 520.0
-	svc.custom_minimum_size = Vector2(120, 160) if narrow else Vector2(170, 220)
+	svc.custom_minimum_size = Vector2(130, 196) if narrow else Vector2(180, 250)
 	svc.stretch = true
 	var sv := SubViewport.new()
 	sv.own_world_3d = true
@@ -2284,10 +3021,10 @@ func open_robot(id: String) -> void:
 	sv.add_child(turn)
 	turn.add_child(model["root"])
 	var cam := Camera3D.new()
-	cam.position = Vector3(0, 1.4, 4.2)
+	cam.position = Vector3(0, 1.35, 5.0)      # far enough back that he fits head to foot
 	cam.fov = 38
 	sv.add_child(cam)
-	cam.look_at(Vector3(0, 1.15, 0))
+	cam.look_at(Vector3(0, 1.2, 0))
 	var key := DirectionalLight3D.new()
 	key.rotation = Vector3(-0.7, 0.6, 0)
 	key.light_energy = 1.6
@@ -2317,24 +3054,41 @@ func open_robot(id: String) -> void:
 	# who he is
 	var who := VBoxContainer.new()
 	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	who.alignment = BoxContainer.ALIGNMENT_CENTER
+	who.add_theme_constant_override("separation", 4)
 	top.add_child(who)
-	var tm := Career.team(t)
-	who.add_child(_label(String(tm["name"]), fs, FieldView.NEON[t].lightened(0.3)))
 	var pos_txt := (slot if slot == String(r["group"]) else "%s (%s)" % [slot, r["group"]]) if slot != "" else ("Bench · %s" % r["group"])
-	who.add_child(_label(pos_txt, fs + 2, YELLOW))
-	who.add_child(_label("Overall %d" % Robot.overall(r), fs + 6, CYAN))
+	who.add_child(_eyebrow("#%d  ·  %s" % [int(r["number"]), pos_txt], TEAM_COL[t].lightened(0.45)))
+	var nm := _disp(String(r["name"]).to_upper(), fs + 9)
+	nm.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	who.add_child(nm)
+	var nums := HBoxContainer.new()
+	nums.add_theme_constant_override("separation", 18)
+	who.add_child(nums)
 	var cond := Robot.condition(r)
-	who.add_child(_label("Armour %d" % Robot.armour(r), fs + 1, YELLOW))
-	who.add_child(_label("Condition %d/%d" % [cond[0], cond[1]], fs - 1, Color(0.85, 0.9, 0.95)))
-	who.add_child(_label("Parts: " + Robot.tiers_text(r), fs - 1, Color(0.85, 0.9, 0.95)))
+	var cpct := int(roundf(100.0 * float(cond[0]) / maxf(float(cond[1]), 1.0)))
+	var stat := func(v: String, label: String, c: Color, size: int) -> void:
+		var v2 := VBoxContainer.new()
+		v2.add_theme_constant_override("separation", -4)
+		v2.alignment = BoxContainer.ALIGNMENT_END
+		v2.add_child(_disp(v, size, c, false))
+		var e2 := _eyebrow(label)
+		e2.add_theme_font_size_override("font_size", fs - 5)
+		v2.add_child(e2)
+		nums.add_child(v2)
+	var ovr_now := Robot.overall_if(r, "now")
+	stat.call(str(ovr_now), "Overall", MAGENTA if ovr_now >= 70 else Color.WHITE, fs + 26)
+	stat.call("%d%%" % cpct, "Condition", GOOD if cpct >= 75 else (WARN if cpct >= 40 else BAD), fs + 8)
+	stat.call(str(Robot.armour(r)), "Armour", Color(0.85, 0.88, 0.92), fs + 8)
 	if slot != "" and main.game != null:
 		var br: Brain = (main.game.teams[t]["brains"] as Dictionary).get(slot, null)
 		if br != null:
-			who.add_child(_label("Brain: %s" % br.name, fs - 1, Color(0.85, 0.9, 0.95)))
-			if br.about != "":
-				who.add_child(_label(br.about, fs - 3, Color(0.7, 0.74, 0.8)))
+			var bl := _label("Brain: %s" % br.name, fs - 2, Color(0.9, 0.92, 0.95))
+			bl.add_theme_font_override("font", BODY_B)
+			bl.tooltip_text = br.about
+			who.add_child(bl)
 	if Career.fair():
-		who.add_child(_label("Fair bodies is on: he plays as a 60 everywhere.", fs - 3, MAGENTA))
+		who.add_child(_label("Fair bodies on: he plays as a 60.", fs - 3, MAGENTA))
 	# the ratings
 	_section(box, "Ratings")
 	for k in Robot.keys(r):
@@ -2343,31 +3097,28 @@ func open_robot(id: String) -> void:
 		var line := HBoxContainer.new()
 		line.add_theme_constant_override("separation", 8)
 		box.add_child(line)
-		var name_l := _label(String(Robot.LABEL[k]), fs - 1)
+		var name_l := _label(String(Robot.LABEL[k]), fs - 2, DIM)
 		name_l.custom_minimum_size.x = 84 if get_viewport().get_visible_rect().size.x < 520.0 else 110
+		name_l.tooltip_text = String(Robot.RATING_HELP[k])
+		name_l.mouse_filter = Control.MOUSE_FILTER_PASS
 		line.add_child(name_l)
 		var bar := ProgressBar.new()
 		bar.min_value = 0
 		bar.max_value = 100
 		bar.value = v
 		bar.show_percentage = false
-		bar.custom_minimum_size = Vector2(120, fs + 2)
+		bar.custom_minimum_size = Vector2(120, 8)
 		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		var fill := StyleBoxFlat.new()
-		fill.bg_color = Color(0.3, 0.9, 0.5) if v >= 70 else (YELLOW if v >= 50 else Color(1.0, 0.4, 0.4))
-		fill.set_corner_radius_all(3)
-		var bg := StyleBoxFlat.new()
-		bg.bg_color = Color(0.12, 0.14, 0.18)
-		bg.set_corner_radius_all(3)
+		var fill := flat(GOOD if v >= 65 else (WARN if v >= 45 else BAD), 4)
+		var bg := flat(SURF3, 4)
 		bar.add_theme_stylebox_override("fill", fill)
 		bar.add_theme_stylebox_override("background", bg)
 		line.add_child(bar)
-		var num := _label(str(v) + (" +%d" % plus if plus > 0 else ""), fs, CYAN if plus > 0 else Color(1, 1, 1))
-		num.autowrap_mode = TextServer.AUTOWRAP_OFF
-		num.custom_minimum_size.x = 30
+		var num := _disp(str(v) + (" +%d" % plus if plus > 0 else ""), fs + 1, CYAN if plus > 0 else Color(1, 1, 1), false)
+		num.custom_minimum_size.x = 46
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		line.add_child(num)
-		box.add_child(_label("    " + String(Robot.RATING_HELP[k]), fs - 4, Color(0.62, 0.67, 0.72)))
 		if k == "toughness" and Robot.rating(r, k) < 99.0:
 			var tt := maxi(Career.team_of(r), 0)
 			var ap := Career.armor_price(r)
@@ -2587,68 +3338,89 @@ func open_injuries(slots: Array) -> void:
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 	_section(box, "Parts")
-	box.add_child(_label("Upgrade any time: Mk II +6, Mk III +12, Prototype +20 to the ratings a part carries (an arm or leg gives half - he has two), and more condition.", fs - 3, Color(0.7, 0.74, 0.8)))
 	var parts := Robot.ensure_parts(r)
+	var grid := GridContainer.new()
+	var narrow := get_viewport().get_visible_rect().size.x < 520.0
+	grid.columns = 3 if narrow else 6
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	box.add_child(grid)
+	var tu := maxi(Career.team_of(r), 0)
+	var small := func(b: Button, gold := true) -> Button:
+		b.add_theme_font_size_override("font_size", fs - 3)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		if gold:
+			var sb := flat(Color(0, 0, 0, 0), 8, MAGENTA, 1)
+			sb.content_margin_top = 4
+			sb.content_margin_bottom = 4
+			b.add_theme_stylebox_override("normal", sb)
+			b.add_theme_stylebox_override("hover", _lit(sb))
+			b.add_theme_color_override("font_color", MAGENTA)
+		return b
 	for k in Robot.PARTS:
 		var pt: Dictionary = parts[k]
 		var hp := float(pt["hp"])
 		var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
-		# a flowing row: on a narrow screen the buttons drop to the next line instead of
-		# pushing the page off the side
-		var line := HFlowContainer.new()
-		line.add_theme_constant_override("h_separation", 8)
-		line.add_theme_constant_override("v_separation", 4)
-		box.add_child(line)
-		var nl := _label(String(Robot.PART_LABEL[k]), fs - 1)
-		nl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		nl.custom_minimum_size.x = 78
-		line.add_child(nl)
+		var tile := PanelContainer.new()
+		var tsb := flat(SURF1, 12, LINE, 1)
+		tsb.set_content_margin_all(8)
+		tile.add_theme_stylebox_override("panel", tsb)
+		tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(tile)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 4)
+		tile.add_child(v)
+		var pl := _eyebrow(String(Robot.PART_LABEL[k]).replace("Left ", "L ").replace("Right ", "R "))
+		pl.add_theme_font_size_override("font_size", fs - 4)
+		pl.tooltip_text = String(Robot.PART_HELP.get(k, ""))
+		pl.mouse_filter = Control.MOUSE_FILTER_PASS
+		v.add_child(pl)
 		if hp <= 0.0:
-			var gl := _label("GONE - came off on the field", fs - 1, Color(1.0, 0.4, 0.4))
-			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
-			gl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			line.add_child(gl)
-			var jk := _button("Junk $%d" % Career.junk_price(k), func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id))
-			jk.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.junk_price(k)
-			line.add_child(jk)
-			var nb := _button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id))
-			nb.disabled = Career.money(maxi(Career.team_of(r), 0)) < Career.repair_cost(r, k)
-			line.add_child(nb)
+			v.add_child(_disp("GONE", fs + 2, BAD))
+			var jk: Button = small.call(_button("Junk $%d" % Career.junk_price(k), func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id)), false)
+			jk.disabled = Career.money(tu) < Career.junk_price(k)
+			v.add_child(jk)
+			var nb: Button = small.call(_button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id)))
+			nb.disabled = Career.money(tu) < Career.repair_cost(r, k)
+			v.add_child(nb)
+			continue
+		var tier := String(pt["tier"])
+		var tl := _disp(tier, fs + 2, TIER_COL.get(tier, Color.WHITE).lightened(0.15))
+		tl.tooltip_text = "%d / %d condition" % [int(hp), int(mx)]
+		tl.mouse_filter = Control.MOUSE_FILTER_PASS
+		v.add_child(tl)
+		var bar := ProgressBar.new()
+		bar.max_value = mx
+		bar.value = hp
+		bar.show_percentage = false
+		bar.custom_minimum_size = Vector2(40, 5)
+		var f := hp / mx
+		bar.add_theme_stylebox_override("fill", flat(GOOD if f > 0.6 else (WARN if f > 0.3 else BAD), 3))
+		bar.add_theme_stylebox_override("background", flat(SURF3, 3))
+		v.add_child(bar)
+		if hp < mx and tier != "Junk":
+			var fc := Career.repair_cost(r, k)
+			var fb: Button = small.call(_button("Fix $%d" % fc, func(): Career.buy_repair(tu, r, k); open_robot(id)), false)
+			fb.add_theme_color_override("font_color", WARN)
+			fb.disabled = Career.money(tu) < fc
+			v.add_child(fb)
+		var nt := Career.next_tier(r, k)
+		if nt != "":
+			var up := Career.upgrade_price(k, nt)
+			var ub: Button = small.call(_button("%s $%d" % [nt.replace("Prototype", "Proto"), up], func(): Career.buy_upgrade(tu, r, k); open_robot(id)))
+			ub.disabled = Career.upgrade_funds(tu) < up
+			ub.tooltip_text = "Upgrade to %s: +%d to %s, %d condition" % [nt, int(Robot.TIER_BONUS[nt]), ", ".join(Robot.PART_RATINGS[k]), int(Robot.TIER_HP[nt])]
+			v.add_child(ub)
 		else:
-			var bar := ProgressBar.new()
-			bar.max_value = mx
-			bar.value = hp
-			bar.show_percentage = false
-			bar.custom_minimum_size = Vector2(70, fs)
-			bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			var fill := StyleBoxFlat.new()
-			fill.bg_color = Color(0.3, 0.9, 0.5) if hp / mx > 0.6 else (YELLOW if hp / mx > 0.3 else Color(1.0, 0.4, 0.4))
-			var bg := StyleBoxFlat.new()
-			bg.bg_color = Color(0.12, 0.14, 0.18)
-			bar.add_theme_stylebox_override("fill", fill)
-			bar.add_theme_stylebox_override("background", bg)
-			line.add_child(bar)
-			var tl := _label("%s %d/%d" % [pt["tier"], int(hp), int(mx)], fs - 2, Color(0.8, 0.5, 0.3) if pt["tier"] == "Junk" else Color(0.85, 0.9, 0.95))
-			tl.autowrap_mode = TextServer.AUTOWRAP_OFF
-			tl.custom_minimum_size.x = 0
-			line.add_child(tl)
-			var nt := Career.next_tier(r, k)
-			if nt != "":
-				var up := Career.upgrade_price(k, nt)
-				var tu := maxi(Career.team_of(r), 0)
-				var ub := _button("%s $%d" % [nt, up], func(): Career.buy_upgrade(tu, r, k); open_robot(id))
-				ub.disabled = Career.upgrade_funds(tu) < up
-				ub.tooltip_text = "Upgrade to %s: +%d to %s, %d condition" % [nt, int(Robot.TIER_BONUS[nt]), ", ".join(Robot.PART_RATINGS[k]), int(Robot.TIER_HP[nt])]
-				line.add_child(ub)
+			var mxl := _label("Maxed", fs - 3, DIM)
+			v.add_child(mxl)
+	box.add_child(_label("Upgrades: Mk II +6, Mk III +12, Prototype +20 to what a part carries (an arm or leg half), and more condition.", fs - 4, Color(0.5, 0.55, 0.62)))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
 	var t := maxi(Career.team_of(r), 0)
 	var all_cost := Career.repair_all_cost(r)
-	var pl2 := _label("Purse $%d" % Career.money(t) + ("  ·  upgrade credit $%d" % Career.credit(t) if Career.credit(t) > 0 else ""), fs, YELLOW)
-	pl2.autowrap_mode = TextServer.AUTOWRAP_OFF
-	row.add_child(pl2)
+	row.add_child(_money_chip(Career.money(t)))
 	if all_cost > 0:
 		var rb := _button("Repair everything ($%d)" % all_cost, func():
 			if Career.spend(t, all_cost):
