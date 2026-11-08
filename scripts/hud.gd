@@ -3773,6 +3773,18 @@ func open_injuries(slots: Array) -> void:
 		nv.add_child(nl)
 		nv.add_child(_label("Lost his %s" % " and ".join(names), fs - 2, BAD))
 		hr.add_child(_disp("%d → %d" % [o_full, o_now], fs + 4, BAD, false))
+		# what the lost parts do, behind a ? (it matters, but not every time)
+		var help: Array = []
+		for k in lost:
+			help.append(String(Robot.PART_HELP[k]))
+		var hl := _label(" ".join(help), fs - 2, Color(0.85, 0.88, 0.92))
+		hl.visible = false
+		var q := _button("?", func(): hl.visible = not hl.visible)
+		q.custom_minimum_size = Vector2(36, 36)
+		q.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		q.tooltip_text = "What this part does"
+		hr.add_child(q)
+		cd.add_child(hl)
 		choice.call(cd, "New %s  $%d" % [" and ".join(names), cost], o_full, func(): main.injury_choice(s, "buy"), Career.money(0) >= cost, true)
 		choice.call(cd, "Bolt on junk  $%d" % junk_cost, o_junk, func(): main.injury_choice(s, "junk"), Career.money(0) >= junk_cost)
 		if Robot.can_play(r):
@@ -3802,7 +3814,20 @@ func open_injuries(slots: Array) -> void:
 
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:
-	_section(box, "Parts")
+	var ph := HBoxContainer.new()
+	box.add_child(ph)
+	var pt_l := _eyebrow("Parts", CYAN)
+	pt_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pt_l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ph.add_child(pt_l)
+	var help := VBoxContainer.new()
+	help.visible = false
+	for k in Robot.PARTS:
+		help.add_child(_label("%s: %s" % [Robot.PART_LABEL[k], Robot.PART_HELP.get(k, "")], fs - 3, Color(0.85, 0.88, 0.92)))
+	var q := _button("?", func(): help.visible = not help.visible)
+	q.custom_minimum_size = Vector2(34, 32)
+	ph.add_child(q)
+	box.add_child(help)
 	var parts := Robot.ensure_parts(r)
 	var grid := GridContainer.new()
 	var narrow := get_viewport().get_visible_rect().size.x < 520.0
