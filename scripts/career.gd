@@ -762,7 +762,7 @@ static func club_spend(t: int) -> int:
 	var budget := maxi(money(t) - 400, 0)
 	if budget <= 0:
 		return 0
-	var spent := _spend(team(t)["starters"], special(t), "win", budget)
+	var spent := _spend(team(t)["starters"], special(t), "win", budget, _opp_of(t))
 	add_money(t, -spent)
 	return spent
 
@@ -887,7 +887,7 @@ static func upgrade_funds(t: int) -> int:
 ## those robots do (legs for speed and routes, arms for hands and throwing, core for strength).
 const FOCUS := {
 	"": {"label": "Efficient buy (most OVR per $)", "slots": [], "parts": []},
-	"win": {"label": "Best buy (most likely to win)", "slots": [], "parts": []},
+	"win": {"label": "Best buy (to beat this week's opponent)", "slots": [], "parts": []},
 	"off": {"label": "Best offense buy", "slots": [], "parts": []},
 	"def": {"label": "Best defense buy", "slots": [], "parts": []},
 	"run": {"label": "Best run-game buy", "slots": [], "parts": []},
@@ -962,7 +962,7 @@ static func coach_plan(t: int, purse: bool, reserve := 400, focus := "", seed :=
 	var sp_copy := sp.duplicate(true)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed
-	out["cost"] = _spend(copy["starters"], sp_copy, focus, budget)
+	out["cost"] = _spend(copy["starters"], sp_copy, focus, budget, _opp_of(t))
 	for s in real:
 		_plan_row(out["rows"], s, real[s], copy["starters"][s])
 	for s in sp:
@@ -1011,23 +1011,59 @@ static var BUY_WEIGHTS := {
 }
 
 
+## Win weights against a particular opponent: WIN_WEIGHT (to the 1.5, so the positions that
+## win games stand out more), scaled by how far each position's unit trails the unit it lines
+## up against (behind by 5 counts double; ahead by 3, about half).
+static func _win_weights(me: Dictionary, opp: Dictionary) -> Dictionary:
+	var U := Analysis.UNITS
+	var u := func(tm: Dictionary, k: String) -> float: return Analysis.unit(tm, U[k])
+	var gap := {
+		"OL": u.call(opp, "D-line") - u.call(me, "O-line"),
+		"DL": u.call(opp, "O-line") - u.call(me, "D-line"),
+		"WR": u.call(opp, "secondary") - u.call(me, "receivers"),
+		"TE": u.call(opp, "secondary") - u.call(me, "receivers"),
+		"CB": u.call(opp, "receivers") - u.call(me, "secondary"),
+		"S": u.call(opp, "receivers") - u.call(me, "secondary"),
+		"RB": (u.call(opp, "linebackers") + u.call(opp, "D-line")) * 0.5 - u.call(me, "running back"),
+		"LB": (u.call(opp, "running back") + u.call(opp, "O-line")) * 0.5 - u.call(me, "linebackers"),
+		"QB": u.call(opp, "secondary") - u.call(me, "QB"),
+	}
+	var w := {}
+	for g in WIN_WEIGHT:
+		w[g] = pow(float(WIN_WEIGHT[g]), 1.5) * clampf(1.0 + 0.2 * float(gap.get(g, 0.0)), 0.25, 3.0)
+	return w
+
+
+## This week's opponent for club t (the other side of the current game), or {} outside a season.
+static func _opp_of(t: int) -> Dictionary:
+	if not loaded or t > 1:
+		return {}
+	return team(1 - t)
+
+
 ## Spend for a coach's plan: "" the efficient buy, "win" the best buy, else one group.
-static func _spend(starters: Dictionary, specials: Dictionary, focus: String, budget: int) -> int:
+static func _spend(starters: Dictionary, specials: Dictionary, focus: String, budget: int, opp: Dictionary = {}) -> int:
 	if focus == "":
 		return value_upgrades(starters, specials, budget)
+	if focus == "win" and not opp.is_empty():
+		return value_upgrades(starters, specials, budget, WIN_WEIGHT, opp)
 	if BUY_WEIGHTS.has(focus):
 		return value_upgrades(starters, specials, budget, BUY_WEIGHTS[focus])
 	return _focus_on(starters, specials, focus, budget)
 
 
 ## "Best buy" is the same search with each robot's gain weighted by WIN_WEIGHT.
-static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: int, weights: Dictionary = {}) -> int:
+static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: int, weights: Dictionary = {}, opp: Dictionary = {}) -> int:
 	var robots: Array = []
 	for s in starters:
 		if not (starters[s] as Dictionary).is_empty():
 			robots.append(starters[s])
 	var left := budget
 	for guard in 300:
+		# the best buy looks at this week's opponent: a unit losing its matchup counts for more,
+		# one already winning it for less (worked out again after every part, as gaps close)
+		if not opp.is_empty():
+			weights = _win_weights({"starters": starters}, opp)
 		var best := {}
 		var best_k := ""
 		var best_tier := ""
@@ -1108,7 +1144,7 @@ static func coach_spend(t: int, purse: bool, reserve := 400, focus := "", seed :
 	if seed != 0:
 		rng = RandomNumberGenerator.new()
 		rng.seed = seed            # the same draw coach_plan showed
-	var spent := _spend(team(t)["starters"], special(t), focus, budget)
+	var spent := _spend(team(t)["starters"], special(t), focus, budget, _opp_of(t))
 	var from_credit := mini(credit(t), spent)
 	data["credit"][t] = credit(t) - from_credit
 	add_money(t, -(spent - from_credit))
