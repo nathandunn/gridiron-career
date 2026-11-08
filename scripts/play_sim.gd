@@ -490,9 +490,17 @@ func _build_route(p: P) -> void:
 		"screen":
 			w = [s + Vector2(o * 3.0, -2.0)]
 			stop = true
+	# near the goal the end zone is the end of the field: a deep route runs to its back and
+	# sits down there, it doesn't carry on out the back of it
+	var back := to_goal + 8.0
+	var cut := false
 	for k in w.size():
 		var q: Vector2 = w[k]
-		w[k] = Vector2(clampf(q.x, -SIDELINE + 0.6, SIDELINE - 0.6), q.y)
+		if q.y > back:
+			cut = true
+		w[k] = Vector2(clampf(q.x, -SIDELINE + 0.6, SIDELINE - 0.6), minf(q.y, back))
+	if cut:
+		stop = true
 	p.route = w
 	p.wp = 0
 	p.route_stop = stop
@@ -1415,6 +1423,8 @@ func _lead(qb: P, r: P, vm := 1.0) -> Array:
 	var can := r.spd() * maxf(T - 0.15, 0.1) * 0.85
 	if r.pos.distance_to(c) > can:
 		c = r.pos + (c - r.pos).normalized() * can
+	# never lead him out of the back of the end zone
+	c.y = minf(c.y, to_goal + 8.5)
 	return [c, T]
 
 

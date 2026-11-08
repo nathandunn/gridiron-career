@@ -803,10 +803,12 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 		hud.toast("TURNOVER ON DOWNS\n%s ball" % other, 2.2)
 	elif r.get("sack", false):
 		hud.toast("SACK!", 1.2)
+	elif float(e.get("gain", 0.0)) >= 20.0:
+		# a big one gets the big banner (and the crowd), first down or not
+		hud.toast("BIG PLAY! +%d\n%s%s" % [int(round(float(e["gain"]))), String(e.get("text", "")).get_slice(": ", 1) if String(e.get("text", "")).contains(": ") else String(e.get("text", "")),
+			" · first down" if String(e.get("down_event", "")) == "first_down" else ""], 2.2)
 	elif String(e.get("down_event", "")) == "first_down":
 		hud.toast("FIRST DOWN!\n%s" % who, 1.4)
-	elif float(e.get("gain", 0.0)) >= 20.0:
-		hud.toast("BIG GAIN! +%d" % int(round(float(e["gain"]))), 1.4)
 	var scorer_team := -1
 	for t in 2:
 		if game.score[t] > int(score_before[t]):

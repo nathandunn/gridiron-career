@@ -442,7 +442,7 @@ static func banner_color(head: String) -> Color:
 	var h := head.to_upper()
 	if h.contains("NO GOOD") or h.contains("NOT ") or h.contains("COULDN") or h.contains("NOTHING"):
 		return Color(0.85, 0.2, 0.17)
-	for k in ["TOUCHDOWN", "GOOD", "FIELD GOAL", "SIGNED", "SOLD", "TRADED", "SAVED", "COACH"]:
+	for k in ["TOUCHDOWN", "GOOD", "FIELD GOAL", "SIGNED", "SOLD", "TRADED", "SAVED", "COACH", "BIG PLAY"]:
 		if h.contains(k):
 			return Color(0.85, 0.6, 0.06)
 	for k in ["INTERCEPT", "FUMBLE", "PICK SIX", "SCOOP", "BLOCKED", "NO GOOD", "FAILS", "TURNOVER", "SAFETY", "SACK", "NOT ENOUGH", "COULDN", "NOT SAVED", "BROKE", "LOST", "OFF", "DOWN!"]:
@@ -461,7 +461,8 @@ func toast(text: String, secs := 1.6) -> void:
 	_ban_tag_l.text = head.to_upper() if head.length() <= 28 else head
 	var big := head.length() <= 28
 	_ban_tag_l.add_theme_font_override("font", DISP if big else BODY_B)
-	_ban_tag_l.add_theme_font_size_override("font_size", fs + 6 if big else fs)
+	var huge := big and (head.to_upper().contains("TOUCHDOWN") or head.to_upper().contains("BIG PLAY") or head.to_upper().contains("PICK SIX") or head.to_upper().contains("SCOOP") or head.to_upper().contains("INTERCEPT"))
+	_ban_tag_l.add_theme_font_size_override("font_size", fs + (14 if huge else 6) if big else fs)
 	_ban_tag_l.autowrap_mode = TextServer.AUTOWRAP_OFF if big else TextServer.AUTOWRAP_WORD_SMART
 	var tsb := flat(banner_color(head), 0)
 	tsb.content_margin_left = 14
@@ -491,6 +492,11 @@ func toast(text: String, secs := 1.6) -> void:
 	var x0 := 0.0 if vp.x < 700.0 else 16.0
 	_ban_tw = create_tween()
 	_ban_tw.tween_property(_ban, "position:x", x0, 0.22).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	if huge:
+		# the big ones thump: the tag pops and settles
+		_ban_tag.pivot_offset = _ban_tag.size * 0.5
+		_ban_tw.tween_property(_ban_tag, "scale", Vector2(1.12, 1.12), 0.09)
+		_ban_tw.tween_property(_ban_tag, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_ban_tw.tween_interval(maxf(secs, 0.8))
 	_ban_tw.tween_property(_ban, "modulate:a", 0.0, 0.3)
 	_ban_tw.tween_callback(func(): _ban.visible = false)
@@ -507,6 +513,8 @@ func _banner_sound(head: String) -> void:
 	elif h.contains("INTERCEPT") or h.contains("FUMBLE") or h.contains("TURNOVER") or h.contains("BLOCKED"):
 		main.sfx.play("whistle", -10.0)
 		main.sfx.play("clank", -10.0, 0.7)
+	elif h.contains("BIG PLAY"):
+		main.sfx.play("roar", -3.0)
 	elif h.contains("GOOD") or h.contains("SAFETY"):
 		main.sfx.play("roar", -9.0)
 	elif h.contains("SIGNED") or h.contains("SOLD") or h.contains("TRADED"):
@@ -525,12 +533,12 @@ func _build_caption() -> void:
 	_cap_box.offset_left = 8
 	_cap_box.offset_right = -8
 	_cap_box.offset_top = 46
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = Color(0.01, 0.02, 0.05, 0.7)
-	sb.border_color = Color(MAGENTA, 0.7)
-	sb.border_width_left = 3
-	sb.set_corner_radius_all(4)
-	sb.set_content_margin_all(6)
+	var sb := flat(Color(0.03, 0.045, 0.07, 0.86), 10, LINE, 1)
+	sb.border_color = LINE
+	sb.content_margin_left = 12
+	sb.content_margin_right = 10
+	sb.content_margin_top = 6
+	sb.content_margin_bottom = 7
 	_cap_box.add_theme_stylebox_override("panel", sb)
 	_cap_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_cap = RichTextLabel.new()
@@ -548,7 +556,7 @@ func _build_caption() -> void:
 
 ## A line from the announcer (or a robot). The last two show; they fade when the play goes quiet.
 func caption(text: String, big := false, color := Color(0.9, 0.97, 1.0)) -> void:
-	_cap_lines.append([text, YELLOW if big else color, big])
+	_cap_lines.append([text, MAGENTA if big else color, big])
 	while _cap_lines.size() > 2:
 		_cap_lines.pop_front()
 	var out := ""
@@ -868,7 +876,7 @@ func _open(title: String) -> VBoxContainer:
 	if in_game:
 		_board.modulate.a = 1.0
 		_root.move_child(_board, -1)
-		top = _board.position.y + _board.get_child(0).size.y + 8.0
+		top = _board.position.y + _board.get_combined_minimum_size().y + 8.0
 	pc.position = Vector2((vp.x - w) * 0.5, top)
 	pc.custom_minimum_size = Vector2(w, 0)
 	pc.size = Vector2(w, vp.y - top - 20.0)
@@ -968,11 +976,21 @@ func _mode_section(box: VBoxContainer) -> void:
 	box.add_child(_button("Menu: season, exhibition or sim lab", func(): main.show_menu()))
 	if Career.sim_mode():
 		box.add_child(_label("Choose your coach (the play-calling scheme) and brains, tune the lab team's roster - swaps, upgrades, new robots - then simulate a game against each of these ten opponents. You only watch the results. The robots are copies: nothing breaks, nobody is paid, your season is untouched. Lab purse $%d." % Career.money(0), fs - 1, dim))
+		var oc := _card(box, "Opponents")
 		for o in Career.sim_opponents():
-			var ovr := 0.0
-			for s0 in o["starters"]:
-				ovr += Robot.overall(o["starters"][s0])
-			box.add_child(_label("   %s · %s · %s" % [o["name"], Career.schemes_text(o), Career.ratings_text(o)], fs - 2, Color(0.85, 0.9, 0.95)))
+			var hr := HBoxContainer.new()
+			hr.add_theme_constant_override("separation", 8)
+			oc.add_child(hr)
+			var v := VBoxContainer.new()
+			v.add_theme_constant_override("separation", 0)
+			v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			hr.add_child(v)
+			var nl := _label(String(o["name"]), fs - 1, Color.WHITE)
+			nl.add_theme_font_override("font", BODY_B)
+			v.add_child(nl)
+			var rt := Career.team_ratings(o)
+			v.add_child(_label("%s  ·  off %d  def %d" % [Career.schemes_text(o), int(rt["off"]), int(rt["def"])], fs - 3, DIM))
+			hr.add_child(_disp(str(int(rt["ovr"])), fs + 6, Color.WHITE, false))
 		var lr := HFlowContainer.new()
 		lr.add_theme_constant_override("h_separation", 6)
 		box.add_child(lr)
@@ -990,10 +1008,9 @@ func _mode_section(box: VBoxContainer) -> void:
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
 		var opp := Career.team(1)
-		box.add_child(_label("%s. This week: %s (%s, %s) - %s." % [Career.week_label(), opp["name"], Career.schemes_text(opp), Career._rec_text(opp["rec"]), Career.ratings_text(opp)], fs, Color(0.9, 0.93, 1.0)))
-		box.add_child(_label("Your team, its purse and its damage carry from week to week. After each game you are paid for the result (win $1,300, tie $700) and for what you did: $250 a touchdown, $100 a big play (20+ yards), $100 a sack, $200 a takeaway, $50 a big hit (a part knocked off), $25 a first down - about $3,000 for a typical win, $1,000 for a loss. Repairs, upgrades and new robots come out of it. Each rival plays twice; best record is champion.", fs - 1, dim))
-	for r in Career.standings():
-		box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 1, MAGENTA if r["you"] else Color(0.85, 0.9, 0.95)))
+		_matchup(box, Career.team(0), sn.get("you", {"w": 0, "l": 0, "t": 0}), opp)
+		box.add_child(_label("Pay a game: win $1,300 (tie $700), $250 a touchdown, $200 a takeaway, $100 a big play or sack, $50 a big hit, $25 a first down. Each rival plays twice; best record is champion.", fs - 3, DIM))
+	_standings_card(box)
 	var ns := _button("Really start over? Tap again" if _confirm_new_season else "Start a new season", func():
 		if _confirm_new_season:
 			_confirm_new_season = false
@@ -1371,11 +1388,25 @@ func open_log() -> void:
 	entries.reverse()
 	for e in entries:
 		var s := maxi(int(e["clock"]), 0)
-		var who := ""
+		var row0 := PanelContainer.new()
+		var t := int(e.get("team", -1))
+		var sb := flat(SURF2, 9)
+		sb.border_color = TEAM_COL[t] if t >= 0 else LINE
+		sb.border_width_left = 4
+		sb.content_margin_left = 10
+		sb.content_margin_right = 8
+		sb.content_margin_top = 5
+		sb.content_margin_bottom = 6
+		row0.add_theme_stylebox_override("panel", sb)
+		box.add_child(row0)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 1)
+		row0.add_child(v)
+		var meta := "Q%d %d:%02d  ·  %d-%d" % [e["q"], s / 60, s % 60, e["score"][0], e["score"][1]]
 		if e.has("team"):
-			who = Team.NAMES[int(e["team"])] + " · " + ["", "1st", "2nd", "3rd", "4th"][clampi(int(e["down"]), 1, 4)] + " & " + str(maxi(int(round(float(e["to_go"]))), 1)) + " · "
-		var l := _label("Q%d %d:%02d  %d-%d   %s%s" % [e["q"], s / 60, s % 60, e["score"][0], e["score"][1], who, e["text"]], fs - 2)
-		box.add_child(l)
+			meta += "  ·  %s %s & %d" % [Team.NAMES[t], ["", "1st", "2nd", "3rd", "4th"][clampi(int(e["down"]), 1, 4)], maxi(int(round(float(e["to_go"]))), 1)]
+		v.add_child(_eyebrow(meta))
+		v.add_child(_label(String(e["text"]), fs - 1, Color(0.92, 0.94, 0.96)))
 		if e.has("off_text") or e.has("def_text"):
 			var row := HFlowContainer.new()
 			row.add_theme_constant_override("h_separation", 6)
@@ -1439,7 +1470,10 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 		why = "His rule: %s." % String(coach.get("why", ""))
 	elif coach_i >= 0:
 		var gd: Dictionary = coach.get("grade", {})
-		line = "Coach's pick: %s" % String(coach.get("call", ""))
+		var picked: String = (hand[coach_i]["play"] as Play).name if coach_i < hand.size() else String(coach.get("call", ""))
+		line = "Coach's pick: %s" % picked
+		if picked != String(coach.get("call", "")):
+			line += "  (he wanted %s)" % String(coach.get("call", ""))
 		if not gd.is_empty():
 			line += "  ·  %d%%  ·  grade %s" % [int(round(float(gd["p"]) * 100)), gd["grade"]]
 			var need := float(coach.get("need", 10.0))
@@ -1497,11 +1531,13 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 			bsb.content_margin_bottom = 1
 			badge.add_theme_stylebox_override("normal", bsb)
 			badge.autowrap_mode = TextServer.AUTOWRAP_OFF
-			badge.set_anchors_preset(Control.PRESET_TOP_LEFT)
-			badge.size = Vector2.ZERO
-			badge.position = Vector2(9, 9)
 			badge.z_index = 1
-			card.add_child.call_deferred(badge)
+			var bwrap := Control.new()
+			bwrap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			bwrap.position = Vector2(9, 9)
+			bwrap.add_child(badge)
+			card.add_child(bwrap)
+			badge.reset_size.call_deferred()
 		var nm := (("%s · %s" % [p.name, "run" if p.kind == "run" else "pass"]) if side == "offense" else p.name).to_upper()
 		var nl := _disp(nm, fs + (4 if hero else 1))
 		nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2638,10 +2674,12 @@ func _calls_line(calls: Dictionary, who: String) -> String:
 
 
 func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
+	var cd := _card(box)
 	var g := GridContainer.new()
 	g.columns = 3
-	g.add_theme_constant_override("h_separation", 12)
-	box.add_child(g)
+	g.add_theme_constant_override("h_separation", 14)
+	g.add_theme_constant_override("v_separation", 5)
+	cd.add_child(g)
 	var rows := [["", names[0], names[1]]]
 	var f := func(t: int, k: String) -> float: return float(stats[t].get(k, 0.0)) / float(per[t])
 	rows.append(["Points" if per[0] == 1 else "Points a game", "", ""])
@@ -2660,10 +2698,25 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 	rows.append(["Field goals", "%.1f/%.1f" % [f.call(0, "fg"), f.call(0, "fg_att")], "%.1f/%.1f" % [f.call(1, "fg"), f.call(1, "fg_att")]])
 	rows.append(["Punts", "%.1f" % f.call(0, "punts"), "%.1f" % f.call(1, "punts")])
 	rows.remove_at(1)
-	for r in rows:
+	for ri in rows.size():
+		var r: Array = rows[ri]
 		for i in 3:
-			var l := _label(String(r[i]), fs - 1, CYAN if i == 0 or r == rows[0] else Color(0.93, 0.93, 0.9))
+			var c := Color(0.93, 0.94, 0.96)
+			if ri == 0:
+				c = TEAM_COL[i - 1].lightened(0.3) if i > 0 else DIM
+			elif i == 0:
+				c = DIM
+			var l := _label(String(r[i]).strip_edges() if i == 0 and String(r[i]).begins_with("  ") else String(r[i]), fs - (2 if i == 0 and String(r[i]).begins_with("  ") else 1), c)
+			if ri == 0 and i > 0:
+				l.add_theme_font_override("font", DISP)
+				l.text = l.text.to_upper()
+			if i == 0 and String(r[i]).begins_with("  "):
+				l.text = "   " + l.text
 			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			if i > 0:
+				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			else:
+				l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			g.add_child(l)
 
 
@@ -2705,8 +2758,19 @@ func _rules_section(box: Control, brain_tally: Array, coach_tally: Array, coache
 			var b: Brain = Library.brain(f[1])
 			lines.append("  %d× %s: %s" % [f[0], f[1], b.rule_text(f[2]) if b != null else str(f[2])])
 		var dname := (dcoaches[t] as Coach).name if dcoaches.size() > t and dcoaches[t] != null and dcoaches[t] != c else ""
-		var l := _label("%s (%s%s)\n%s" % [Team.NAMES[t], c.name, (" / " + dname) if dname != "" else "", "\n".join(lines)], fs - 2)
-		box.add_child(l)
+		var cd := _card(box, "%s · %s%s" % [Team.NAMES[t], c.name, (" / " + dname) if dname != "" else ""], TEAM_COL[t])
+		for ln2 in lines:
+			var parts := String(ln2).strip_edges().split("× ", true, 1)
+			var hr := HBoxContainer.new()
+			hr.add_theme_constant_override("separation", 8)
+			cd.add_child(hr)
+			var nl := _disp(parts[0], fs, MAGENTA, false)
+			nl.custom_minimum_size.x = 40
+			nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			hr.add_child(nl)
+			var rl := _label(parts[1].replace(" -> ", "  →  ") if parts.size() > 1 else String(ln2), fs - 2, Color(0.88, 0.9, 0.94))
+			rl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			hr.add_child(rl)
 
 
 func _coach_rule(c: Coach, ln: int) -> String:
@@ -3219,9 +3283,21 @@ func open_roster(t := -1) -> void:
 
 ## Report lines in colour: green went well, red needs fixing, grey to note.
 func _report_lines(box: Control, lines: Array) -> void:
+	# each note a row with a coloured edge: green went well, red needs fixing, grey is just so
 	for ln in lines:
-		var col := Color(0.55, 0.95, 0.6) if ln[1] == "good" else (Color(1.0, 0.55, 0.5) if ln[1] == "bad" else Color(0.85, 0.88, 0.92))
-		box.add_child(_label(("+ " if ln[1] == "good" else ("! " if ln[1] == "bad" else "- ")) + String(ln[0]), fs - 1, col))
+		var col := GOOD if ln[1] == "good" else (BAD if ln[1] == "bad" else LINE.lightened(0.2))
+		var pc := PanelContainer.new()
+		var sb := flat(SURF2, 9)
+		sb.border_color = col
+		sb.border_width_left = 4
+		sb.content_margin_left = 10
+		sb.content_margin_right = 8
+		sb.content_margin_top = 5
+		sb.content_margin_bottom = 6
+		pc.add_theme_stylebox_override("panel", sb)
+		var txt := String(ln[0])
+		pc.add_child(_label(txt[0].to_upper() + txt.substr(1) if txt != "" else txt, fs - 2, Color(0.92, 0.94, 0.96) if ln[1] != "note" else Color(0.8, 0.84, 0.9)))
+		box.add_child(pc)
 
 
 ## Any club's players, to look at: their schemes, record, ratings and every robot.
@@ -3628,55 +3704,92 @@ func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots" + _purse())
-	box.add_child(_label("Parts came off on the field. Decide for each, then the game goes on. Each choice shows what his overall would be; junk spares run $12 (an arm) to $25 (a core).", fs - 2, Color(0.8, 0.83, 0.88)))
-	var top := HFlowContainer.new()
-	top.add_theme_constant_override("h_separation", 6)
+	box.add_child(_label("Parts came off on the field. Choose for each, then the game goes on.", fs - 2, DIM))
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 8)
 	box.add_child(top)
-	var pl := _label("Purse $%d" % Career.money(0), fs + 1, YELLOW)
-	pl.autowrap_mode = TextServer.AUTOWRAP_OFF
-	top.add_child(pl)
+	top.add_child(_money_chip(Career.money(0)))
+	var sp := Control.new()
+	sp.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	top.add_child(sp)
 	top.add_child(_button("Box score", func(): show_stats(main.game, "live", {}, func(): open_injuries(main._broken_mine()))))
 	var tm: Dictionary = main.game.teams[0]
+	# a choice: what it does on the left, his overall after it on the right
+	var choice := func(cd: Control, text: String, ovr: int, cb: Callable, ok := true, gold := false) -> Button:
+		var b := _button("", cb)
+		b.custom_minimum_size.y = 42
+		var h := HBoxContainer.new()
+		h.set_anchors_preset(Control.PRESET_FULL_RECT)
+		h.offset_left = 12
+		h.offset_right = -12
+		h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(h)
+		var l := _label(text, fs - 1, INK if gold and ok else Color(0.94, 0.95, 0.97))
+		l.add_theme_font_override("font", BODY_B)
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		l.clip_text = true
+		l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		h.add_child(l)
+		if ovr >= 0:
+			var o := _disp("OVR %d" % ovr, fs + 2, INK if gold and ok else Color.WHITE, false)
+			o.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			o.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			h.add_child(o)
+		if gold and ok:
+			_primary(b, fs)
+			b.text = ""
+		b.disabled = not ok
+		if not ok:
+			h.modulate.a = 0.45
+		cd.add_child(b)
+		return b
 	for s in slots:
 		var r: Dictionary = tm["roster"][s]
 		var lost := Robot.lost_parts(r)
 		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
 		var junk_cost := 0
+		var cost := 0
 		for k in lost:
 			junk_cost += Career.junk_price(k)
+			cost += Career.repair_cost(r, k)
 		var o_full := Robot.overall_if(r, "healthy")
 		var o_now := Robot.overall_if(r, "now")
 		var o_junk := Robot.overall_if(r, "junk")
-		_section(box, "%s  #%d %s - no %s" % [s, int(r["number"]), r["name"], " or ".join(names)])
-		box.add_child(_label("Overall %d -> %d without %s (-%d)   ·   with junk %d   ·   with new %d" % [o_full, o_now, "them" if lost.size() > 1 else "it", o_full - o_now, o_junk, o_full], fs, YELLOW))
+		var cd := _card(box, "", BAD)
+		var hr := HBoxContainer.new()
+		hr.add_theme_constant_override("separation", 8)
+		cd.add_child(hr)
+		var pb := _disp(s, fs, Color(0.45, 0.68, 1.0), false)
+		pb.custom_minimum_size.x = 40
+		hr.add_child(pb)
+		var nv := VBoxContainer.new()
+		nv.add_theme_constant_override("separation", 0)
+		nv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hr.add_child(nv)
+		var nl := _label("#%d %s" % [int(r["number"]), r["name"]], fs, Color.WHITE)
+		nl.add_theme_font_override("font", BODY_B)
+		nv.add_child(nl)
+		nv.add_child(_label("Lost his %s" % " and ".join(names), fs - 2, BAD))
+		hr.add_child(_disp("%d → %d" % [o_full, o_now], fs + 4, BAD, false))
 		var help: Array = []
 		for k in lost:
 			help.append(String(Robot.PART_HELP[k]))
-		box.add_child(_label(" ".join(help), fs - 3, Color(0.7, 0.74, 0.8)))
-		var row := HFlowContainer.new()
-		row.add_theme_constant_override("h_separation", 6)
-		row.add_theme_constant_override("v_separation", 6)
-		box.add_child(row)
-		var jb := _button("Bolt on junk %s ($%d) - OVR %d" % [" and ".join(names), junk_cost, o_junk], func(): main.injury_choice(s, "junk"))
-		jb.disabled = Career.money(0) < junk_cost
-		row.add_child(jb)
+		cd.add_child(_label(" ".join(help), fs - 3, DIM))
+		choice.call(cd, "New %s  $%d" % [" and ".join(names), cost], o_full, func(): main.injury_choice(s, "buy"), Career.money(0) >= cost, true)
+		choice.call(cd, "Bolt on junk  $%d" % junk_cost, o_junk, func(): main.injury_choice(s, "junk"), Career.money(0) >= junk_cost)
+		if Robot.can_play(r):
+			choice.call(cd, "Play on without it", o_now, func(): main.injury_choice(s, "play_on"))
+		else:
+			cd.add_child(_label("He can't play like this.", fs - 2, WARN))
 		if Career.money(0) < junk_cost and not Robot.can_play(r):
 			var any_sub := false
 			for bb in Career.team(0)["bench"]:
 				if Robot.can_play(bb) and Career.fits(bb, s):
 					any_sub = true
 			if not any_sub:
-				row.add_child(_button("Emergency junk (purse empty, no one on the bench)", func(): main.injury_choice(s, "emergency")))
-		var cost := 0
-		for k in lost:
-			cost += Career.repair_cost(r, k)
-		var buy := _button("New %s ($%d) - OVR %d" % [" and ".join(names), cost, o_full], func(): main.injury_choice(s, "buy"))
-		buy.disabled = Career.money(0) < cost
-		row.add_child(buy)
-		if Robot.can_play(r):
-			row.add_child(_button("Play on without it - OVR %d" % o_now, func(): main.injury_choice(s, "play_on")))
-		else:
-			row.add_child(_label("He can't play like this.", fs - 2, MAGENTA))
+				choice.call(cd, "Emergency junk (purse empty, nobody on the bench)", -1, func(): main.injury_choice(s, "emergency"))
 		# or anyone healthy off the bench, from any position - his own kind first
 		var subs: Array = []
 		for b: Dictionary in tm.get("bench", []):
@@ -3685,17 +3798,11 @@ func open_injuries(slots: Array) -> void:
 		var grp := String(Play.SLOT_GROUP[s])
 		subs.sort_custom(func(x, y): return Robot.overall_at(x, grp) > Robot.overall_at(y, grp))
 		if not subs.is_empty():
-			box.add_child(_label("Or put in from the bench - each shown with how he would rate as a %s, best first:" % grp, fs - 2, CYAN))
-			var srow := HFlowContainer.new()
-			srow.add_theme_constant_override("h_separation", 6)
-			srow.add_theme_constant_override("v_separation", 6)
-			box.add_child(srow)
+			cd.add_child(_eyebrow("Or from the bench, rated as a %s" % grp))
 			for b: Dictionary in subs:
 				var bid := String(b["id"])
-				var tag := "" if String(b["group"]) == grp else "  (plays %s)" % b["group"]
-				var bo := Robot.overall_at(b, grp)
-				var better := "  (better)" if bo > maxi(o_now, o_junk) else ""
-				srow.add_child(_button("#%d %s, %s - as %s %d%s" % [int(b["number"]), b["name"], b["group"], grp, bo, better], func(): main.injury_choice(s, "sub:" + bid)))
+				var tag := "" if String(b["group"]) == grp else " (a %s)" % b["group"]
+				choice.call(cd, "#%d %s%s" % [int(b["number"]), b["name"], tag], Robot.overall_at(b, grp), func(): main.injury_choice(s, "sub:" + bid))
 
 
 func _parts_section(box: Control, r: Dictionary, id: String) -> void:
@@ -3818,21 +3925,33 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 		var bits := nm.split(" ")
 		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
 		var per := float(int(r["after"]) - int(r["before"])) * 100.0 / maxf(float(r["cost"]), 1.0)
-		box.add_child(_label("%s (%s)   OVR %d -> %d (%+d)   $%d   (%.1f OVR per $100)" % [short, r["slot"], int(r["before"]), int(r["after"]), int(r["after"]) - int(r["before"]), int(r["cost"]), per], fs, Color(0.85, 0.95, 1.0)))
-		box.add_child(_label("    " + ", ".join(r["parts"]), fs - 2, Color(0.75, 0.8, 0.88)))
+		var cd := _card(box)
+		var hr := HBoxContainer.new()
+		hr.add_theme_constant_override("separation", 8)
+		cd.add_child(hr)
+		var pb := _disp(String(r["slot"]), fs - 1, Color(0.45, 0.68, 1.0), false)
+		pb.custom_minimum_size.x = 40
+		hr.add_child(pb)
+		var nm2 := _label(short, fs, Color.WHITE)
+		nm2.add_theme_font_override("font", BODY_B)
+		nm2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		hr.add_child(nm2)
+		hr.add_child(_disp("%d → %d" % [int(r["before"]), int(r["after"])], fs + 3, GOOD, false))
+		hr.add_child(_disp("$%d" % int(r["cost"]), fs + 1, MAGENTA, false))
+		for pt in r["parts"]:
+			cd.add_child(_label(String(pt).replace(" -> ", " → "), fs - 3, DIM))
 		if not (r.get("gains", []) as Array).is_empty():
-			box.add_child(_label("    " + ", ".join(r["gains"]), fs - 2, Color(0.55, 0.95, 0.6)))
+			cd.add_child(_label(", ".join(r["gains"]) + "  ·  %.1f OVR per $100" % per, fs - 3, GOOD))
 	if not rows.is_empty():
 		box.add_child(_label("In all: %d robots, %+d overall between them, $%d." % [rows.size(), gain, cost], fs - 1, CYAN))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
 	if not rows.is_empty():
-		var buy := _button("Buy it ($%d)" % cost, func():
+		var buy := _primary(_button("BUY IT  $%s" % _commas(cost), func():
 			var news := Career.coach_spend(t, purse, 400, focus, seed)
 			refresh.call()
-			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4))
-		buy.add_theme_font_size_override("font_size", fs + 2)
+			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)), fs + 2)
 		row.add_child(buy)
 	row.add_child(_button("Back", func(): refresh.call()))
 
