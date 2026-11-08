@@ -1589,7 +1589,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
-	box.add_child(_label("Yellow: the run. Shaded: zones. Dashed: man. Pink: blitz.", fs - 3, Color(0.5, 0.55, 0.62)))
+	_help_head(box, "Reading the cards", "Offense: yellow is the ball carrier's path, light blue the routes, the blue line the line of scrimmage. Defense: shaded areas are zones, dashed lines man coverage, pink arrows blitzers. The % is the coach's chance this play gains what you need (or holds them under it), graded A to F against the whole playbook.")
 
 
 ## 4th down: the punt, as the first card in the hand.
@@ -2005,7 +2005,7 @@ func _pay_cards(box: Control, names: Array) -> void:
 
 
 func _standings_card(box: Control) -> void:
-	var st := _card(box, "Standings")
+	var st := _card(box, "Standings", Color(0, 0, 0, 0), "W-L-T and points for and against; OVR is each club's team rating now. Each rival plays you twice; best record is champion. Pay a game: win $1,300 (tie $700), $250 a touchdown, $200 a takeaway, $100 a big play (20+ yards) or sack, $50 a big hit, $25 a first down.")
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 14)
@@ -2073,7 +2073,7 @@ func _calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void
 
 ## The drives as a table: whose, plays, yards and how it ended (scores in gold, giveaways red).
 func _drives_table(box: Control, g: Game) -> void:
-	var cd := _card(box, "Drives")
+	var cd := _card(box, "Drives", Color(0, 0, 0, 0), "Every possession in order: who had it, how many plays, yards gained and how it ended.")
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 14)
@@ -2317,7 +2317,7 @@ func show_game_over(g: Game) -> void:
 ## Between games: last week, the table, who is next, and getting the team ready - repairs,
 ## upgrades, the market - then Kick off.
 ## A card that holds a section: a dark tile with a small heading.
-func _card(box: Control, head := "", accent := Color(0, 0, 0, 0)) -> VBoxContainer:
+func _card(box: Control, head := "", accent := Color(0, 0, 0, 0), help := "") -> VBoxContainer:
 	var pc := PanelContainer.new()
 	var sb := flat(SURF2, 12, LINE, 1)
 	sb.set_content_margin_all(12)
@@ -2330,9 +2330,33 @@ func _card(box: Control, head := "", accent := Color(0, 0, 0, 0)) -> VBoxContain
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 6)
 	pc.add_child(v)
-	if head != "":
+	if head != "" and help == "":
 		v.add_child(_eyebrow(head))
+	elif head != "":
+		_help_head(v, head, help)
 	return v
+
+
+## A small heading with a ? beside it: tap it for a few lines on what this is and how to read it.
+func _help_head(box: Control, head: String, help: String, color := DIM) -> void:
+	var hr := HBoxContainer.new()
+	box.add_child(hr)
+	var hl := _eyebrow(head, color)
+	hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hr.add_child(hl)
+	var tip := PanelContainer.new()
+	var tsb := flat(NIGHT, 9, LINE, 1)
+	tsb.set_content_margin_all(10)
+	tip.add_theme_stylebox_override("panel", tsb)
+	tip.visible = false
+	tip.add_child(_label(help, fs - 2, Color(0.86, 0.89, 0.93)))
+	var q := _button("?", func(): tip.visible = not tip.visible)
+	q.custom_minimum_size = Vector2(32, 30)
+	q.add_theme_font_size_override("font_size", fs - 2)
+	q.tooltip_text = help
+	hr.add_child(q)
+	box.add_child(tip)
 
 
 ## An award as a card: what it is in gold, who in bold, his club's colour down the side.
@@ -2419,7 +2443,7 @@ func open_next() -> void:
 		row.add_child(b)
 	_garage(box, func(): open_next())
 	# scouting: each unit against theirs as a bar, then their schemes
-	var sc := _card(box, "Scouting report")
+	var sc := _card(box, "Scouting report", Color(0, 0, 0, 0), "Each of your units against the one it lines up against, by average OVR (red number yours, blue theirs). The bar leans right when you have the edge. Green advice: press it. Red: plan around it, or upgrade that unit. Under that, what their play-callers like to do and what beats it.")
 	var re := RegEx.new()
 	re.compile("^(.*?) \\((\\d+) vs (\\d+)\\): (.*)$")
 	for ln in Analysis.pregame(me, opp):
@@ -2462,7 +2486,7 @@ func open_next() -> void:
 		if adv != "even":
 			sc.add_child(_label(adv[0].to_upper() + adv.substr(1), fs - 3, col))
 	# the table
-	var st := _card(box, "Standings")
+	var st := _card(box, "Standings", Color(0, 0, 0, 0), "W-L-T and points for and against; OVR is each club's team rating now. Each rival plays you twice; best record is champion. Pay a game: win $1,300 (tie $700), $250 a touchdown, $200 a takeaway, $100 a big play (20+ yards) or sack, $50 a big hit, $25 a first down.")
 	var grid := GridContainer.new()
 	grid.columns = 4
 	grid.add_theme_constant_override("h_separation", 14)
@@ -2531,7 +2555,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 		if c > 0:
 			hurt.append([w[0], w[1], c])
 			all_cost += c
-	var gc := _card(box, "Repairs" if not hurt.is_empty() else "", WARN if not hurt.is_empty() else Color(0, 0, 0, 0))
+	var gc := _card(box, "Repairs" if not hurt.is_empty() else "", WARN if not hurt.is_empty() else Color(0, 0, 0, 0), "Damage carries from game to game. A worn part plays weaker and comes off at 0; a lost part takes its ratings with it. Fix puts parts back to full at their tier. Junk parts (on the field) are cheap but cost 4 OVR each." if not hurt.is_empty() else "")
 	if hurt.is_empty():
 		var ok := _label("Nobody is damaged. Ready to play.", fs - 1, GOOD)
 		ok.add_theme_font_override("font", BODY_B)
@@ -2588,7 +2612,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 
 ## Upgrades and the robot market.
 func _market(box: Control, refresh: Callable) -> void:
-	var up := _card(box, "Upgrades")
+	var up := _card(box, "Upgrades", Color(0, 0, 0, 0), "Buy parts yourself on a robot's page, or let the coach shop. Efficient: the most team OVR for the money. Best buy: aims at this week's opponent, putting money where your units lose their matchups and where positions matter most (QB first). The others put it all into one side or unit. He keeps $400 back.")
 	var ur := HBoxContainer.new()
 	ur.add_theme_constant_override("separation", 6)
 	up.add_child(ur)
@@ -2607,7 +2631,7 @@ func _market(box: Control, refresh: Callable) -> void:
 		ur.add_child(cb)
 	up.add_child(inner)
 	_spend_row(inner, 0, refresh)
-	var mk := _card(box, "Robot market  ·  joins your bench")
+	var mk := _card(box, "Robot market  ·  joins your bench", Color(0, 0, 0, 0), "New robots join your bench; play them by swapping on the roster. The big number is his OVR at his position; armour is his plating (+5 toughness each). Prices go with his parts.")
 	for r in Career.market():
 		var row := HBoxContainer.new()
 		row.add_theme_constant_override("separation", 8)
@@ -3175,7 +3199,7 @@ func open_roster(t := -1) -> void:
 		if Career.credit(0) > 0:
 			buys.add_child(_button("Coach spends the credit", func(): _open_plan(0, false, "", func(): open_roster())))
 		if Career.money(0) > 400:
-			buys.add_child(_label("He keeps $400 back. Pick what he shops for:", fs - 2, DIM))
+			_help_head(buys, "He keeps $400 back. Pick what he shops for", "Efficient: the most team OVR for the money. Best buy: aims at this week's opponent, putting money where your units lose their matchups and where positions matter most (QB first). Offense, Defense, Run game and the rest put it all into that side or unit. You see his plan and its cost before anything is bought.")
 			var fr := GridContainer.new()
 			fr.columns = 2
 			fr.add_theme_constant_override("h_separation", 6)
@@ -3528,7 +3552,11 @@ func open_robot(id: String) -> void:
 	if Career.fair():
 		who.add_child(_label("Fair bodies on: he plays as a 60.", fs - 3, MAGENTA))
 	# the ratings
-	_section(box, "Ratings")
+	var rh: Array = []
+	for rk in Robot.LABEL:
+		if Robot.RATING_HELP.has(rk):
+			rh.append("%s: %s" % [Robot.LABEL[rk], Robot.RATING_HELP[rk]])
+	_help_head(box, "Ratings", "\n".join(rh) + "\nGreen 65+, amber 45+, red below. A +number is what upgrades add.", CYAN)
 	for k in Robot.keys(r):
 		var v := int(Robot.eff(r, k))
 		var plus := int(Robot.bonus(r, k))
