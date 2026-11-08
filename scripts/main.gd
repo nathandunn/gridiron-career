@@ -268,8 +268,12 @@ func _ready() -> void:
 				game.yl = float(args.get("yl", game.yl))
 				_open_picker("offense")
 			"sim2end":
-				hud._stats_tab = String(args.get("tab", "team"))
 				sim_to_end()
+				while _phase == "simend":
+					await get_tree().create_timer(0.5).timeout
+				await get_tree().create_timer(1.0).timeout
+				hud._stats_tab = String(args.get("tab", "summary"))
+				hud.show_stats(game, "final", {}, Callable())
 			"fixtest":
 				sim_to_end()
 				while _phase == "simend":

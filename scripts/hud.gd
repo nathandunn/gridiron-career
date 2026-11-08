@@ -1839,21 +1839,70 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		var bk := _button("« Back", func(): close_overlay())
 		box.add_child(bk)
 		_back_buttons.append(bk)
+	if mode == "final" and _final_for != g:
+		_final_for = g
+		_stats_tab = "summary"
 	if mode == "final":
 		_final_hero(box, g, names, score)
 	_line_score(box, names, line, score)
+	# what to do next stays up top, whatever tab is open
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	box.add_child(row)
+	var wide := func(b: Button) -> Button:
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(b)
+		return b
+	if mode == "quarter":
+		_primary(wide.call(_button("CONTINUE", func(): close_overlay(); main.resume_after_break())), fs + 2)
+		var stop := _button("Stop at quarter breaks", func(): main.stop_at_quarters = not main.stop_at_quarters, true)
+		stop.button_pressed = main.stop_at_quarters
+		wide.call(stop)
 	if mode == "final":
-		_award_sections(box, g)
+		if not Career.loaded:
+			_primary(wide.call(_button("PLAY AGAIN", func(): close_overlay(); main.new_game())), fs + 2)
+		elif Career.exhibition():
+			_primary(wide.call(_button("ANOTHER EXHIBITION", func(): close_overlay(); Career.new_exhibition(); main.new_game(false))), fs + 2)
+		elif Career.season_over():
+			_primary(wide.call(_button("START NEXT SEASON", func(): close_overlay(); main.new_game(false))), fs + 2)
+		else:
+			_primary(wide.call(_button("NEXT: %s" % Career.week_label().to_upper(), func(): main.next_game())), fs + 2)
+		var mb := _button("Menu", func(): main.show_menu())
+		mb.custom_minimum_size.x = 90
+		row.add_child(mb)
+	if row.get_child_count() == 0:
+		row.queue_free()
+	# the tabs
+	var tab_list: Array = []
+	if mode == "final":
+		tab_list.append(["summary", "Summary"])
+	tab_list += [["report", "Report"], ["team", "Team"], ["p0", "%s players" % Team.NAMES[0]], ["p1", "%s players" % Team.NAMES[1]], ["plays", "Plays"], ["drives", "Drives"], ["rules", "Rules"]]
+	if mode == "final" and Career.loaded and not season_lines.is_empty():
+		tab_list.insert(1, ["season", "Season" if not Career.exhibition() else "Exhibition"])
+	var keys := tab_list.map(func(x): return x[0])
+	if not _stats_tab in keys:
+		_stats_tab = keys[0]
 	var tabs := HFlowContainer.new()
-	tabs.add_theme_constant_override("h_separation", 6)
+	tabs.add_theme_constant_override("h_separation", 5)
+	tabs.add_theme_constant_override("v_separation", 5)
 	box.add_child(tabs)
-	for tab in [["report", "Report"], ["team", "Team"], ["p0", "%s players" % Team.NAMES[0]], ["p1", "%s players" % Team.NAMES[1]]]:
+	for tab in tab_list:
 		var b := _button(tab[1], func(): _stats_tab = tab[0]; _back = Callable(); show_stats(g, mode, snap, back), true)
 		b.button_pressed = _stats_tab == tab[0]
+		b.add_theme_font_size_override("font_size", fs - 2)
 		tabs.add_child(b)
 	match _stats_tab:
+		"summary":
+			_award_sections(box, g)
+			_pay_cards(box, names)
+		"season":
+			var sc := _card(box, "Season" if not Career.exhibition() else "Exhibition")
+			for ln in season_lines:
+				sc.add_child(_label(String(ln), fs - 1, MAGENTA if String(ln).begins_with("SEASON") else Color(0.85, 0.9, 0.95)))
+			if not Career.exhibition():
+				_standings_card(box)
 		"report":
-			box.add_child(_label("How it went for %s: the play-calling (what you called and how it worked) and the players (who stood out, which units let you down, the damage). Green went well, red needs fixing." % names[0], fs - 2, Color(0.75, 0.8, 0.85)))
+			box.add_child(_label("How it went for %s. Green went well, red needs fixing." % names[0], fs - 2, DIM))
 			_report_lines(box, Analysis.postgame(g, 0))
 		"team":
 			_box_score(box, stats, [1, 1], names)
@@ -1862,48 +1911,159 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 			g._track_ovr(false)
 			_player_tables(box, pstats[t], 1, g.teams[t], g.ovr_track)
 			_condition_table(box, g.teams[t], g.ovr_track)
-	var row := HFlowContainer.new()
-	row.add_theme_constant_override("h_separation", 6)
-	box.add_child(row)
-	if mode == "quarter":
-		var go := _button("Continue", func(): close_overlay(); main.resume_after_break())
-		go.add_theme_font_size_override("font_size", fs + 2)
-		row.add_child(go)
-		var stop := _button("Stop at quarter breaks", func(): main.stop_at_quarters = not main.stop_at_quarters, true)
-		stop.button_pressed = main.stop_at_quarters
-		row.add_child(stop)
-	if mode == "final" and not slips.is_empty():
-		_section(box, "Pay")
-		for t in 2:
-			var sl: Dictionary = slips[t]
-			var parts: Array = []
-			for l in sl["lines"]:
-				parts.append("%s $%d" % [l[0], int(l[1])])
-			box.add_child(_label("%s: %s = $%d  (purse now $%d)" % [names[t], ", ".join(parts), int(sl["total"]), int(sl.get("purse", Career.money(t)))], fs - 1, YELLOW if t == 0 else Color(0.8, 0.85, 0.9)))
-			for nline in sl.get("news", []):
-				box.add_child(_label("   " + String(nline), fs - 2, Color(0.75, 0.8, 0.9)))
-	if mode == "final" and Career.loaded:
-		if not season_lines.is_empty():
-			_section(box, "Season" if not Career.exhibition() else "Exhibition")
-			for ln in season_lines:
-				box.add_child(_label(String(ln), fs - 1, YELLOW if String(ln).begins_with("SEASON") else Color(0.85, 0.9, 0.95)))
-			if not Career.exhibition():
-				for r in Career.standings():
-					box.add_child(_label(("> " if r["you"] else "   ") + String(r["text"]), fs - 2, MAGENTA if r["you"] else Color(0.8, 0.85, 0.9)))
-	if mode == "final":
-		if not Career.loaded:
-			row.add_child(_button("Play again", func(): close_overlay(); main.new_game()))
-		elif Career.exhibition():
-			row.add_child(_button("Another exhibition", func(): close_overlay(); Career.new_exhibition(); main.new_game(false)))
-		elif Career.season_over():
-			row.add_child(_button("Start next season", func(): close_overlay(); main.new_game(false)))
+		"plays":
+			for t in 2:
+				_calls_table(box, g.calls[t], names[t], t)
+		"drives":
+			_drives_table(box, g)
+		"rules":
+			var bt: Array = g.get_meta("brain_tally", [{}, {}])
+			_rules_section(box, bt, g.coach_tally, [g.teams[0]["coach"], g.teams[1]["coach"]], [g.teams[0].get("dcoach", g.teams[0]["coach"]), g.teams[1].get("dcoach", g.teams[1]["coach"])])
+
+
+var _final_for: Game = null
+
+
+## Pay for the game: each club's total big, its lines as a two-column list, the purse after,
+## and what its coach did with it.
+func _pay_cards(box: Control, names: Array) -> void:
+	if slips.is_empty():
+		return
+	_section(box, "Pay")
+	for t in 2:
+		var sl: Dictionary = slips[t]
+		var pc := PanelContainer.new()
+		var sb := flat(SURF2, 12)
+		sb.border_color = TEAM_COL[t]
+		sb.border_width_left = 5
+		sb.set_content_margin_all(12)
+		pc.add_theme_stylebox_override("panel", sb)
+		box.add_child(pc)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 4)
+		pc.add_child(v)
+		var head := HBoxContainer.new()
+		v.add_child(head)
+		var nl := _label(String(names[t]), fs, Color.WHITE)
+		nl.add_theme_font_override("font", BODY_B)
+		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		head.add_child(nl)
+		head.add_child(_disp("+$" + _commas(int(sl["total"])), fs + 8, MAGENTA, false))
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 12)
+		v.add_child(grid)
+		for l in sl["lines"]:
+			var a := _label(String(l[0]), fs - 2, DIM)
+			a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			grid.add_child(a)
+			var b := _label("$" + _commas(int(l[1])), fs - 2, Color(0.9, 0.92, 0.95))
+			b.autowrap_mode = TextServer.AUTOWRAP_OFF
+			b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			grid.add_child(b)
+		var pl := _label("Purse now $" + _commas(int(sl.get("purse", Career.money(t)))), fs - 1, MAGENTA if t == 0 else Color(0.85, 0.88, 0.92))
+		pl.add_theme_font_override("font", BODY_B)
+		v.add_child(pl)
+		for nline in sl.get("news", []):
+			v.add_child(_label(String(nline), fs - 3, DIM))
+
+
+func _standings_card(box: Control) -> void:
+	var st := _card(box, "Standings")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 4)
+	st.add_child(grid)
+	var sn := Career.season()
+	for h in ["Club", "W-L-T", "PF-PA", "OVR"]:
+		var hl := _label(h, fs - 3, DIM)
+		hl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if h == "Club":
+			hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(hl)
+	for r in Career.standings():
+		var c := MAGENTA if r["you"] else Color(0.9, 0.92, 0.95)
+		var n := _label(String(r["name"]), fs - 1, c)
+		n.add_theme_font_override("font", BODY_B if r["you"] else BODY)
+		n.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(n)
+		for tx in [[Career._rec_text(r["rec"]), c], ["%d-%d" % [int(r["rec"]["pf"]), int(r["rec"]["pa"])], DIM]]:
+			var gl := _label(tx[0], fs - 1, tx[1])
+			gl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			grid.add_child(gl)
+		var tmr: Dictionary = Career.team(0) if r["you"] else {}
+		if not r["you"]:
+			for cl in sn.get("clubs", []):
+				if String(cl["name"]) == String(r["name"]):
+					tmr = cl
+		grid.add_child(_disp(str(int(Career.team_ratings(tmr)["ovr"])) if not tmr.is_empty() else "-", fs, c, false))
+
+
+## A club's play calls as a table: play, times called, yards a call (green for good, red for bad).
+func _calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void:
+	var cd := _card(box, name, TEAM_COL[t])
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 3)
+	cd.add_child(grid)
+	for h in ["Play", "Calls", "Yds a call"]:
+		var hl := _label(h, fs - 3, DIM)
+		hl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if h == "Play":
+			hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		else:
-			var nx := _button("Next game: %s  »" % Career.week_label().to_lower(), func(): main.next_game())
-			nx.add_theme_font_size_override("font_size", fs + 3)
-			row.add_child(nx)
-			row.move_child(nx, 0)
-		row.add_child(_button("Menu", func(): main.show_menu()))
-		_final_extras(box, g)
+			hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(hl)
+	var ks := calls.keys()
+	ks.sort_custom(func(a, b): return calls[a][0] > calls[b][0] or (calls[a][0] == calls[b][0] and float(calls[a][1]) > float(calls[b][1])))
+	for k in ks:
+		var n := int(calls[k][0])
+		var y := float(calls[k][1]) / maxf(float(n), 1.0)
+		var pl := _label(String(k), fs - 2, Color(0.9, 0.92, 0.95))
+		pl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		pl.clip_text = true
+		pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(pl)
+		var nl := _label(str(n), fs - 2, DIM)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(nl)
+		var yl := _label("%.1f" % y, fs - 2, GOOD if y >= 6.0 else (BAD if y < 3.0 else Color(0.9, 0.92, 0.95)))
+		yl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		yl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(yl)
+
+
+## The drives as a table: whose, plays, yards and how it ended (scores in gold, giveaways red).
+func _drives_table(box: Control, g: Game) -> void:
+	var cd := _card(box, "Drives")
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 3)
+	cd.add_child(grid)
+	for h in ["Team", "Plays", "Yds", "Result"]:
+		var hl := _label(h, fs - 3, DIM)
+		hl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if h == "Result":
+			hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(hl)
+	for d in g.drives:
+		var t := int(d["team"])
+		var res := String(d["result"])
+		var tl := _disp(String(Team.NAMES[t]).to_upper(), fs - 1, TEAM_COL[t].lightened(0.25))
+		grid.add_child(tl)
+		for v in [str(int(d["plays"])), str(int(round(float(d["yards"]))))]:
+			var l := _label(v, fs - 1, Color(0.9, 0.92, 0.95))
+			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			grid.add_child(l)
+		var rc := MAGENTA if (res.contains("TD") or res == "FG") else (BAD if res in ["INT", "fumble", "downs", "safety", "blocked"] else DIM)
+		var rl := _label(res if res != "" else "-", fs - 1, rc)
+		rl.add_theme_font_override("font", BODY_B)
+		rl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		grid.add_child(rl)
 
 
 func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
