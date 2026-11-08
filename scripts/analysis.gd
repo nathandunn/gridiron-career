@@ -14,21 +14,21 @@ const UNITS := {
 
 ## What the opposing defensive scheme tends to do, and what beats it.
 const DEF_TIPS := {
-	"Blitz Happy": "they send pressure all game: quick throws, screens and hot reads beat it, and long developing plays get sacked",
-	"Bend Don't Break": "zone that keeps everything in front: short passes and runs work, deep shots rarely",
-	"Man Press": "man coverage with one deep safety: crossing routes and a mobile quarterback hurt it",
-	"Stop the Run": "eight in the box until you prove you can pass: throw early, run later",
-	"Spy the QB": "a linebacker shadows your quarterback: hand off and throw rather than scramble",
-	"Adaptive D": "it copies whatever you keep doing: mix runs and passes",
-	"By the Numbers D": "it calls the statistically best defense for the down: be unpredictable",
+	"Blitz Happy": "blitzes all game: throw quick, screens",
+	"Bend Don't Break": "soft zone: short passes and runs work",
+	"Man Press": "man, one deep safety: crossers beat it",
+	"Stop the Run": "eight in the box: throw early",
+	"Spy the QB": "spies the QB: don't scramble",
+	"Adaptive D": "adapts to you: mix it up",
+	"By the Numbers D": "plays the odds: be unpredictable",
 }
 const OFF_TIPS := {
-	"Air Raid": "they throw it all day: pass rush and a strong secondary matter most",
-	"Ground and Pound": "they run it and run it: a stout D-line and linebackers win this",
-	"Balanced": "run and pass by the book",
-	"Adaptive": "they keep calling what works: stop the first thing that does",
-	"Option Run": "sweeps, draws and a scrambling quarterback: keep contain on the edges",
-	"By the Numbers": "they call the statistically best play for the down",
+	"Air Raid": "throws all day: rush and cover",
+	"Ground and Pound": "runs it: load the front",
+	"Balanced": "by the book",
+	"Adaptive": "repeats what works: stop it early",
+	"Option Run": "sweeps and scrambles: keep contain",
+	"By the Numbers": "plays the odds",
 }
 
 
@@ -79,26 +79,26 @@ static func pregame(me: Dictionary, opp: Dictionary) -> Array:
 	var U := UNITS
 	# the players: unit against unit
 	_vs(out, unit(me, U["O-line"]), unit(opp, U["D-line"]),
-		"your line should protect and open holes - lean on the run",
-		"their D-line will pressure and stuff runs - quick passes and outside runs, or buy Better O-line", "Your O-line vs their D-line")
+		"lean on the run",
+		"quick passes, outside runs", "Your O-line vs their D-line")
 	_vs(out, unit(me, U["D-line"]), unit(opp, U["O-line"]),
-		"your pass rush should get home and stop the run",
-		"they'll have time to throw and room to run - blitz to make up for it, or buy Pass rush", "Your D-line vs their O-line")
+		"your rush gets home",
+		"blitz more", "Your D-line vs their O-line")
 	_vs(out, unit(me, U["receivers"]), unit(opp, U["secondary"]),
-		"your receivers should get open - throw it",
-		"their secondary will blanket your receivers - run and throw short", "Your receivers vs their secondary")
+		"throw it",
+		"run and throw short", "Your receivers vs their secondary")
 	_vs(out, unit(me, U["secondary"]), unit(opp, U["receivers"]),
-		"you can play man coverage with confidence",
-		"their receivers will get open - play zone and keep it in front", "Your secondary vs their receivers")
+		"play man",
+		"play zone, keep it in front", "Your secondary vs their receivers")
 	_vs(out, unit(me, U["running back"]) * 0.5 + unit(me, U["O-line"]) * 0.5, unit(opp, U["linebackers"]) * 0.5 + unit(opp, U["D-line"]) * 0.5,
-		"the run game should work", "running will be hard going", "Your run game vs their front")
+		"run it", "running will be hard", "Your run game vs their front")
 	# the play-calling side: their schemes and what beats them
 	var dn := String(opp.get("defense", ""))
 	if DEF_TIPS.has(dn):
-		out.append(["Their defense, %s: %s." % [dn, DEF_TIPS[dn]], "note"])
+		out.append(["Their D, %s: %s." % [dn, DEF_TIPS[dn]], "note"])
 	var on := String(opp.get("coach", ""))
 	if OFF_TIPS.has(on):
-		out.append(["Their offense, %s: %s." % [on, OFF_TIPS[on]], "note"])
+		out.append(["Their O, %s: %s." % [on, OFF_TIPS[on]], "note"])
 	# weak spots
 	var tw := _weakest(opp, U["secondary"])
 	if not tw.is_empty() and float(tw[2]) < 58.0:

@@ -975,7 +975,7 @@ func _mode_section(box: VBoxContainer) -> void:
 	var dim := Color(0.8, 0.82, 0.85)
 	box.add_child(_button("Menu: season, exhibition or sim lab", func(): main.show_menu()))
 	if Career.sim_mode():
-		box.add_child(_label("Choose your coach (the play-calling scheme) and brains, tune the lab team's roster - swaps, upgrades, new robots - then simulate a game against each of these ten opponents. You only watch the results. The robots are copies: nothing breaks, nobody is paid, your season is untouched. Lab purse $%d." % Career.money(0), fs - 1, dim))
+		box.add_child(_label("Set your coach, brains and roster, then sim a game against each of ten opponents. Copies only: nothing breaks." % Career.money(0), fs - 1, dim))
 		var oc := _card(box, "Opponents")
 		for o in Career.sim_opponents():
 			var hr := HBoxContainer.new()
@@ -998,18 +998,18 @@ func _mode_section(box: VBoxContainer) -> void:
 		lr.add_child(_button("New lab team ($2,000)", func(): Career.new_sim_lab(); main.new_game(false)))
 		return
 	if Career.exhibition():
-		box.add_child(_label("One game. Both sides are drafted fresh with a single $2,000 budget: spend yours below (or let the coach); the rival's coach has spent his. Nobody is paid and nothing carries over to your season.", fs - 1, dim))
+		box.add_child(_label("One game. Both sides drafted fresh with $2,000 each. No pay, nothing carries over.", fs - 1, dim))
 		box.add_child(_button("New exhibition teams", func(): Career.new_exhibition(); main.new_game(false)))
 		return
 	var sn := Career.season()
 	if String(Career.data.get("last_champion", "")) != "" and int(sn.get("week", 1)) == 1:
-		box.add_child(_label("Last season's champions: %s. A new season: $2,000 in your purse to spend before kickoff." % Career.data["last_champion"], fs, YELLOW))
+		box.add_child(_label("Champions: %s. New season: $2,000 to spend." % Career.data["last_champion"], fs, YELLOW))
 	if Career.season_over():
 		box.add_child(_label("SEASON OVER - champions: %s. Kick off starts a new season." % sn.get("champion", "?"), fs + 1, YELLOW))
 	else:
 		var opp := Career.team(1)
 		_matchup(box, Career.team(0), sn.get("you", {"w": 0, "l": 0, "t": 0}), opp)
-		box.add_child(_label("Pay a game: win $1,300 (tie $700), $250 a touchdown, $200 a takeaway, $100 a big play or sack, $50 a big hit, $25 a first down. Each rival plays twice; best record is champion.", fs - 3, DIM))
+		box.add_child(_label("Pay: win $1,300, TD $250, takeaway $200, big play or sack $100. Best record wins the title.", fs - 3, DIM))
 	_standings_card(box)
 	var ns := _button("Really start over? Tap again" if _confirm_new_season else "Start a new season", func():
 		if _confirm_new_season:
@@ -1037,7 +1037,7 @@ func open_teams(pregame := false) -> void:
 		_teams_side = 0
 	var box := _open(title + _purse())
 	var lab := Career.loaded and Career.sim_mode()
-	box.add_child(_label("Set up your coach (the AI that calls the plays), the brains at every position (the AI that plays them) and your robots, then Simulate." if lab else "Each side has a coach (the AI that calls the plays) and a brain at every position (the AI that plays them), and its robots. Set up both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
+	box.add_child(_label("Coach calls the plays, brains play the positions. Set them, then Simulate." if lab else "Coach calls the plays, brains play the positions. Set both sides, then Kick off.", fs - 1, Color(0.8, 0.82, 0.85)))
 	if pregame and lab:
 		var sim_b := _button("Simulate %d games" % Career.SIM_OPPONENTS, func(): main.run_sim())
 		sim_b.add_theme_font_size_override("font_size", fs + 4)
@@ -1101,10 +1101,10 @@ func open_teams(pregame := false) -> void:
 		var b := _button(Game.CALLING_LABEL[mode], func(): main.calling[t] = mode; main.library_changed(); open_teams(pregame), true)
 		b.button_pressed = main.calling[t] == mode
 		cf.add_child(b)
-	var why := {"pick": "You call every play for this side: each down you get a hand of 8 brand-new plays (with diagrams) to choose from. The coach's choice is marked, with the rule he used. On 4th down the first card is the punt.",
+	var why := {"pick": "You call every play from a hand of 8. The coach's pick is marked.",
 		"coach": "The coach's rules pick every play.",
 		"random": "Any play in the playbook, picked at random every down.",
-		"generated": "A brand-new play made up every down: random formation, routes, gaps, coverages and blitzes. Save the good ones from the Log."}
+		"generated": "A brand-new random play every down. Save good ones from the Log."}
 	if not lab:
 		box.add_child(_label(why[main.calling[t]], fs - 1, Color(0.8, 0.82, 0.85)))
 	if Career.loaded:
@@ -1186,7 +1186,7 @@ func open_editor(kind := "", name := "") -> void:
 	if name != "":
 		_ed_name = name
 	var box := _open("Edit the AI")
-	box.add_child(_label("Every coach, play and position brain is a short rule file. Rules are read top to bottom; the first that holds decides. Tap a word below to insert it; type a space for suggestions.", fs - 1, Color(0.8, 0.82, 0.85)))
+	box.add_child(_label("Rules run top to bottom; the first that holds decides. Tap a word to insert it.", fs - 1, Color(0.8, 0.82, 0.85)))
 	var kinds := HFlowContainer.new()
 	kinds.add_theme_constant_override("h_separation", 6)
 	box.add_child(kinds)
@@ -1589,7 +1589,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
-	box.add_child(_label("Yellow is the run, blue the line of scrimmage. Defense: shaded zones, dashed lines for man, pink arrows for blitzers.", fs - 3, Color(0.5, 0.55, 0.62)))
+	box.add_child(_label("Yellow: the run. Shaded: zones. Dashed: man. Pink: blitz.", fs - 3, Color(0.5, 0.55, 0.62)))
 
 
 ## 4th down: the punt, as the first card in the hand.
@@ -1649,7 +1649,7 @@ func open_audible(g: Game, team: int, side: String, snap: Dictionary, hand: Arra
 	var mine_key := "off_name" if side == "offense" else "def_name"
 	var theirs_key := "def_name" if side == "offense" else "off_name"
 	var box := _open("%s · %s · Audible? %s" % [g.clock_text(), g.situation(), "offense" if side == "offense" else "defense"])
-	box.add_child(_label("Time on the play clock: you may check out of your call once, after seeing how they line up.", fs - 1, Color(0.8, 0.83, 0.88)))
+	box.add_child(_label("One check-out, now you've seen their look.", fs - 1, Color(0.8, 0.83, 0.88)))
 	box.add_child(_label("Your call:  %s" % String(snap[mine_key]), fs + 2, YELLOW))
 	var theirs := String(snap[theirs_key])
 	box.add_child(_label("Their look:  %s" % theirs, fs + 2, CYAN))
@@ -1709,8 +1709,8 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		var k: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
 		var leg := Robot.eff(k, "leg") if not k.is_empty() else 60.0
 		var subs := {"deep": "%s, leg %d: as deep as he can - a touchback or a long return" % [_who_txt(k, "Your kicker"), int(leg)],
-			"squib": "Driven into the turf, bouncing to their 25-40: no long return, and now and then it squirts away from them",
-			"onside": "Short and hopping, both sides diving for it: you get it about 1 in 8, otherwise they start near midfield"}
+			"squib": "Bounces to their 25-40. No long return; sometimes it squirts loose",
+			"onside": "Short and live: yours about 1 in 8, else they start near midfield"}
 		for c in Game.KICKS:
 			grid.add_child(_text_card(cw, Game.KICKS[c], subs[c], c == coach_pick, func(): main.pick_made("kickoff", c)))
 	else:
@@ -2244,7 +2244,7 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 	if roster.is_empty():
 		return
 	_section(box, "Condition")
-	box.add_child(_label("Each robot's rating at the final whistle, with how it moved this game (red if he was hurt), then his parts' wear: at 100% a part comes off.", fs - 3, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Rating at the whistle and its change; part wear (100% = it comes off).", fs - 3, Color(0.75, 0.8, 0.85)))
 	# one robot to a line - his name and overall - with his parts' wear wrapped underneath, so a
 	# long list of wear never pushes the panel off a phone screen
 	var grid := VBoxContainer.new()
@@ -3061,7 +3061,7 @@ func _cloud_section(box: Container) -> void:
 	var code := cs.ensure_code()
 	box.add_child(_label("Your save code: %s" % code, fs + 2, YELLOW))
 	box.add_child(_label(cs.status_text(), fs - 2, Color(0.75, 0.8, 0.85)))
-	box.add_child(_label("Every save goes to the cloud under this code. Keep the code (or the link) and your career is never lost: open the link, or type the code on another phone or computer.", fs - 2, Color(0.75, 0.8, 0.85)))
+	box.add_child(_label("Saves go to the cloud under this code. Use it or the link on any device.", fs - 2, Color(0.75, 0.8, 0.85)))
 	var link := LineEdit.new()
 	link.text = cs.link()
 	link.editable = false
@@ -3090,10 +3090,10 @@ func _cloud_section(box: Container) -> void:
 		msg.text = "Loading..."
 		cs.load_code(inp.text, func(ok: bool, m: String): msg.text = "" if ok else m)))
 	box.add_child(msg)
-	box.add_child(_label("Loading a code replaces the career on this device with that one (yours stays safe in the cloud under your own code).", fs - 3, Color(0.7, 0.72, 0.75)))
+	box.add_child(_label("Loading replaces this device's career (yours stays in the cloud).", fs - 3, Color(0.7, 0.72, 0.75)))
 	if OS.has_feature("web"):
 		_section(box, "Download the game")
-		box.add_child(_label("Play it as an app on a computer - the same game and the same cloud saves.", fs - 2, Color(0.75, 0.8, 0.85)))
+		box.add_child(_label("The same game as a desktop app, same cloud saves.", fs - 2, Color(0.75, 0.8, 0.85)))
 		var dr := HFlowContainer.new()
 		dr.add_theme_constant_override("h_separation", 6)
 		box.add_child(dr)
@@ -3278,7 +3278,7 @@ func open_roster(t := -1) -> void:
 			_draft_armed = true
 		open_roster())
 	opts.add_child(draft)
-	box.add_child(_label("Tap a robot for his parts and upgrades. OVR is against his position: 60 is an average one of his kind. Fair bodies: everyone plays as a 60, so only the brains differ.", fs - 3, Color(0.5, 0.55, 0.62)))
+	box.add_child(_label("Tap a robot for parts and upgrades. 60 OVR is average for his position.", fs - 3, Color(0.5, 0.55, 0.62)))
 
 
 ## Report lines in colour: green went well, red needs fixing, grey to note.
@@ -3579,7 +3579,7 @@ func open_robot(id: String) -> void:
 	var grp := String(r["group"])
 	if slot == "":
 		_section(box, "Put him in")
-		box.add_child(_label("At his own position, or one built much the same - his own first. He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+		box.add_child(_label("His own position first. He plays from the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
 		var row := HFlowContainer.new()
 		row.add_theme_constant_override("h_separation", 6)
 		row.add_theme_constant_override("v_separation", 6)
@@ -3597,7 +3597,7 @@ func open_robot(id: String) -> void:
 			row.add_child(b)
 	else:
 		_section(box, "Take him out")
-		box.add_child(_label("Bring in a bench robot who can play here - his position first. From the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
+		box.add_child(_label("A bench robot who can play here. From the next snap.", fs - 3, Color(0.7, 0.74, 0.8)))
 		var row2 := HFlowContainer.new()
 		row2.add_theme_constant_override("h_separation", 6)
 		row2.add_theme_constant_override("v_separation", 6)
@@ -3675,7 +3675,7 @@ func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 	var g := String(r.get("group", ""))
 	var box := _open("Trade with %s%s" % [c["name"], _purse()])
 	_back = func(): open_robot(id)
-	box.add_child(_label("Your %s %s (%s, OVR %d, worth $%d) for one of their %s players. They take the deal if what they get is worth at least what they give; if not, you add the difference in cash." % [g, r["name"], g, Robot.overall_if(r, "now"), Career.robot_price(r), g], fs - 1, Color(0.85, 0.88, 0.92)))
+	box.add_child(_label("Your %s %s (%s, OVR %d, worth $%d) for one of their %s players. You pay any difference." % [g, r["name"], g, Robot.overall_if(r, "now"), Career.robot_price(r), g], fs - 1, Color(0.85, 0.88, 0.92)))
 	var theirs: Array = []
 	for s in c["starters"]:
 		var x: Dictionary = c["starters"][s]
@@ -3704,7 +3704,7 @@ func _open_trade(r: Dictionary, id: String, c: Dictionary) -> void:
 ## Your robots that lost parts: for each, put in the best sub, bolt on junk, or play on.
 func open_injuries(slots: Array) -> void:
 	var box := _open("Broken robots" + _purse())
-	box.add_child(_label("Parts came off on the field. Choose for each, then the game goes on.", fs - 2, DIM))
+	box.add_child(_label("Choose for each, then play on.", fs - 2, DIM))
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 8)
 	box.add_child(top)
@@ -3773,10 +3773,6 @@ func open_injuries(slots: Array) -> void:
 		nv.add_child(nl)
 		nv.add_child(_label("Lost his %s" % " and ".join(names), fs - 2, BAD))
 		hr.add_child(_disp("%d → %d" % [o_full, o_now], fs + 4, BAD, false))
-		var help: Array = []
-		for k in lost:
-			help.append(String(Robot.PART_HELP[k]))
-		cd.add_child(_label(" ".join(help), fs - 3, DIM))
 		choice.call(cd, "New %s  $%d" % [" and ".join(names), cost], o_full, func(): main.injury_choice(s, "buy"), Career.money(0) >= cost, true)
 		choice.call(cd, "Bolt on junk  $%d" % junk_cost, o_junk, func(): main.injury_choice(s, "junk"), Career.money(0) >= junk_cost)
 		if Robot.can_play(r):
@@ -3883,7 +3879,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 		else:
 			var mxl := _label("Maxed", fs - 3, DIM)
 			v.add_child(mxl)
-	box.add_child(_label("Upgrades: Mk II +6, Mk III +12, Prototype +20 to what a part carries (an arm or leg half), and more condition.", fs - 4, Color(0.5, 0.55, 0.62)))
+	box.add_child(_label("Mk II +6, Mk III +12, Proto +20 (arms, legs half).", fs - 4, Color(0.5, 0.55, 0.62)))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
@@ -3917,7 +3913,7 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 		" (keeping $400 back)" if purse else "", cost, (" ($%d of it credit)" % from_credit) if from_credit > 0 else "",
 		Career.money(t) - (cost - from_credit)], fs, YELLOW))
 	if rows.is_empty():
-		box.add_child(_label("Nothing he can buy with that: every part he'd look at is maxed out or costs more than he has.", fs - 1, Color(0.85, 0.88, 0.92)))
+		box.add_child(_label("Nothing he can buy with that.", fs - 1, Color(0.85, 0.88, 0.92)))
 	var gain := 0
 	for r in rows:
 		gain += int(r["after"]) - int(r["before"])
@@ -3959,7 +3955,7 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 	var cr := Career.credit(t)
 	if cr > 0:
-		box.add_child(_label("Upgrade credit $%d - spend it yourself on the robot pages (tap a robot, then a part's upgrade button), or let the coach:" % cr, fs - 1, YELLOW))
+		box.add_child(_label("Upgrade credit $%d. Spend it on a robot's page, or let the coach:" % cr, fs - 1, YELLOW))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	row.add_theme_constant_override("v_separation", 6)
@@ -3969,7 +3965,7 @@ func _spend_row(box: Control, t: int, refresh: Callable) -> void:
 	if Career.money(t) > 400:
 		if cr <= 0:
 			box.move_child(row, box.get_child_count() - 1)
-			var hint := _label("Spend the purse on upgrades yourself on the robot pages (tap a robot, then a part's upgrade button), or let the coach:", fs - 2, Color(0.8, 0.83, 0.88))
+			var hint := _label("Spend it on a robot's page, or let the coach:", fs - 2, Color(0.8, 0.83, 0.88))
 			box.add_child(hint)
 			box.move_child(hint, row.get_index())
 		box.add_child(_label("Coach buys upgrades (keeps $400) - for:", fs - 2, Color(0.8, 0.83, 0.88)))
