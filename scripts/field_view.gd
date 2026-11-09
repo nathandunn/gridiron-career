@@ -43,6 +43,7 @@ signal trash_talk(team: int, slot: String, line: String, who: String)  # a robot
 
 func _ready() -> void:
 	_build_field()
+	_merge_static(self)
 	_ball = MeshInstance3D.new()
 	var bm := SphereMesh.new()
 	bm.radius = 0.18
@@ -212,6 +213,41 @@ func _build_field() -> void:
 			_box(Vector3(0.8, 26.0, 0.8), base + Vector3(0, 13.0, 0), _metal(STEEL))
 			var head := _box(Vector3(5.0, 2.2, 0.6), base + Vector3(0, 26.5, 0), _glow(Color(0.95, 0.97, 1.0), 3.0))
 			head.look_at_from_position(head.position, Vector3(0, 0, 0), Vector3.UP)
+
+
+func _merge_tree(n: Node3D) -> void:
+	for c in n.get_children():
+		if c is Node3D and not (c is MeshInstance3D):
+			_merge_tree(c)
+	_merge_static(n)
+
+
+## Fold the arena's few hundred boxes into one mesh per material: a phone draws each mesh
+## separately, and hundreds of draws a frame is what made it run hot. (Labels stay as they are.)
+func _merge_static(host: Node3D) -> void:
+	var groups := {}
+	for c in host.get_children():
+		if c is MeshInstance3D and (c as MeshInstance3D).mesh is BoxMesh and c.get_child_count() == 0:
+			var mi := c as MeshInstance3D
+			var m: Material = mi.material_override
+			if not groups.has(m):
+				groups[m] = []
+			groups[m].append(mi)
+	for m in groups:
+		var list: Array = groups[m]
+		if list.size() < 2:
+			continue
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for mi: MeshInstance3D in list:
+			st.append_from(mi.mesh, 0, mi.transform)
+		var merged := MeshInstance3D.new()
+		merged.mesh = st.commit()
+		merged.material_override = m
+		host.add_child(merged)
+		for mi: MeshInstance3D in list:
+			host.remove_child(mi)
+			mi.queue_free()
 
 
 ## Where a play-frame point is in the world.
@@ -599,6 +635,9 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 					_box(Vector3(0.24, 0.06, 0.26), Vector3(0, -0.3 * arm_len, 0), bm, n)
 				"lleg", "rleg":
 					_box(Vector3(0.28 * w, 0.06, 0.32), Vector3(0, -0.6 * lg, 0), bm, n)
+	# one mesh per material on each moving piece (body, each limb, the head): a robot was ~30
+	# draws, now ~8, and the pieces still swing and hide as before
+	_merge_tree(root)
 	return {"root": root, "body": body, "legs": legs, "arms": arms, "head": head, "nodes": nodes, "wheels": wheels, "flames": flames}
 
 

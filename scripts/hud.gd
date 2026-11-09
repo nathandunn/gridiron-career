@@ -826,6 +826,7 @@ func close_overlay(follow_back := true) -> void:
 	if any_overlay():
 		_overlay.queue_free()
 	_overlay = null
+	get_viewport().disable_3d = false
 	Ux.panel("field")
 	main.overlay_changed(false)
 	if not (follow_back and _back.is_valid()):
@@ -2891,6 +2892,7 @@ func _open_page() -> Control:
 	page.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_root.add_child(page)
 	_overlay = page
+	get_viewport().disable_3d = true      # the title screen covers the field: don't draw it
 	_close_btn = null
 	main.overlay_changed(true)
 	return page
@@ -3061,6 +3063,11 @@ static func _commas(n: int) -> String:
 ## Cloud save, downloads and starting the season over: what used to crowd the menu.
 func open_settings() -> void:
 	var box := _open("Save code & settings")
+	_help_head(box, "Graphics", "Battery saver turns off shadows, glow and smoothing, draws the field at a lower resolution and runs at 30 frames a second. Phones start with it on: they run cooler and don't slow down.", CYAN)
+	var sv: bool = main.saver_on()
+	var gb := _button("Battery saver: %s" % ("on" if sv else "off"), func(): main.set_saver(not main.saver_on()); open_settings(), true)
+	gb.button_pressed = sv
+	box.add_child(gb)
 	_cloud_section(box)
 	_section(box, "Start over")
 	box.add_child(_label("A new season wipes this one: a fresh draft, $5,000.", fs - 2, DIM))

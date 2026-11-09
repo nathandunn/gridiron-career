@@ -70,6 +70,22 @@ func _ready() -> void:
 			calling[t] = String(args[key + "call"])
 	if args.has("redcall") or args.has("bluecall"):
 		new_game()
+	if args.has("perf"):
+		# --perf=SECONDS: print the node and object counts and the frame rate every 10 s, then quit
+		var secs := float(args["perf"])
+		await get_tree().create_timer(1.0).timeout
+		calling = ["coach", "coach"]
+		hud.close_overlay(false)
+		new_game()
+		var t0 := Time.get_ticks_msec()
+		while (Time.get_ticks_msec() - t0) / 1000.0 < secs:
+			await get_tree().create_timer(10.0).timeout
+			print("PERF t=%d nodes=%d objects=%d orphans=%d fps=%d draws=%d plays=%d" % [(Time.get_ticks_msec() - t0) / 1000,
+				Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_COUNT),
+				Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT), Engine.get_frames_per_second(),
+				Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), game.drives.size() if game != null else -1])
+		get_tree().quit()
+		return
 	if args.has("swipetest"):
 		await get_tree().create_timer(3.0).timeout
 		_swipe_test()
@@ -534,6 +550,51 @@ var stop_at_quarters := true
 var _seen_q := 0
 
 
+var _env: Environment
+var _sun: DirectionalLight3D
+var _rim: DirectionalLight3D
+const GFX_CFG := "user://settings.cfg"
+
+
+## Phones (and tablets) start in battery saver: no shadows, no second light, no glow, no
+## multisampling, the 3D drawn at a lower resolution, 30 frames a second. Each is a pass over
+## every robot, every frame - what made phones run hot and then slow down as they throttled.
+static func is_handheld() -> bool:
+	return OS.has_feature("web_ios") or OS.has_feature("web_android") or OS.has_feature("mobile")
+
+
+func saver_on() -> bool:
+	var cf := ConfigFile.new()
+	if cf.load(GFX_CFG) == OK and cf.has_section_key("gfx", "saver"):
+		return bool(cf.get_value("gfx", "saver"))
+	return is_handheld()
+
+
+func set_saver(on: bool) -> void:
+	var cf := ConfigFile.new()
+	cf.load(GFX_CFG)
+	cf.set_value("gfx", "saver", on)
+	cf.save(GFX_CFG)
+	apply_graphics()
+
+
+func apply_graphics() -> void:
+	var on := saver_on()
+	if _sun != null:
+		_sun.shadow_enabled = not on
+	if _rim != null:
+		_rim.visible = not on
+	if _env != null:
+		_env.glow_enabled = not on
+		_env.ambient_light_energy = 0.75 if on else 0.55     # make up for the missing rim light
+	var vp := get_viewport()
+	vp.msaa_3d = Viewport.MSAA_DISABLED if on else Viewport.MSAA_2X
+	# keep the 3D to about a million pixels however sharp the screen
+	var px := vp.get_visible_rect().size.x * vp.get_visible_rect().size.y
+	vp.scaling_3d_scale = clampf(sqrt(1.0e6 / maxf(px, 1.0)), 0.5, 1.0) if on else 1.0
+	Engine.max_fps = 30 if on else 0
+
+
 func _build_ui() -> void:
 	_scale_for_phone()
 	var env := WorldEnvironment.new()
@@ -560,6 +621,9 @@ func _build_ui() -> void:
 	sun.rotation = Vector3(-1.05, 0.45, 0)
 	sun.light_energy = 0.9
 	sun.light_color = Color(0.85, 0.9, 1.0)
+	# one shadow map, not four: the camera is high and the field is flat
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = 90.0
 	sun.shadow_enabled = true
 	add_child(sun)
 	var rim := DirectionalLight3D.new()
@@ -567,6 +631,10 @@ func _build_ui() -> void:
 	rim.light_energy = 0.35
 	rim.light_color = Color(1.0, 0.35, 0.8)
 	add_child(rim)
+	_env = e
+	_sun = sun
+	_rim = rim
+	apply_graphics()
 	view = FieldView.new()
 	add_child(view)
 	cam = BroadcastCam.new()
