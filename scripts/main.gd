@@ -845,43 +845,64 @@ func redeal(side: String) -> void:
 
 
 ## Call out what just happened, big, in the middle of the screen.
+## "#14 Ratchet Socketeer" for whoever plays `slot` for team t (the slot itself if nobody).
+func _name(t: int, slot: String) -> String:
+	if slot == "" or game == null:
+		return slot
+	var r: Dictionary = (game.teams[t].get("roster", {}) as Dictionary).get(slot, {})
+	if r.is_empty():
+		r = (game.teams[t].get("special", {}) as Dictionary).get(slot, {})
+	return ("%s #%d %s" % [slot, int(r["number"]), r["name"]]) if not r.is_empty() else slot
+
+
 func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	var r: Dictionary = sim.result
 	var who: String = Team.NAMES[poss_before]
 	var other: String = Team.NAMES[1 - poss_before]
 	var st: Dictionary = r.get("stat", {})
 	var scored: int = game.score[0] + game.score[1] - score_before[0] - score_before[1]
+	var off := poss_before
+	var dfn := 1 - poss_before
+	# the man with the ball at the end, on whichever side he plays
+	var ball_t := off if int(r.get("carrier_side", 0)) == 0 else dfn
+	var ball := _name(ball_t, String(r.get("carrier", "")))
+	var gain := int(round(float(e.get("gain", 0.0))))
+	var yds := ("%d yards" % absi(gain)) if absi(gain) > 1 else ("%d yard" % absi(gain))
+	var thrown := bool(r.get("pass", false)) and not bool(r.get("incomplete", false)) and String(r.get("carrier", "")) != "QB"
 	if r.has("fg"):
+		var kick := _name(off, "K")
 		if e.get("xp", false):
-			hud.toast({"good": "EXTRA POINT GOOD", "blocked": "BLOCKED!"}.get(String(r["fg"]), "EXTRA POINT NO GOOD"), 1.8)
+			hud.toast({"good": "EXTRA POINT GOOD\n" + kick, "blocked": "BLOCKED!\n" + kick}.get(String(r["fg"]), "EXTRA POINT NO GOOD\n" + kick), 1.8)
 		else:
-			hud.toast({"good": "FIELD GOAL IS GOOD!", "blocked": "BLOCKED!"}.get(String(r["fg"]), "NO GOOD!\n" + String(r.get("fg_how", "")).to_upper()), 2.4)
+			var how := String(r.get("fg_how", ""))
+			hud.toast({"good": "FIELD GOAL IS GOOD!\n" + kick, "blocked": "BLOCKED!\n%s%s" % [kick, (" · blocked by " + _name(dfn, String(st.get("fg_blocked_by", "")))) if st.has("fg_blocked_by") else ""]}.get(String(r["fg"]), "NO GOOD!\n%s · %s" % [kick, how]), 2.4)
 		return
 	if e.has("two"):
-		hud.toast("TWO-POINT TRY GOOD!" if bool(e["two"]) else "TWO-POINT TRY FAILS", 2.2)
+		hud.toast(("TWO-POINT TRY GOOD!\n" + ball) if bool(e["two"]) else "TWO-POINT TRY FAILS", 2.2)
 		return
 	if r.get("def_td", false):
-		hud.toast("PICK SIX!\n%s score" % other if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s score" % other, 2.4)
+		hud.toast("PICK SIX!\n%s · %s score" % [ball, other] if r.get("turnover", "") == "int" else "SCOOP AND SCORE!\n%s · %s score" % [ball, other], 2.4)
 	elif r.get("safety", false):
-		hud.toast("SAFETY!\n2 points %s" % other, 2.4)
+		hud.toast("SAFETY!\n%s · 2 points %s" % [_name(dfn, String(st.get("tackler", ""))) if st.has("tackler") else "", other], 2.4)
 	elif r.get("td", false) or scored >= 6:
-		hud.toast("TOUCHDOWN!\n%s" % who, 2.4)
+		hud.toast("TOUCHDOWN!\n%s · %s%s" % [ball, yds, (" from " + _name(off, "QB")) if thrown else ""], 2.4)
 	elif String(e.get("text", "")).begins_with("Touchback"):
 		hud.toast("TOUCHBACK", 1.6)
 	elif r.get("turnover", "") == "int":
-		hud.toast("INTERCEPTED!\nby %s · %s ball" % [String(r.get("carrier", "")), other], 2.2)
+		hud.toast("INTERCEPTED!\n%s · %s ball" % [ball, other], 2.2)
 	elif r.get("turnover", "") == "fumble":
-		hud.toast("FUMBLE!\nRecovered by %s · %s ball" % [String(st.get("fr_by", "the defense")), other], 2.2)
+		var fum := (_name(off, String(st["fumbler"])) + " fumbles · ") if st.has("fumbler") else ""
+		hud.toast("FUMBLE!\n%srecovered by %s · %s ball" % [fum, _name(dfn, String(st.get("fr_by", ""))) if st.has("fr_by") else "the defense", other], 2.2)
 	elif String(e.get("down_event", "")) == "downs":
 		hud.toast("TURNOVER ON DOWNS\n%s ball" % other, 2.2)
 	elif r.get("sack", false):
-		hud.toast("SACK!", 1.2)
-	elif float(e.get("gain", 0.0)) >= 20.0:
+		hud.toast("SACK!\n%s%s" % [_name(dfn, String(st.get("tackler", ""))) if st.has("tackler") else "", (" · " + yds + " lost") if gain < 0 else ""], 1.6)
+	elif gain >= 20:
 		# a big one gets the big banner (and the crowd), first down or not
-		hud.toast("BIG PLAY! +%d\n%s%s" % [int(round(float(e["gain"]))), String(e.get("text", "")).get_slice(": ", 1) if String(e.get("text", "")).contains(": ") else String(e.get("text", "")),
+		hud.toast("BIG PLAY! +%d\n%s%s%s" % [gain, ball, (" from " + _name(off, "QB")) if thrown else "",
 			" · first down" if String(e.get("down_event", "")) == "first_down" else ""], 2.2)
 	elif String(e.get("down_event", "")) == "first_down":
-		hud.toast("FIRST DOWN!\n%s" % who, 1.4)
+		hud.toast("FIRST DOWN!\n%s · %s" % [ball, yds] if ball != "" else "FIRST DOWN!\n%s" % who, 1.4)
 	var scorer_team := -1
 	for t in 2:
 		if game.score[t] > int(score_before[t]):
@@ -1014,12 +1035,12 @@ func _on_moment(a: Dictionary) -> void:
 		# make it unmissable: a big callout and a moment of slow motion
 		var v: PlaySim.P = sim.players[int(a["a"])]
 		var part := String(a.get("part", ""))
-		var who := String(v.robot.get("name", "%s %s" % [Team.NAMES[v.team], v.slot]))
-		var what := "IS POWERED DOWN!" if part == "core" else "LOSES HIS %s!" % String(Robot.PART_LABEL.get(part, part)).to_upper()
+		var who := _name(v.team, v.slot) if not v.robot.is_empty() else "%s %s" % [Team.NAMES[v.team], v.slot]
+		var what := "powered down" if part == "core" else "loses his %s" % String(Robot.PART_LABEL.get(part, part)).to_lower()
 		var ovr := ""
 		if not v.robot.is_empty():
-			ovr = "\nOVR %d -> %d" % [Robot.overall_if(v.robot, "healthy"), Robot.overall_if(v.robot, "now")]
-		hud.toast("%s\n%s%s" % [who.to_upper(), what, ovr], 2.4)
+			ovr = " · OVR %d → %d" % [Robot.overall_if(v.robot, "healthy"), Robot.overall_if(v.robot, "now")]
+		hud.toast("BROKEN!\n%s %s%s" % [who, what, ovr], 2.4)
 		_slowmo = 1.3
 	sfx.on_action(String(a["kind"]))
 	announcer.on_action(a, sim)

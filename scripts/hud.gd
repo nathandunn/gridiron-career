@@ -454,6 +454,8 @@ static func banner_color(head: String) -> Color:
 ## A TV lower-third: the first line is the tag ("TOUCHDOWN!"), the rest the message beside it.
 ## It slides in over the bottom of the field, holds, and slides away.
 func toast(text: String, secs := 1.6) -> void:
+	if OS.is_debug_build() and DisplayServer.get_name() != "headless" and "--perf" in str(OS.get_cmdline_user_args()):
+		print("BANNER ", text.replace("\n", " | "))
 	var lines := text.split("\n")
 	var head := String(lines[0])
 	var rest := " · ".join(lines.slice(1)) if lines.size() > 1 else ""
