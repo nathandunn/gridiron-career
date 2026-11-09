@@ -80,6 +80,8 @@ func _ready() -> void:
 		var t0 := Time.get_ticks_msec()
 		while (Time.get_ticks_msec() - t0) / 1000.0 < secs:
 			await get_tree().create_timer(10.0).timeout
+			if args.has("perfshot"):
+				get_viewport().get_texture().get_image().save_png(String(args["perfshot"]))
 			print("PERF t=%d nodes=%d objects=%d orphans=%d fps=%d draws=%d plays=%d" % [(Time.get_ticks_msec() - t0) / 1000,
 				Performance.get_monitor(Performance.OBJECT_NODE_COUNT), Performance.get_monitor(Performance.OBJECT_COUNT),
 				Performance.get_monitor(Performance.OBJECT_ORPHAN_NODE_COUNT), Engine.get_frames_per_second(),
@@ -586,13 +588,16 @@ func apply_graphics() -> void:
 		_rim.visible = not on
 	if _env != null:
 		_env.glow_enabled = not on
-		_env.ambient_light_energy = 0.75 if on else 0.55     # make up for the missing rim light
+		_env.ambient_light_energy = 1.0 if on else 0.55      # make up for the missing rim light and glow
+	if _sun != null:
+		_sun.light_energy = 1.25 if on else 0.9
 	var vp := get_viewport()
 	vp.msaa_3d = Viewport.MSAA_DISABLED if on else Viewport.MSAA_2X
 	# keep the 3D to about a million pixels however sharp the screen
 	var px := vp.get_visible_rect().size.x * vp.get_visible_rect().size.y
 	vp.scaling_3d_scale = clampf(sqrt(1.0e6 / maxf(px, 1.0)), 0.5, 1.0) if on else 1.0
 	Engine.max_fps = 30 if on else 0
+	FieldView.lite = on
 
 
 func _build_ui() -> void:

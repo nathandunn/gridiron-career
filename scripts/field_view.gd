@@ -456,13 +456,18 @@ const STYLE := {
 ## dome for backs and corners, a visor for the rest - with the trimmings of his job. Missing
 ## parts are hidden, junk is rusty, upgraded parts carry a glowing band. {root, body, legs, arms,
 ## head, nodes, wheels, flames}
-func build_robot(group: String, team: int, number := -1, parts: Dictionary = {}) -> Dictionary:
+## Battery saver: robots on the field are built plain - no shirt numbers (too small to read on
+## a phone), lights, spikes, fins, horns, antennas or crests - about half the pieces to draw.
+static var lite := false
+
+
+func build_robot(group: String, team: int, number := -1, parts: Dictionary = {}, detail := not lite) -> Dictionary:
 	var st: Dictionary = STYLE.get(group, STYLE["LB"])
 	var w: float = st["w"]
 	var lg: float = st["leg"]
 	var ch: float = st["chest"]
 	var shw: float = st["sh"]
-	var ex: Array = st["extras"]
+	var ex: Array = st["extras"] if detail else []
 	var root := Node3D.new()
 	var body := Node3D.new()        # hops and lunges move this; root keeps the spot and facing
 	root.add_child(body)
@@ -483,7 +488,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 		_box(Vector3(0.24 * w, 0.95 * lg, 0.28), Vector3(0, -0.48 * lg, 0), frame, hip)
 		if "thigh_pads" in ex or "plates" in ex:
 			_box(Vector3(0.3 * w, 0.32 * lg, 0.34), Vector3(0, -0.2 * lg, 0.02), armour, hip)   # thigh armour
-		if skill:
+		if skill and detail:
 			# a roller skate: a glowing wheel on an axle where the foot would be
 			var axle := Node3D.new()
 			axle.position = Vector3(0, -0.8 * lg, 0.05)
@@ -499,15 +504,17 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			axle.add_child(wm)
 			_box(Vector3(0.16 * w, 0.05, 0.32), Vector3(0, 0.0, 0), light, axle)      # hub stripe that shows the spin
 			wheels.append(axle)
-		else:
+		elif not skill:
 			# linemen stand on big flat feet - built to plant and push
 			_box(Vector3(0.36 * w, 0.18, 0.5), Vector3(0, -0.9 * lg, 0.08), armour, hip)
-		_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45 * lg, 0.15), light, hip)    # knee light
+		if detail:
+			_box(Vector3(0.26 * w, 0.18, 0.08), Vector3(0, -0.45 * lg, 0.15), light, hip)    # knee light
 		legs.append(hip)
 	# torso and plates
 	_box(Vector3(0.62 * w, 0.75, 0.42 * ch), Vector3(0, 1.32 + up, 0), armour, body)
 	_box(Vector3(0.95 * w * shw, 0.24, 0.55 * ch), Vector3(0, 1.72 + up, 0), armour, body)          # shoulders
-	_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38 + up, 0.21 * ch + 0.01), light, body)            # chest light
+	if detail:
+		_box(Vector3(0.22, 0.14, 0.04), Vector3(0, 1.38 + up, 0.21 * ch + 0.01), light, body)        # chest light
 	if "plates" in ex:
 		_box(Vector3(0.7 * w, 0.2, 0.46 * ch), Vector3(0, 1.0 + up, 0), dark, body)                  # belly plate
 	if "spikes" in ex:
@@ -519,7 +526,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 		_box(Vector3(0.5 * w, 0.12, 0.42 * ch), Vector3(0, 1.86 + up, -0.04), dark, body)
 	if "ram_bar" in ex:
 		_box(Vector3(0.5 * w, 0.1, 0.12), Vector3(0, 1.55 + up, 0.24 * ch), light, body)            # a lowered-shoulder bumper
-	if skill:
+	if skill and detail:
 		# a jet pack: two tanks on the back, each with a flame that grows with his speed
 		for jx: float in [-0.14, 0.14]:
 			var tank := MeshInstance3D.new()
@@ -549,7 +556,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 		for fx: float in [-1.0, 1.0]:
 			var fin := _box(Vector3(0.04, 0.34, 0.26), Vector3(fx * 0.26 * w, 1.55 + up, -0.3 * ch), light, body)
 			fin.rotation.z = fx * 0.35
-	if number >= 0:
+	if number >= 0 and detail:
 		for z: float in [0.21 * ch + 0.005, -0.21 * ch - 0.005]:
 			var num := Label3D.new()
 			num.text = str(number)
@@ -580,7 +587,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			# a wide square head sunk into the shoulders, with a grille for a face
 			head.position.y -= 0.06
 			_box(Vector3(0.5, 0.3, 0.44), Vector3(0, 0.15, 0), helm, head)
-			for gx in 4:
+			for gx in (4 if detail else 0):
 				_box(Vector3(0.05, 0.2, 0.04), Vector3(-0.15 + gx * 0.1, 0.13, 0.23), light, head)
 		"dome":
 			var dm := MeshInstance3D.new()
@@ -597,7 +604,7 @@ func build_robot(group: String, team: int, number := -1, parts: Dictionary = {})
 			_box(Vector3(0.38, 0.08, 0.06), Vector3(0, 0.2, 0.2), light, head)                         # visor
 	if "big_crest" in ex:
 		_box(Vector3(0.08, 0.26, 0.44), Vector3(0, 0.44, -0.02), light, head)
-	elif String(st["head"]) != "block":
+	elif String(st["head"]) != "block" and detail:
 		_box(Vector3(0.06, 0.16, 0.36), Vector3(0, 0.39, -0.02), light, head)                      # crest
 	if "horns" in ex:
 		for hx: float in [-1.0, 1.0]:

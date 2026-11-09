@@ -3485,7 +3485,7 @@ func open_robot(id: String) -> void:
 	sv.msaa_3d = Viewport.MSAA_2X
 	svc.add_child(sv)
 	top.add_child(svc)
-	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]), Robot.ensure_parts(r))
+	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]), Robot.ensure_parts(r), true)
 	var turn := Node3D.new()
 	sv.add_child(turn)
 	turn.add_child(model["root"])
