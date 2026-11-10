@@ -966,13 +966,40 @@ func _pregame_footer(box: Control, week := true) -> void:
 		var wb := _button("‹ Week", func(): open_next())
 		wb.custom_minimum_size = Vector2(96, 50)
 		f.add_child(wb)
-	var ko := _primary(_button("KICK OFF", func():
+	# robots still hurt: the first tap asks, the second kicks off
+	var hurt := _hurt_count()
+	var armed := [false]
+	var ko := _primary(_button("KICK OFF", func(): pass))
+	ko.pressed.connect(func():
+		if hurt > 0 and not armed[0]:
+			armed[0] = true
+			ko.text = "%d NEED REPAIR · TAP TO PLAY ANYWAY" % hurt
+			ko.add_theme_font_size_override("font_size", fs)
+			var sb := flat(WARN, 11)
+			sb.border_color = Color(0.6, 0.38, 0.05)
+			sb.border_width_bottom = 4
+			for st in ["normal", "hover", "pressed", "hover_pressed"]:
+				ko.add_theme_stylebox_override(st, sb)
+			return
 		if not Career.exhibition() and Career.season_over():
 			Career.next_season()
 		close_overlay(false)
-		main.new_game(true)))
+		main.new_game(true))
 	ko.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	f.add_child(ko)
+
+
+## Your starters (and kickers) with a part lost or worn below half.
+func _hurt_count() -> int:
+	var n := 0
+	var tm := Career.team(0)
+	var who: Array = (tm["starters"] as Dictionary).values() + (Career.special(0) as Dictionary).values()
+	for r in who:
+		if r is Dictionary and not (r as Dictionary).is_empty():
+			var cnd := Robot.condition(r)
+			if not Robot.lost_parts(r).is_empty() or float(cnd[0]) < float(cnd[1]) * 0.5:
+				n += 1
+	return n
 
 
 func _section(box: Control, text: String) -> void:
