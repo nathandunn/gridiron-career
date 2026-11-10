@@ -943,6 +943,38 @@ func _fit_panel(pc: PanelContainer, sc: Control, box: Control, max_h: float) -> 
 	pc.size = Vector2(pc.size.x, want)
 
 
+## A bar pinned under a panel's scroll: it stays on screen however far down you are.
+func _footer(box: Control) -> HBoxContainer:
+	var sc := box.get_parent()
+	var outer := sc.get_parent()
+	var f := HBoxContainer.new()
+	f.add_theme_constant_override("separation", 8)
+	var m := MarginContainer.new()
+	m.add_theme_constant_override("margin_top", 8)
+	m.add_child(f)
+	outer.add_child(m)
+	return f
+
+
+## Before a game (fixing, buying, setting the plan): the way back to the week and Kick off,
+## always at the bottom of the screen.
+func _pregame_footer(box: Control, week := true) -> void:
+	if main == null or main._phase != "pregame" or not Career.loaded or Career.sim_mode():
+		return
+	var f := _footer(box)
+	if week and not Career.exhibition() and not Career.season_over():
+		var wb := _button("‹ Week", func(): open_next())
+		wb.custom_minimum_size = Vector2(96, 50)
+		f.add_child(wb)
+	var ko := _primary(_button("KICK OFF", func():
+		if not Career.exhibition() and Career.season_over():
+			Career.next_season()
+		close_overlay(false)
+		main.new_game(true)))
+	ko.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	f.add_child(ko)
+
+
 func _section(box: Control, text: String) -> void:
 	var l := _eyebrow(text, CYAN)
 	l.add_theme_font_size_override("font_size", fs - 1)
@@ -1045,12 +1077,10 @@ func open_teams(pregame := false) -> void:
 		var sim_b := _button("Simulate %d games" % Career.SIM_OPPONENTS, func(): main.run_sim())
 		sim_b.add_theme_font_size_override("font_size", fs + 4)
 		box.add_child(sim_b)
+	elif pregame and Career.loaded:
+		_pregame_footer(box)
 	elif pregame:
-		var ko := _button("Kick off", func():
-			if Career.loaded and not Career.exhibition() and Career.season_over():
-				Career.next_season()
-			close_overlay(false); main.new_game(true))
-		ko.add_theme_font_size_override("font_size", fs + 4)
+		var ko := _primary(_button("KICK OFF", func(): close_overlay(false); main.new_game(true)))
 		box.add_child(ko)
 	if pregame and Career.loaded:
 		_mode_section(box)
@@ -1168,9 +1198,9 @@ func open_teams(pregame := false) -> void:
 		var b := _button(e[0], func(): main.qlen = e[1]; open_teams(pregame), true)
 		b.button_pressed = is_equal_approx(main.qlen, e[1])
 		qf.add_child(b)
-	var go := _button("Kick off" if pregame else "Start a new game with these teams", func(): close_overlay(false); main.new_game(true))
-	go.add_theme_font_size_override("font_size", fs + 2)
-	box.add_child(go)
+	if not pregame:
+		var go := _button("Start a new game with these teams", func(): close_overlay(false); main.new_game(true))
+		box.add_child(go)
 
 
 func _brain_about(g: String, t: int) -> void:
@@ -2435,16 +2465,11 @@ func open_next() -> void:
 	var me := Career.team(0)
 	var box := _open("%s%s" % [Career.week_label(), _purse()])
 	_matchup(box, me, sn.get("you", {"w": 0, "l": 0, "t": 0}), opp)
-	var ko := _primary(_button("KICK OFF", func(): close_overlay(false); main.new_game(true)))
-	box.add_child(ko)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 6)
-	box.add_child(row)
-	for bd in [["Coach & plays", func(): open_teams(true)], ["Roster", func(): open_roster(0); _back = func(): open_next()], ["Menu", func(): main.show_menu()]]:
-		var b := _button(bd[0], bd[1])
-		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(b)
+	# get ready in order - fix, improve, plan - with Kick off always at the bottom
 	_garage(box, func(): open_next())
+	_upgrades(box, func(): open_next())
+	_plan_card(box)
+	_pregame_footer(box, false)
 	# scouting: each unit against theirs as a bar, then their schemes
 	var sc := _card(box, "Scouting report", Color(0, 0, 0, 0), "Each of your units against the one it lines up against, by average OVR (red number yours, blue theirs). The bar leans right when you have the edge. Green advice: press it. Red: plan around it, or upgrade that unit. Under that, what their play-callers like to do and what beats it.")
 	var re := RegEx.new()
@@ -2540,7 +2565,7 @@ func open_next() -> void:
 				i += 1
 				var ours := String(r2["team"]) == String(me["name"])
 				sl.add_child(_label("%d. %s %s (%s) - %s" % [i, r2["slot"], r2["name"], r2["team"], Career.stat_line(r2["stats"], side)], fs - 2, MAGENTA if ours else Color(0.82, 0.86, 0.9)))
-	_market(box, func(): open_next())
+	_robot_market(box, func(): open_next())
 
 
 ## Repairs: Fix everybody first (grey when the purse won't cover it), then each damaged robot.
@@ -2558,9 +2583,9 @@ func _garage(box: Control, refresh: Callable) -> void:
 		if c > 0:
 			hurt.append([w[0], w[1], c])
 			all_cost += c
-	var gc := _card(box, "Repairs" if not hurt.is_empty() else "", WARN if not hurt.is_empty() else Color(0, 0, 0, 0), "Damage carries from game to game. A worn part plays weaker and comes off at 0; a lost part takes its ratings with it. Fix puts parts back to full at their tier. Junk parts (on the field) are cheap but cost 4 OVR each." if not hurt.is_empty() else "")
+	var gc := _card(box, "1 · Repairs", WARN if not hurt.is_empty() else GOOD, "Damage carries from game to game. A worn part plays weaker and comes off at 0; a lost part takes its ratings with it. Fix puts parts back to full at their tier. Junk parts (on the field) are cheap but cost 4 OVR each." if not hurt.is_empty() else "")
 	if hurt.is_empty():
-		var ok := _label("Nobody is damaged. Ready to play.", fs - 1, GOOD)
+		var ok := _label("All fit. Nothing to fix.", fs - 1, GOOD)
 		ok.add_theme_font_override("font", BODY_B)
 		gc.add_child(ok)
 	else:
@@ -2614,8 +2639,38 @@ func _garage(box: Control, refresh: Callable) -> void:
 
 
 ## Upgrades and the robot market.
+## Step 3: the game plan - who calls the plays - with a way to change it.
+func _plan_card(box: Control) -> void:
+	var pc := _card(box, "3 · Game plan", Color(0.25, 0.55, 1.0))
+	var hr := HBoxContainer.new()
+	hr.add_theme_constant_override("separation", 8)
+	pc.add_child(hr)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hr.add_child(v)
+	var d: String = main.defenses[0] if main.defenses[0] != "" else "the coach's own"
+	var nl := _label("Offense: %s" % main.coaches[0], fs - 1, Color.WHITE)
+	nl.add_theme_font_override("font", BODY_B)
+	v.add_child(nl)
+	v.add_child(_label("Defense: %s" % d, fs - 2, DIM))
+	var cb := _button("Change", func(): open_teams(true))
+	cb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	hr.add_child(cb)
+
+
 func _market(box: Control, refresh: Callable) -> void:
-	var up := _card(box, "Upgrades", Color(0, 0, 0, 0), "Buy parts yourself on a robot's page, or let the coach shop. Efficient: the most team OVR for the money. Best buy: aims at this week's opponent, putting money where your units lose their matchups and where positions matter most (QB first). The others put it all into one side or unit. He keeps $400 back.")
+	_upgrades(box, refresh)
+	_robot_market(box, refresh)
+
+
+func _robot_market(box: Control, refresh: Callable) -> void:
+	_market_rows(box, refresh)
+
+
+## Step 2: upgrades - the roster, or let the coach shop.
+func _upgrades(box: Control, refresh: Callable) -> void:
+	var up := _card(box, "2 · Upgrades", Color(0, 0, 0, 0), "Buy parts yourself on a robot's page, or let the coach shop. Efficient: the most team OVR for the money. Best buy: aims at this week's opponent, putting money where your units lose their matchups and where positions matter most (QB first). The others put it all into one side or unit. He keeps $400 back.")
 	var ur := HBoxContainer.new()
 	ur.add_theme_constant_override("separation", 6)
 	up.add_child(ur)
@@ -2634,6 +2689,10 @@ func _market(box: Control, refresh: Callable) -> void:
 		ur.add_child(cb)
 	up.add_child(inner)
 	_spend_row(inner, 0, refresh)
+
+
+
+func _market_rows(box: Control, refresh: Callable) -> void:
 	var mk := _card(box, "Robot market  ·  joins your bench", Color(0, 0, 0, 0), "New robots join your bench; play them by swapping on the roster. The big number is his OVR at his position; armour is his plating (+5 toughness each). Prices go with his parts.")
 	for r in Career.market():
 		var row := HBoxContainer.new()
@@ -3183,6 +3242,7 @@ func open_roster(t := -1) -> void:
 	var tm := Career.team(_roster_team)
 	var keep_back := _back        # refreshing the roster (a purchase, a tab) keeps where Close goes
 	var box := _open("%s · %s" % [tm["name"], Career.ratings_text(tm)])
+	_pregame_footer(box)
 	_back = keep_back
 	var mine := _roster_team == 0
 	# purse, coach buys, repairs
@@ -3264,14 +3324,18 @@ func open_roster(t := -1) -> void:
 	var key := HFlowContainer.new()
 	key.add_theme_constant_override("h_separation", 6)
 	box.add_child(key)
-	key.add_child(_label("Parts:", fs - 3, DIM))
+	var kl := _label("Parts:", fs - 3, DIM)
+	kl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	key.add_child(kl)
 	for tier in Robot.TIERS:
 		var sw := Panel.new()
 		sw.add_theme_stylebox_override("panel", flat(TIER_COL[tier], 2))
 		sw.custom_minimum_size = Vector2(14, 5)
 		sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		key.add_child(sw)
-		key.add_child(_label(tier, fs - 3, DIM))
+		var tl2 := _label(tier, fs - 3, DIM)
+		tl2.autowrap_mode = TextServer.AUTOWRAP_OFF
+		key.add_child(tl2)
 	# other clubs and options, out of the way at the bottom
 	_section(box, "Clubs")
 	var tabs := HFlowContainer.new()
@@ -3461,6 +3525,7 @@ func open_robot(id: String) -> void:
 	var slot: String = f["slot"]
 	var keep_back := _back        # buying a part reopens the page: keep where Close goes
 	var box := _open("%s%s" % [Career.team(t)["name"], _purse()])
+	_pregame_footer(box)
 	_back = keep_back
 	var hero := PanelContainer.new()
 	var hsb := flat(Color(TEAM_COL[t].darkened(0.62), 1.0), 14)
@@ -3968,6 +4033,8 @@ func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
 	var plan := Career.coach_plan(t, purse, 400, focus, seed)
 	var what := "the credit" if not purse else String(Career.FOCUS[focus]["label"])
 	var box := _open("Coach's plan: %s%s" % [what, _purse()])
+	if t == 0:
+		_pregame_footer(box)
 	var rows: Array = plan["rows"]
 	var cost := int(plan["cost"])
 	var from_credit := mini(Career.credit(t), cost)
