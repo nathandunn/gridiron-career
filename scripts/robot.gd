@@ -260,7 +260,37 @@ static func can_play(robot: Dictionary) -> bool:
 
 
 static func bolt_on_junk(robot: Dictionary, k: String) -> void:
-	ensure_parts(robot)[k] = {"tier": "Junk", "hp": TIER_HP["Junk"], "spare": true}   # a stop-gap: a fix replaces it
+	var old: Dictionary = ensure_parts(robot)[k]
+	var was := String(old.get("was", old.get("tier", "Stock")))
+	# a stop-gap: a fix puts a proper part back (and remembers what he had, to restore it)
+	ensure_parts(robot)[k] = {"tier": "Junk", "hp": TIER_HP["Junk"], "spare": true, "was": was}
+
+
+## What this part was before it was lost or swapped for a junk spare (its tier now otherwise).
+static func original_tier(robot: Dictionary, k: String) -> String:
+	var p: Dictionary = ensure_parts(robot)[k]
+	return String(p.get("was", p["tier"]))
+
+
+## Fix it where it's at: a worn part back to full at its tier (junk stays junk), a lost one
+## replaced with a stock part.
+static func patch(robot: Dictionary, k: String) -> void:
+	var p: Dictionary = ensure_parts(robot)[k]
+	if float(p["hp"]) <= 0.0:
+		p["tier"] = "Stock"
+		p.erase("spare")
+		p.erase("was")
+	p["hp"] = TIER_HP.get(String(p["tier"]), 100)
+
+
+## Fix it to what he had: a lost or junk-spared part back at its original tier, like new.
+static func restore(robot: Dictionary, k: String) -> void:
+	var p: Dictionary = ensure_parts(robot)[k]
+	var t := original_tier(robot, k)
+	p["tier"] = t
+	p.erase("spare")
+	p.erase("was")
+	p["hp"] = TIER_HP.get(t, 100)
 
 
 static func repair(robot: Dictionary, k: String) -> void:

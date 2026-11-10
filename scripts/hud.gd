@@ -2605,12 +2605,15 @@ func _garage(box: Control, refresh: Callable) -> void:
 	for r0 in tm["bench"]:
 		who.append([r0, String(r0["group"])])
 	var hurt: Array = []
+	var all_restore := 0
 	for w in who:
 		var c := Career.fix_all_cost(w[0])
-		if c > 0:
-			hurt.append([w[0], w[1], c])
+		var rc := Career.restore_all_cost(w[0])
+		if c > 0 or rc > 0:
+			hurt.append([w[0], w[1], c, rc])
 			all_cost += c
-	var gc := _card(box, "1 · Repairs", WARN if not hurt.is_empty() else GOOD, "Damage carries from game to game. A worn part plays weaker and comes off at 0; a lost part takes its ratings with it. Fix puts parts back to full at their tier. Junk parts (on the field) are cheap but cost 4 OVR each." if not hurt.is_empty() else "")
+			all_restore += rc
+	var gc := _card(box, "1 · Repairs", WARN if not hurt.is_empty() else GOOD, "Damage carries from game to game: a worn part plays weaker and comes off at 0, and the ! over a robot means a part is under half. Fix = where it's at: worn parts back to full at their tier (junk patched, still junk), lost parts replaced with stock. Restore = to original: a lost part, or a junk spare bolted on in a game, back as the tier he had (a Mk III arm comes back a Mk III). Restore costs more." if not hurt.is_empty() else "")
 	if hurt.is_empty():
 		var ok := _label("All fit. Nothing to fix.", fs - 1, GOOD)
 		ok.add_theme_font_override("font", BODY_B)
@@ -2620,7 +2623,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 			for w in who:
 				for k in Robot.PARTS:
 					if Career.fix_cost(w[0], k) > 0:
-						Career.buy_repair(0, w[0], k)
+						Career.buy_fix(0, w[0], k)
 			refresh.call())
 		if Career.money(0) >= all_cost:
 			_primary(fa, fs + 2)
@@ -2628,6 +2631,15 @@ func _garage(box: Control, refresh: Callable) -> void:
 			fa.disabled = true
 			fa.text = "Fix everybody  $%s  (purse $%s)" % [_commas(all_cost), _commas(Career.money(0))]
 		gc.add_child(fa)
+		if all_restore != all_cost:
+			var ra := _button("Restore everybody to original  $%s" % _commas(all_restore), func():
+				for w in who:
+					for k in Robot.PARTS:
+						if Career.restore_cost(w[0], k) > 0:
+							Career.buy_restore(0, w[0], k)
+				refresh.call())
+			ra.disabled = Career.money(0) < all_restore
+			gc.add_child(ra)
 		for h in hurt:
 			var r: Dictionary = h[0]
 			var line := HBoxContainer.new()
@@ -2645,24 +2657,44 @@ func _garage(box: Control, refresh: Callable) -> void:
 			v.add_child(nl)
 			var lost := Robot.lost_parts(r)
 			var cnd := Robot.condition(r)
+			var spares: Array = Robot.PARTS.filter(func(k): return bool(Robot.ensure_parts(r)[k].get("spare", false)))
 			var dt := ("No " + ", ".join(lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))) if not lost.is_empty() \
 				else "Condition %d%%" % int(roundf(100.0 * float(cnd[0]) / maxf(float(cnd[1]), 1.0)))
+			if not spares.is_empty():
+				dt += "  ·  junk " + ", ".join(spares.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))
 			var dl := _label(dt, fs - 3, BAD if not lost.is_empty() else WARN)
 			dl.tooltip_text = _damage_text(r)
 			v.add_child(dl)
 			var rid := String(r["id"])
 			var c2 := int(h[2])
-			var fix := _button("Fix $%d" % c2, func():
-				var rr: Dictionary = Career.find(rid).get("robot", {})
-				if rr.is_empty():
-					return
-				for k in Robot.PARTS:
-					if Career.fix_cost(rr, k) > 0:
-						Career.buy_repair(0, rr, k)
-				refresh.call())
-			fix.disabled = Career.money(0) < c2
-			fix.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			line.add_child(fix)
+			var bv := VBoxContainer.new()
+			bv.add_theme_constant_override("separation", 4)
+			bv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			line.add_child(bv)
+			if c2 > 0:
+				var fix := _button("Fix $%d" % c2, func():
+					var rr: Dictionary = Career.find(rid).get("robot", {})
+					if rr.is_empty():
+						return
+					for k in Robot.PARTS:
+						if Career.fix_cost(rr, k) > 0:
+							Career.buy_fix(0, rr, k)
+					refresh.call())
+				fix.disabled = Career.money(0) < c2
+				bv.add_child(fix)
+			var r2 := int(h[3])
+			if r2 != c2:
+				var rs := _button("Restore $%d" % r2, func():
+					var rr: Dictionary = Career.find(rid).get("robot", {})
+					if rr.is_empty():
+						return
+					for k in Robot.PARTS:
+						if Career.restore_cost(rr, k) > 0:
+							Career.buy_restore(0, rr, k)
+					refresh.call())
+				rs.disabled = Career.money(0) < r2
+				rs.add_theme_color_override("font_color", MAGENTA)
+				bv.add_child(rs)
 
 
 ## Upgrades and the robot market.
@@ -4002,6 +4034,13 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			var nb: Button = small.call(_button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id)))
 			nb.disabled = Career.money(tu) < Career.repair_cost(r, k)
 			v.add_child(nb)
+			var orig := Robot.original_tier(r, k)
+			if orig not in ["Stock", "Junk"]:
+				var rc := Career.restore_cost(r, k)
+				var rb: Button = small.call(_button("%s $%d" % [orig.replace("Prototype", "Proto"), rc], func(): Career.buy_restore(Career.team_of(r), r, k); open_robot(id)))
+				rb.disabled = Career.money(tu) < rc
+				rb.tooltip_text = "Restore the %s he had" % orig
+				v.add_child(rb)
 			continue
 		var tier := String(pt["tier"])
 		var tl := _disp(tier, fs + 2, TIER_COL.get(tier, Color.WHITE).lightened(0.15))

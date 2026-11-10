@@ -620,13 +620,70 @@ static func repair_cost(robot: Dictionary, k: String) -> int:
 	return int(ceilf(price * 0.6 * (1.0 - float(pt["hp"]) / mx)))
 
 
-## What putting right the damage costs (a lost part, a junk spare bolted on in a game, a worn
-## part); junk he started with is not damage - replace it on his page if you like.
+## The price of a new part of a tier.
+static func tier_price(k: String, tier: String) -> int:
+	match tier:
+		"Junk":
+			return int(JUNK_PRICES[k])
+		"Stock":
+			return int(PART_PRICE[k])
+	return upgrade_price(k, tier)
+
+
+## Fix where it's at: a worn part back to full at its tier (junk patched up, still junk), a
+## lost part replaced with stock. 60% of a stock part's price (a junk one's, for junk) for the
+## share that's worn.
 static func fix_cost(robot: Dictionary, k: String) -> int:
 	var pt: Dictionary = Robot.ensure_parts(robot)[k]
-	if String(pt["tier"]) == "Junk" and float(pt["hp"]) > 0.0 and not bool(pt.get("spare", false)):
-		return 0
-	return repair_cost(robot, k)
+	if float(pt["hp"]) <= 0.0:
+		return int(PART_PRICE[k])
+	var tier := String(pt["tier"])
+	var mx := float(Robot.TIER_HP.get(tier, 100))
+	var base := float(JUNK_PRICES[k]) if tier == "Junk" else float(PART_PRICE[k])
+	return int(ceilf(base * 0.6 * (1.0 - float(pt["hp"]) / mx)))
+
+
+## Fix to original: a lost part, or a junk spare bolted on in a game, back as what he had
+## (a new part of that tier); anything else as fix_cost.
+static func restore_cost(robot: Dictionary, k: String) -> int:
+	var pt: Dictionary = Robot.ensure_parts(robot)[k]
+	var orig := Robot.original_tier(robot, k)
+	if float(pt["hp"]) <= 0.0 or (bool(pt.get("spare", false)) and orig != "Junk"):
+		return tier_price(k, orig)
+	return fix_cost(robot, k)
+
+
+static func restore_all_cost(robot: Dictionary) -> int:
+	var c := 0
+	for k in Robot.PARTS:
+		c += restore_cost(robot, k)
+	return c
+
+
+static func buy_fix(t: int, robot: Dictionary, k: String) -> bool:
+	var c := fix_cost(robot, k)
+	if c <= 0:
+		return true
+	if not spend(t, c):
+		return false
+	Robot.patch(robot, k)
+	save()
+	return true
+
+
+static func buy_restore(t: int, robot: Dictionary, k: String) -> bool:
+	var c := restore_cost(robot, k)
+	if c <= 0:
+		return true
+	if not spend(t, c):
+		return false
+	var pt: Dictionary = Robot.ensure_parts(robot)[k]
+	if float(pt["hp"]) <= 0.0 or bool(pt.get("spare", false)):
+		Robot.restore(robot, k)
+	else:
+		Robot.patch(robot, k)
+	save()
+	return true
 
 
 static func fix_all_cost(robot: Dictionary) -> int:
@@ -773,7 +830,10 @@ static func coach_repairs(t: int) -> Array:
 	var n := 0
 	for r in (tm["starters"].values() + tm["bench"]):
 		for k in Robot.PARTS:
-			if fix_cost(r, k) > 0 and buy_repair(t, r, k):
+			# what he had if he can afford it, else patched where it's at
+			if restore_cost(r, k) > 0 and money(t) - restore_cost(r, k) >= 400 and buy_restore(t, r, k):
+				n += 1
+			elif fix_cost(r, k) > 0 and buy_fix(t, r, k):
 				n += 1
 	return ["%s repairs %d parts." % [tm["name"], n]] if n > 0 else []
 
