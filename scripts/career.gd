@@ -789,14 +789,39 @@ static func pay_lines(g: Game, t: int) -> Array:
 	return lines
 
 
+## Pay as it happens (a setting): after each play, whatever a club has earned since the last
+## look - a touchdown, a takeaway, a big play, a sack, a big hit, a first down - goes in its purse
+## at once. Returns [[what, amount], ...] earned by club t just now. The final whistle then pays
+## only the result and anything not paid yet.
+static func pay_live(g: Game, t: int) -> Array:
+	if exhibition():
+		return []
+	var paid: Array = g.get_meta("live_counts", [{}, {}])
+	var got := _earned(g, t)
+	var out: Array = []
+	for e in EARN:
+		var n := int(got[e[0]]) - int((paid[t] as Dictionary).get(e[0], 0))
+		if n > 0:
+			out.append([String(e[1]).get_slice(" (", 0).trim_suffix("s") if n == 1 else String(e[1]).get_slice(" (", 0), n * int(e[2])])
+			add_money(t, n * int(e[2]))
+		paid[t][e[0]] = int(got[e[0]])
+	var sums: Array = g.get_meta("live_paid", [0, 0])
+	for x in out:
+		sums[t] = int(sums[t]) + int(x[1])
+	g.set_meta("live_counts", paid)
+	g.set_meta("live_paid", sums)
+	return out
+
+
 static func pay_game(g: Game) -> Array:
 	var slips: Array = []
+	var live: Array = g.get_meta("live_paid", [0, 0])
 	for t in 2:
 		var lines := pay_lines(g, t)
 		var total := 0
 		for ln in lines:
 			total += int(ln[1])
-		add_money(t, total)
+		add_money(t, total - int(live[t]))      # what was paid during the game is already in
 		slips.append({"lines": lines, "total": total, "name": String(team(t)["name"]), "purse": money(t)})
 	save()
 	slips[1]["news"] = club_ready(1)     # the rival repairs, then spends with Best buy

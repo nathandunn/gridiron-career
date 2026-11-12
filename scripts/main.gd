@@ -290,8 +290,9 @@ func _ready() -> void:
 				while _phase == "simend":
 					await get_tree().create_timer(0.5).timeout
 				await get_tree().create_timer(1.0).timeout
-				hud._stats_tab = String(args.get("tab", "summary"))
-				hud.show_stats(game, "final", {}, Callable())
+				if String(args.get("tab", "")) != "celebrate":
+					hud._stats_tab = String(args.get("tab", "summary"))
+					hud.show_stats(game, "final", {}, Callable())
 			"fixtest":
 				sim_to_end()
 				while _phase == "simend":
@@ -563,6 +564,22 @@ const GFX_CFG := "user://settings.cfg"
 ## every robot, every frame - what made phones run hot and then slow down as they throttled.
 static func is_handheld() -> bool:
 	return OS.has_feature("web_ios") or OS.has_feature("web_android") or OS.has_feature("mobile")
+
+
+## Pay during the game (each touchdown, takeaway, big play... paid as it happens, with a coin
+## alert) or all at the final whistle. A setting; during is the default.
+func pay_live_on() -> bool:
+	var cf := ConfigFile.new()
+	if cf.load(GFX_CFG) == OK and cf.has_section_key("pay", "live"):
+		return bool(cf.get_value("pay", "live"))
+	return true
+
+
+func set_pay_live(on: bool) -> void:
+	var cf := ConfigFile.new()
+	cf.load(GFX_CFG)
+	cf.set_value("pay", "live", on)
+	cf.save(GFX_CFG)
 
 
 func saver_on() -> bool:
@@ -1235,20 +1252,28 @@ func _next() -> void:
 	if game.over:
 		sim = null
 		view.set_play(null, game.poss, game.yl, game.to_go)
-		if Career.loaded and _phase != "over":
-			if Career.exhibition():
-				hud.slips = []                    # an exhibition pays nobody
-				hud.game_stars = Career.game_stars(game)
-				hud.season_lines = ["Exhibition: no pay, nothing carries over."]
-			else:
-				hud.slips = Career.pay_game(game)     # the final whistle pays both sides
-				hud.game_stars = Career.game_stars(game)   # before the week moves on to the next opponent
-				hud.season_lines = Career.finish_week(game)
-		if _phase != "over":
-			Ux.ev("final", {"score": game.score, "mode": Career.mode() if Career.loaded else "quick"})
+		if _phase == "over":
+			hud.show_game_over(game)
+			return
 		_phase = "over"
+		Ux.ev("final", {"score": game.score, "mode": Career.mode() if Career.loaded else "quick"})
 		hud.show_result("Final")
-		hud.show_game_over(game)
+		if not Career.loaded:
+			hud.show_game_over(game)
+			return
+		# the stars first, on their own screen, while the pay and the league are worked out
+		hud.game_stars = Career.game_stars(game)   # before the week moves on to the next opponent
+		hud.open_celebration(game)
+		for i in 3:
+			await get_tree().process_frame
+		var g := game
+		if Career.exhibition():
+			hud.slips = []                    # an exhibition pays nobody
+			hud.season_lines = ["Exhibition: no pay, nothing carries over."]
+		else:
+			hud.slips = Career.pay_game(g)     # the final whistle pays both sides
+			hud.season_lines = Career.finish_week(g)
+		hud.celebration_ready()
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
 	# after a touchdown, the try: the scoring side picks the kick or going for two
@@ -1379,6 +1404,11 @@ func _process(delta: float) -> void:
 				hud.show_state(game)
 				sfx.play("whistle", -10.0)
 				_announce(e, poss_before, score_before)
+				if Career.loaded and pay_live_on():
+					for t2 in 2:
+						var got := Career.pay_live(game, t2)
+						if t2 == 0 and not got.is_empty():
+							hud.coin_alert(got)
 				hud.show_board(true)
 				if randf() < 0.3:
 					view.babble_now()

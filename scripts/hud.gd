@@ -1865,7 +1865,7 @@ func _award_sections(box: Container, g: Game) -> void:
 
 
 ## The final score, big, on the two clubs' colours; the loser dimmed; WIN / LOSS / TIE under it.
-func _final_hero(box: Control, g: Game, names: Array, score: Array) -> void:
+func _final_hero(box: Control, g: Game, names: Array, score: Array, show_rec := true) -> void:
 	var w := g.winner()
 	var hero := HBoxContainer.new()
 	hero.add_theme_constant_override("separation", 0)
@@ -1896,7 +1896,7 @@ func _final_hero(box: Control, g: Game, names: Array, score: Array) -> void:
 		if w >= 0 and w != t:
 			half.modulate = Color(1, 1, 1, 0.55)
 	var res := "TIE" if w < 0 else ("WIN" if w == 0 else "LOSS")
-	if Career.loaded and not Career.exhibition():
+	if show_rec and Career.loaded and not Career.exhibition():
 		res += "  ·  " + Career._rec_text(Career.season().get("you", {"w": 0, "l": 0, "t": 0}))
 	var bl := _disp(res, fs + 2, Color(0.03, 0.12, 0.05) if w == 0 else Color.WHITE)
 	bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2245,7 +2245,7 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 			nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			grid.add_child(nl)
 			for cell in tb[3].call(sl):
-				var l := _label(String(cell), tf)
+				var l := _label(_whole(String(cell)), tf)
 				l.autowrap_mode = TextServer.AUTOWRAP_OFF
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 				grid.add_child(l)
@@ -2371,6 +2371,199 @@ func _condition_table(box: Control, team: Dictionary, track: Dictionary) -> void
 
 func show_game_over(g: Game) -> void:
 	show_stats(g, "final")
+
+
+## A robot turning slowly in his own little lit stage.
+func _robot_figure(r: Dictionary, t: int, sz: Vector2) -> SubViewportContainer:
+	var svc := SubViewportContainer.new()
+	svc.custom_minimum_size = sz
+	svc.stretch = true
+	var sv := SubViewport.new()
+	sv.own_world_3d = true
+	sv.transparent_bg = true
+	sv.msaa_3d = Viewport.MSAA_2X
+	svc.add_child(sv)
+	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]), Robot.ensure_parts(r), true)
+	var turn := Node3D.new()
+	sv.add_child(turn)
+	turn.add_child(model["root"])
+	var cam := Camera3D.new()
+	cam.position = Vector3(0, 1.35, 5.0)      # far enough back that he fits head to foot
+	cam.fov = 38
+	sv.add_child(cam)
+	cam.look_at(Vector3(0, 1.2, 0))
+	var key := DirectionalLight3D.new()
+	key.rotation = Vector3(-0.7, 0.6, 0)
+	key.light_energy = 1.6
+	sv.add_child(key)
+	var front := OmniLight3D.new()
+	front.position = Vector3(1.2, 2.4, 3.0)
+	front.light_energy = 2.5
+	front.omni_range = 10.0
+	sv.add_child(front)
+	var rim := OmniLight3D.new()
+	rim.position = Vector3(-1.5, 2.0, -2.5)
+	rim.light_color = FieldView.NEON[t]
+	rim.light_energy = 2.0
+	rim.omni_range = 8.0
+	sv.add_child(rim)
+	var env := WorldEnvironment.new()
+	var e := Environment.new()
+	e.background_mode = Environment.BG_CLEAR_COLOR
+	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	e.ambient_light_color = Color(0.5, 0.55, 0.65)
+	e.ambient_light_energy = 1.8
+	e.glow_enabled = true
+	env.environment = e
+	sv.add_child(env)
+	var tw := turn.create_tween().set_loops()
+	tw.tween_property(turn, "rotation:y", TAU, 8.0).from(0.0)
+	return svc
+
+
+var _celebrate_go: Button = null
+var _celebrate_note: Label = null
+
+
+## The final whistle: the score and the players of the game, big, on their own screen, while
+## the pay and the rest of the league's games are worked out behind it. Then on to the box score.
+func open_celebration(g: Game) -> void:
+	var page := _open_page()
+	get_viewport().disable_3d = false
+	page.add_theme_stylebox_override("panel", flat(Color(NIGHT, 0.97), 0))
+	var vp := get_viewport().get_visible_rect().size
+	var w := minf(vp.x - 32.0, 560.0)
+	var sc := DragScroll.new()
+	sc.position = Vector2((vp.x - w) * 0.5, 0)
+	sc.size = Vector2(w, vp.y)
+	page.add_child(sc)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 12)
+	sc.add_child(col)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 24
+	col.add_child(gap)
+	var wn := g.winner()
+	var head := "VICTORY!" if wn == 0 else ("DEFEAT" if wn == 1 else "A TIE")
+	if Career.loaded and wn >= 0:
+		head = ("%s WIN!" % String(Career.team(wn)["name"]).to_upper()) if wn == 0 else head
+	var hl := _disp(head, fs + 22, MAGENTA if wn == 0 else (BAD if wn == 1 else Color.WHITE))
+	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	col.add_child(hl)
+	var names: Array = [Career.team(0)["name"], Career.team(1)["name"]] if Career.loaded else [Team.NAMES[0], Team.NAMES[1]]
+	_final_hero(col, g, names, g.score, false)     # the record moves once the week is worked out
+	# the stars
+	var gs: Dictionary = game_stars if not game_stars.is_empty() else (Career.game_stars(g) if Career.loaded else {})
+	if not gs.is_empty():
+		var st := _eyebrow("Players of the game", MAGENTA)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		col.add_child(st)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 10)
+		col.add_child(row)
+		for side in ["off", "def"]:
+			if not gs.has(side):
+				continue
+			var b: Dictionary = gs[side]
+			var bt := 0 if String(b["team"]) == String(Career.team(0)["name"]) else 1
+			var card := PanelContainer.new()
+			var sb := flat(TEAM_COL[bt].darkened(0.65), 14, TEAM_COL[bt], 2)
+			sb.set_content_margin_all(10)
+			card.add_theme_stylebox_override("panel", sb)
+			card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			row.add_child(card)
+			var v := VBoxContainer.new()
+			v.add_theme_constant_override("separation", 2)
+			card.add_child(v)
+			var e := _eyebrow("Offense" if side == "off" else "Defense", MAGENTA)
+			e.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			v.add_child(e)
+			var rob: Dictionary = Career.find(String(b.get("id", ""))).get("robot", {}) if Career.loaded else {}
+			if not rob.is_empty():
+				var fig := _robot_figure(rob, bt, Vector2(w * 0.4, w * 0.55))
+				fig.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+				v.add_child(fig)
+			var nl := _label("%s %s" % [b["slot"], b["name"]], fs, Color.WHITE)
+			nl.add_theme_font_override("font", BODY_B)
+			nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			v.add_child(nl)
+			var ll := _label(Career.stat_line(b["stats"], side), fs - 3, Color(0.85, 0.88, 0.92))
+			ll.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			v.add_child(ll)
+			# a little pop as each card lands
+			card.modulate.a = 0.0
+			var tw := card.create_tween()
+			tw.tween_interval(0.35 if side == "off" else 0.75)
+			tw.tween_property(card, "modulate:a", 1.0, 0.35)
+	_celebrate_note = _label("Working out the pay and the rest of the league...", fs - 2, DIM)
+	_celebrate_note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	col.add_child(_celebrate_note)
+	_celebrate_go = _primary(_button("BOX SCORE & PAY  ›", func(): show_game_over(g)))
+	_celebrate_go.disabled = true
+	_celebrate_go.modulate.a = 0.5
+	col.add_child(_celebrate_go)
+	var pad := Control.new()
+	pad.custom_minimum_size.y = 20
+	col.add_child(pad)
+	if main != null and "sfx" in main and main.sfx != null:
+		main.sfx.play("roar", -2.0 if wn == 0 else -10.0)
+
+
+## Money earned on the play just run: a gold coin chip under the scorebug, "+$250 Touchdown",
+## that rises and fades, with a clink, and the purse total.
+func coin_alert(items: Array) -> void:
+	var total := 0
+	var what: Array = []
+	for it in items:
+		total += int(it[1])
+		what.append(String(it[0]))
+	var chip := PanelContainer.new()
+	var sb := flat(Color(0.12, 0.09, 0.02, 0.92), 16, MAGENTA, 2)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 12
+	sb.content_margin_top = 3
+	sb.content_margin_bottom = 4
+	chip.add_theme_stylebox_override("panel", sb)
+	chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	chip.add_child(h)
+	var coin := Panel.new()
+	coin.add_theme_stylebox_override("panel", flat(MAGENTA, 8, Color(1.0, 0.88, 0.5), 1))
+	coin.custom_minimum_size = Vector2(16, 16)
+	coin.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(coin)
+	h.add_child(_disp("+$%s" % _commas(total), fs + 4, MAGENTA, false))
+	var wl := _label(" · ".join(what) + "   ·   purse $" + _commas(Career.money(0)), fs - 2, Color(0.95, 0.9, 0.75))
+	wl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	wl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(wl)
+	var layer := _ban.get_parent()        # the banner layer: over everything
+	layer.add_child(chip)
+	chip.reset_size()
+	var vp := get_viewport().get_visible_rect().size
+	var y0 := (_board.position.y + _board.get_combined_minimum_size().y + 10.0) if _board != null else 80.0
+	chip.position = Vector2(vp.x - chip.size.x - 10.0, y0)
+	chip.modulate.a = 0.0
+	var tw := chip.create_tween()
+	tw.tween_property(chip, "modulate:a", 1.0, 0.2)
+	tw.tween_interval(1.8)
+	tw.tween_property(chip, "position:y", y0 - 24.0, 0.6)
+	tw.parallel().tween_property(chip, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(chip.queue_free)
+	if main != null and "sfx" in main and main.sfx != null:
+		main.sfx.play("clink", -6.0, 1.4)
+
+
+## The numbers are in: the button goes live.
+func celebration_ready() -> void:
+	if _celebrate_go != null and is_instance_valid(_celebrate_go):
+		_celebrate_go.disabled = false
+		_celebrate_go.modulate.a = 1.0
+	if _celebrate_note != null and is_instance_valid(_celebrate_note):
+		_celebrate_note.text = "All in. Tap for the box score, pay and awards."
 
 
 ## After the game: who is damaged and what it costs, the coach's buttons, and the robot market.
@@ -2857,12 +3050,21 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 				l.text = l.text.to_upper()
 			if i == 0 and String(r[i]).begins_with("  "):
 				l.text = "   " + l.text
+			if i > 0:
+				l.text = _whole(l.text)
 			l.autowrap_mode = TextServer.AUTOWRAP_OFF
 			if i > 0:
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			else:
 				l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 			g.add_child(l)
+
+
+## "12.0" -> "12", "3.0/5.0" -> "3/5": whole numbers shown as whole numbers (averages like 4.5 stay).
+static func _whole(t: String) -> String:
+	var re := RegEx.new()
+	re.compile("(\\d+)\\.0(?![0-9])")
+	return re.sub(t, "$1", true)
 
 
 func _pass_line(s: Dictionary, n: int) -> String:
@@ -3188,6 +3390,11 @@ func open_settings() -> void:
 	var gb := _button("Battery saver: %s" % ("on" if sv else "off"), func(): main.set_saver(not main.saver_on()); open_settings(), true)
 	gb.button_pressed = sv
 	box.add_child(gb)
+	_help_head(box, "Pay", "During the game: each touchdown ($250), takeaway ($200), big play or sack ($100), big hit ($50) and first down ($25) goes in your purse as it happens, with a coin alert. After the game: all of it at the final whistle. The win bonus always comes at the end.", CYAN)
+	var pl: bool = main.pay_live_on()
+	var pb := _button("Pay: %s" % ("during the game" if pl else "after the game"), func(): main.set_pay_live(not main.pay_live_on()); open_settings(), true)
+	pb.button_pressed = pl
+	box.add_child(pb)
 	_cloud_section(box)
 	_section(box, "Start over")
 	box.add_child(_label("A new season wipes this one: a fresh draft, $5,000.", fs - 2, DIM))
@@ -3451,7 +3658,7 @@ func _report_lines(box: Control, lines: Array) -> void:
 		sb.content_margin_top = 5
 		sb.content_margin_bottom = 6
 		pc.add_theme_stylebox_override("panel", sb)
-		var txt := String(ln[0])
+		var txt := _whole(String(ln[0]))
 		pc.add_child(_label(txt[0].to_upper() + txt.substr(1) if txt != "" else txt, fs - 2, Color(0.92, 0.94, 0.96) if ln[1] != "note" else Color(0.8, 0.84, 0.9)))
 		box.add_child(pc)
 
@@ -3601,51 +3808,8 @@ func open_robot(id: String) -> void:
 	top.add_theme_constant_override("separation", 10)
 	hero.add_child(top)
 	# the model, turning slowly
-	var svc := SubViewportContainer.new()
 	var narrow := get_viewport().get_visible_rect().size.x < 520.0
-	svc.custom_minimum_size = Vector2(130, 196) if narrow else Vector2(180, 250)
-	svc.stretch = true
-	var sv := SubViewport.new()
-	sv.own_world_3d = true
-	sv.transparent_bg = true
-	sv.msaa_3d = Viewport.MSAA_2X
-	svc.add_child(sv)
-	top.add_child(svc)
-	var model: Dictionary = main.view.build_robot(String(r["group"]), t, int(r["number"]), Robot.ensure_parts(r), true)
-	var turn := Node3D.new()
-	sv.add_child(turn)
-	turn.add_child(model["root"])
-	var cam := Camera3D.new()
-	cam.position = Vector3(0, 1.35, 5.0)      # far enough back that he fits head to foot
-	cam.fov = 38
-	sv.add_child(cam)
-	cam.look_at(Vector3(0, 1.2, 0))
-	var key := DirectionalLight3D.new()
-	key.rotation = Vector3(-0.7, 0.6, 0)
-	key.light_energy = 1.6
-	sv.add_child(key)
-	var front := OmniLight3D.new()
-	front.position = Vector3(1.2, 2.4, 3.0)
-	front.light_energy = 2.5
-	front.omni_range = 10.0
-	sv.add_child(front)
-	var rim := OmniLight3D.new()
-	rim.position = Vector3(-1.5, 2.0, -2.5)
-	rim.light_color = FieldView.NEON[t]
-	rim.light_energy = 2.0
-	rim.omni_range = 8.0
-	sv.add_child(rim)
-	var env := WorldEnvironment.new()
-	var e := Environment.new()
-	e.background_mode = Environment.BG_CLEAR_COLOR
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.5, 0.55, 0.65)
-	e.ambient_light_energy = 1.8
-	e.glow_enabled = true
-	env.environment = e
-	sv.add_child(env)
-	var tw := turn.create_tween().set_loops()
-	tw.tween_property(turn, "rotation:y", TAU, 8.0).from(0.0)
+	top.add_child(_robot_figure(r, t, Vector2(130, 196) if narrow else Vector2(180, 250)))
 	# who he is
 	var who := VBoxContainer.new()
 	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL

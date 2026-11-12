@@ -258,6 +258,10 @@ var read_t := 0.0
 var pass_play := true
 var carry_slot := ""
 var air_target: P = null
+## The offense runs its play to the right or, mirrored, to the left (a coin each snap, as real
+## teams flip their formations): otherwise every play overloads the same side, the same corner
+## faces the slot and the trips, and the slot receiver is always the first read on that side.
+var flip := 1.0
 var ball_vel := Vector2.ZERO   # a ball bouncing along the ground: its run across the turf
 var ball_vz := 0.0             # ... and how fast it is going up (yards a second)
 var ground_kick := ""          # "squib" / "onside" while a kick is played along the ground
@@ -267,6 +271,7 @@ var tally := {}              # "team:brain" -> {line: count}
 
 func setup(off_team: Dictionary, def_team: Dictionary, op: Play, dp: Play, c: Dictionary, r: RandomNumberGenerator) -> void:
 	rng = r
+	flip = -1.0 if float(K.get("mirror", 1.0)) > 0.0 and not bool(c.get("no_flip", false)) and r.randf() < 0.5 else 1.0
 	off_play = op
 	def_play = dp
 	ctx = c
@@ -341,7 +346,7 @@ func _line_up() -> void:
 		if off_play.align.has(p.slot):
 			spot = off_play.align[p.slot]
 			spot.y = minf(spot.y, -0.6)
-		p.pos = Vector2(ball_x + spot.x, spot.y)
+		p.pos = Vector2(ball_x + spot.x * flip, spot.y)
 		if p.group == "WR" or p.slot == "RB" and off_play.formation == "empty":
 			p.pos.x = clampf(p.pos.x, -SIDELINE + 2.0, SIDELINE - 2.0)
 		p.face = Vector2(0, 1)
@@ -440,7 +445,7 @@ func _build_route(p: P) -> void:
 	match name:
 		"path":
 			for q in p.assign["path"]:
-				w.append(s + (q as Vector2))
+				w.append(s + Vector2((q as Vector2).x * flip, (q as Vector2).y))
 			stop = bool(p.assign.get("stop", false))
 		"go", "fade":
 			w = [s + Vector2(o * (1.5 if name == "fade" else 0.3), 12), s + Vector2(o * (3.0 if name == "fade" else 0.5), 45)]
@@ -2294,7 +2299,7 @@ func _handoff(qb: P, rb: P) -> void:
 ## The carrier, before he has the ball, heads for the mesh and then the hole.
 func _drive_carry_path(p: P) -> void:
 	var gap := String(p.assign.get("gap", "middle"))
-	var gx: float = ball_x + gap_x_of(p.assign)
+	var gx: float = ball_x + gap_x_of(p.assign) * flip
 	if gap == "draw" and t < 0.9:
 		_set_want(p, Vector2.ZERO)
 		return
@@ -2322,7 +2327,7 @@ func _drive_carrier(p: P) -> void:
 	# (his brain's running rules wait until he has pressed the hole he was called to)
 	if (handed or keeper) and p == by_slot.get("o:" + carry_slot) and since_handoff < 0.25 + 0.6 * p.d("patience") and p.intent in ["assignment", "follow_blocker", "daylight", "cut_upfield"] and p.side == 0 and p.pos.y < 0.5:
 		var gap := String(p.assign.get("gap", "middle"))
-		var gx: float = ball_x + gap_x_of(p.assign)
+		var gx: float = ball_x + gap_x_of(p.assign) * flip
 		var aim := Vector2(gx, p.pos.y + 3.0)
 		if gap_wide(p.assign):
 			# get to the edge at the line, then turn it up
@@ -2920,7 +2925,7 @@ func _assign_blocks() -> void:
 			elif not ball_out:
 				cost = d + absf(e.pos.x - b.pos.x) * 0.8
 				if String(b.assign.get("kind", "")) == "pull":
-					var side := float(b.assign.get("dir", 1))
+					var side := float(b.assign.get("dir", 1)) * flip
 					cost = absf(e.pos.x - (ball_x + side * 6.0)) + e.pos.y * 0.3
 			else:
 				cost = d + e.pos.distance_to(carrier.pos) * 0.8
@@ -3026,7 +3031,7 @@ func _assign_return_blocks() -> void:
 func _assign_run_blocks(blocking: Array) -> void:
 	var cs := by_slot.get("o:" + carry_slot) as P
 	var gap := String(cs.assign.get("gap", "middle")) if cs != null else "middle"
-	var hole := ball_x + (gap_x_of(cs.assign) if cs != null else 0.0)
+	var hole := ball_x + (gap_x_of(cs.assign) * flip if cs != null else 0.0)
 	var side := signf(hole - ball_x)
 	var box: Array = []
 	for e: P in dfn:
@@ -3175,7 +3180,7 @@ func _resolve_blocks() -> void:
 			# the blocker is winning: he turns his man away from the hole and opens it
 			var hole := carrier.pos.x
 			if carrier.side == 0 and carrier.pos.y < 0.5 and String(carrier.assign.get("gap", "")) != "":
-				hole = ball_x + gap_x_of(carrier.assign)
+				hole = ball_x + gap_x_of(carrier.assign) * flip
 			var away := signf(e.pos.x - hole) if absf(e.pos.x - hole) > 0.1 else signf(e.pos.x - b.pos.x + 0.001)
 			var pd := Vector2(away, 0.6).normalized()
 			# a run block that is won is seen: the man is driven off the ball, out of the hole
