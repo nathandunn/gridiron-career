@@ -71,6 +71,10 @@ static func load_fonts() -> void:
 	BODY_B = load("res://fonts/Barlow-SemiBold.ttf")
 	DISP = load("res://fonts/BarlowCondensed-BoldItalic.ttf")
 	NUM = load("res://fonts/BarlowCondensed-Bold.ttf")
+	# the condensed faces lack a few marks (arrows): borrow them from Barlow
+	for f in [DISP, NUM, BODY_B]:
+		if f is FontFile and f != BODY:
+			(f as FontFile).fallbacks = [BODY]
 
 
 ## A label in the display face: "TOUCHDOWN", a panel title, a score.
@@ -4075,11 +4079,17 @@ func open_injuries(slots: Array) -> void:
 		var lost := Robot.lost_parts(r)
 		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
 		var junk_cost := 0
-		var cost := 0
+		var stock_cost := 0
+		var orig_cost := 0
+		var origs: Array = []
 		for k in lost:
 			junk_cost += Career.junk_price(k)
-			cost += Career.repair_cost(r, k)
-		var o_full := Robot.overall_if(r, "healthy")
+			stock_cost += int(Career.PART_PRICE[k])
+			orig_cost += Career.restore_cost(r, k)
+			origs.append(Robot.original_tier(r, k))
+		# what he had there: one tier for all the lost parts, or "mixed"
+		var orig := String(origs[0]) if origs.all(func(x): return x == origs[0]) else "mixed"
+		var o_full := Robot.overall_if(r, "restore")
 		var o_now := Robot.overall_if(r, "now")
 		var o_junk := Robot.overall_if(r, "junk")
 		var cd := _card(box, "", BAD)
@@ -4110,8 +4120,15 @@ func open_injuries(slots: Array) -> void:
 		q.tooltip_text = "What this part does"
 		hr.add_child(q)
 		cd.add_child(hl)
-		choice.call(cd, "New %s  $%d" % [" and ".join(names), cost], o_full, func(): main.injury_choice(s, "buy"), Career.money(0) >= cost, true)
-		choice.call(cd, "Bolt on junk  $%d" % junk_cost, o_junk, func(): main.injury_choice(s, "junk"), Career.money(0) >= junk_cost)
+		# junk, stock, or what he had - the one that puts him back as he was is gold
+		var part_names := " and ".join(names)
+		choice.call(cd, "Junk %s  $%d%s" % [part_names, junk_cost, "  (as he was)" if orig == "Junk" else ""], o_junk,
+			func(): main.injury_choice(s, "junk"), Career.money(0) >= junk_cost, orig == "Junk")
+		choice.call(cd, "Stock %s  $%d%s" % [part_names, stock_cost, "  (as he was)" if orig == "Stock" else ""], Robot.overall_if(r, "stock"),
+			func(): main.injury_choice(s, "stock"), Career.money(0) >= stock_cost, orig == "Stock")
+		if orig not in ["Junk", "Stock"]:
+			choice.call(cd, "%s %s  $%d  (as he was)" % [orig if orig != "mixed" else "Original", part_names, orig_cost], o_full,
+				func(): main.injury_choice(s, "restore"), Career.money(0) >= orig_cost, true)
 		if Robot.can_play(r):
 			choice.call(cd, "Play on without it", o_now, func(): main.injury_choice(s, "play_on"))
 		else:

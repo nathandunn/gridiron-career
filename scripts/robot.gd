@@ -319,6 +319,10 @@ static func overall_if(robot: Dictionary, state := "now") -> int:
 	for k in lost_parts(r):
 		if state == "healthy":
 			patch(r, k)       # as a fix leaves him: stock (junk if junk is what he had)
+		elif state == "stock":
+			ensure_parts(r)[k] = {"tier": "Stock", "hp": TIER_HP["Stock"]}
+		elif state == "restore":
+			restore(r, k)     # back as he was
 		elif state == "junk":
 			bolt_on_junk(r, k)
 	return maxi(int(roundf(effective_overall(r))), 1)

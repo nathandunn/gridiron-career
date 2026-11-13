@@ -1001,6 +1001,14 @@ func injury_choice(slot: String, what: String) -> void:
 		"emergency":
 			for k in Robot.lost_parts(r):
 				Career.buy_junk(0, r, k, true)
+		"stock":
+			for k in Robot.lost_parts(r):
+				if not Career.buy_stock(0, r, k):
+					Career.buy_junk(0, r, k)
+		"restore":
+			for k in Robot.lost_parts(r):
+				if not Career.buy_restore(0, r, k):
+					Career.buy_junk(0, r, k)
 		"buy":
 			for k in Robot.lost_parts(r):
 				if not Career.buy_repair(0, r, k):

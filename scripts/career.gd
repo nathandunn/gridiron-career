@@ -667,6 +667,15 @@ static func buy_fix(t: int, robot: Dictionary, k: String) -> bool:
 	return true
 
 
+## A new stock part in place of a lost one, whatever he had there before.
+static func buy_stock(t: int, robot: Dictionary, k: String) -> bool:
+	if not spend(t, int(PART_PRICE[k])):
+		return false
+	Robot.ensure_parts(robot)[k] = {"tier": "Stock", "hp": Robot.TIER_HP["Stock"]}
+	save()
+	return true
+
+
 static func buy_restore(t: int, robot: Dictionary, k: String) -> bool:
 	var c := restore_cost(robot, k)
 	if c <= 0:
