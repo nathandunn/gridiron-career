@@ -611,13 +611,9 @@ static func spend(t: int, amount: int) -> bool:
 
 ## What it costs to put a part right: a lost (or junk) part is a new Stock one at full price;
 ## a worn one costs a share of the price by how worn it is.
+## What a repair costs: the same as a fix (where it's at). Junk he has is not damage.
 static func repair_cost(robot: Dictionary, k: String) -> int:
-	var pt: Dictionary = Robot.ensure_parts(robot)[k]
-	var price := int(PART_PRICE[k])
-	if float(pt["hp"]) <= 0.0 or String(pt["tier"]) == "Junk":
-		return price
-	var mx := float(Robot.TIER_HP.get(String(pt["tier"]), 100))
-	return int(ceilf(price * 0.6 * (1.0 - float(pt["hp"]) / mx)))
+	return fix_cost(robot, k)
 
 
 ## The price of a new part of a tier.
@@ -636,7 +632,7 @@ static func tier_price(k: String, tier: String) -> int:
 static func fix_cost(robot: Dictionary, k: String) -> int:
 	var pt: Dictionary = Robot.ensure_parts(robot)[k]
 	if float(pt["hp"]) <= 0.0:
-		return int(PART_PRICE[k])
+		return int(JUNK_PRICES[k]) if Robot.original_tier(robot, k) == "Junk" else int(PART_PRICE[k])
 	var tier := String(pt["tier"])
 	var mx := float(Robot.TIER_HP.get(tier, 100))
 	var base := float(JUNK_PRICES[k]) if tier == "Junk" else float(PART_PRICE[k])
@@ -725,7 +721,7 @@ static func buy_junk(t: int, robot: Dictionary, k: String, emergency := false) -
 
 ## Buy a new Stock part (or a repair) if the purse allows. true if done.
 static func buy_repair(t: int, robot: Dictionary, k: String) -> bool:
-	var c := repair_cost(robot, k)
+	var c := fix_cost(robot, k)
 	if c <= 0:
 		return true
 	if not spend(t, c):
@@ -950,7 +946,7 @@ static func next_tier(robot: Dictionary, k: String) -> String:
 	var i := Robot.TIERS.find(cur)
 	if Robot.part_lost(robot, k) or i < 0 or i >= Robot.TIERS.size() - 1:
 		return ""
-	return Robot.TIERS[maxi(i + 1, 2)]   # junk or stock both go to Mk II
+	return Robot.TIERS[i + 1]     # one step at a time: junk -> stock -> Mk II -> Mk III -> Prototype
 
 
 ## Upgrade credit: money that comes with a new team and buys upgrades only.

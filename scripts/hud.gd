@@ -4195,9 +4195,10 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 			var jk: Button = small.call(_button("Junk $%d" % Career.junk_price(k), func(): Career.buy_junk(Career.team_of(r), r, k); open_robot(id)), false)
 			jk.disabled = Career.money(tu) < Career.junk_price(k)
 			v.add_child(jk)
-			var nb: Button = small.call(_button("New $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id)))
-			nb.disabled = Career.money(tu) < Career.repair_cost(r, k)
-			v.add_child(nb)
+			if Robot.original_tier(r, k) != "Junk":
+				var nb: Button = small.call(_button("Stock $%d" % Career.repair_cost(r, k), func(): Career.buy_repair(Career.team_of(r), r, k); open_robot(id)))
+				nb.disabled = Career.money(tu) < Career.repair_cost(r, k)
+				v.add_child(nb)
 			var orig := Robot.original_tier(r, k)
 			if orig not in ["Stock", "Junk"]:
 				var rc := Career.restore_cost(r, k)
@@ -4220,7 +4221,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 		bar.add_theme_stylebox_override("fill", flat(GOOD if f > 0.6 else (WARN if f > 0.3 else BAD), 3))
 		bar.add_theme_stylebox_override("background", flat(SURF3, 3))
 		v.add_child(bar)
-		if hp < mx and tier != "Junk":
+		if hp < mx:
 			var fc := Career.repair_cost(r, k)
 			var fb: Button = small.call(_button("Fix $%d" % fc, func(): Career.buy_repair(tu, r, k); open_robot(id)), false)
 			fb.add_theme_color_override("font_color", WARN)
@@ -4236,7 +4237,7 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 		else:
 			var mxl := _label("Maxed", fs - 3, DIM)
 			v.add_child(mxl)
-	box.add_child(_label("Mk II +6, Mk III +12, Proto +20 (arms, legs half).", fs - 4, Color(0.5, 0.55, 0.62)))
+	box.add_child(_label("Junk → Stock → Mk II (+6) → Mk III (+12) → Proto (+20); arms and legs half. Junk costs 4 OVR.", fs - 4, Color(0.5, 0.55, 0.62)))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)

@@ -20,5 +20,17 @@ func _init() -> void:
 	assert(String(p["rleg"]["tier"]) == "Junk" and float(p["rleg"]["hp"]) == 50.0)
 	Career.buy_restore(0, r, "larm")
 	assert(String(p["larm"]["tier"]) == "Mk III" and float(p["larm"]["hp"]) == 180.0 and not p["larm"].has("spare"))
+	# the ladder: junk -> stock -> Mk II, and a lost junk part comes back junk on a fix
+	p["head"] = {"tier": "Junk", "hp": 50}
+	assert(Career.next_tier(r, "head") == "Stock")
+	assert(Career.upgrade_price("head", "Stock") == Career.PART_PRICE["head"])
+	assert(Career.fix_cost(r, "head") == 0)            # junk he has is not damage
+	p["head"]["hp"] = 0
+	assert(Career.fix_cost(r, "head") == Career.JUNK_PRICES["head"])
+	Career.buy_fix(0, r, "head")
+	assert(String(p["head"]["tier"]) == "Junk")
+	p["core"] = {"tier": "Stock", "hp": 100}
+	assert(Career.next_tier(r, "core") == "Mk II")
+	assert(Career.repair_all_cost(r) == Career.fix_all_cost(r))
 	print("restore_test OK  fix arm $%d, restore Mk III arm $%d" % [Career.PART_PRICE["larm"], Career.upgrade_price("larm", "Mk III")])
 	quit()

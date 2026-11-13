@@ -277,7 +277,8 @@ static func original_tier(robot: Dictionary, k: String) -> String:
 static func patch(robot: Dictionary, k: String) -> void:
 	var p: Dictionary = ensure_parts(robot)[k]
 	if float(p["hp"]) <= 0.0:
-		p["tier"] = "Stock"
+		# a lost part comes back stock - or junk, if junk is what he had (never a step up)
+		p["tier"] = "Junk" if original_tier(robot, k) == "Junk" else "Stock"
 		p.erase("spare")
 		p.erase("was")
 	p["hp"] = TIER_HP.get(String(p["tier"]), 100)
@@ -293,12 +294,10 @@ static func restore(robot: Dictionary, k: String) -> void:
 	p["hp"] = TIER_HP.get(t, 100)
 
 
+## A repair is a fix where it's at (see patch): it never turns junk into stock - that is an
+## upgrade, bought as one.
 static func repair(robot: Dictionary, k: String) -> void:
-	var p: Dictionary = ensure_parts(robot)[k]
-	if float(p["hp"]) <= 0.0 or String(p["tier"]) == "Junk":
-		p["tier"] = "Stock"           # a lost or junk part is replaced with a proper one
-		p.erase("spare")
-	p["hp"] = TIER_HP.get(String(p["tier"]), 100)
+	patch(robot, k)
 
 
 ## Overall, less what missing and junk parts cost him - what a coach looks at when choosing a sub.
@@ -319,7 +318,7 @@ static func overall_if(robot: Dictionary, state := "now") -> int:
 	var r: Dictionary = robot.duplicate(true)
 	for k in lost_parts(r):
 		if state == "healthy":
-			ensure_parts(r)[k] = {"tier": "Stock", "hp": TIER_HP["Stock"]}
+			patch(r, k)       # as a fix leaves him: stock (junk if junk is what he had)
 		elif state == "junk":
 			bolt_on_junk(r, k)
 	return maxi(int(roundf(effective_overall(r))), 1)
