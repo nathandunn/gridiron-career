@@ -291,6 +291,7 @@ func _ready() -> void:
 					await get_tree().create_timer(0.5).timeout
 				await get_tree().create_timer(1.0).timeout
 				if String(args.get("tab", "")) != "celebrate":
+					hud._final_for = game
 					hud._stats_tab = String(args.get("tab", "summary"))
 					hud.show_stats(game, "final", {}, Callable())
 			"fixtest":

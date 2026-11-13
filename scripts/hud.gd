@@ -2013,7 +2013,12 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 			_condition_table(box, g.teams[t], g.ovr_track)
 		"plays":
 			for t in 2:
-				_calls_table(box, g.calls[t], names[t], t)
+				var oc := {}
+				for k in g.calls[t]:
+					if not g.def_calls[t].has(k):
+						oc[k] = g.calls[t][k]
+				_calls_table(box, oc, "%s offense" % names[t], t)
+				_def_calls_table(box, g.def_calls[t], "%s defense" % names[t], t)
 		"drives":
 			_drives_table(box, g)
 		"rules":
@@ -2101,6 +2106,42 @@ func _standings_card(box: Control) -> void:
 
 
 ## A club's play calls as a table: play, times called, yards a call (green for good, red for bad).
+## A club's defensive calls: times called, yards allowed a call (low is green), takeaways.
+func _def_calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void:
+	if calls.is_empty():
+		return
+	var cd := _card(box, name, TEAM_COL[t].darkened(0.3))
+	var grid := GridContainer.new()
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 3)
+	cd.add_child(grid)
+	for h in ["Defense", "Calls", "Yds allowed", "TO"]:
+		var hl := _label(h, fs - 3, DIM)
+		hl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		if h == "Defense":
+			hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		else:
+			hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		grid.add_child(hl)
+	var ks := calls.keys()
+	ks.sort_custom(func(a, b): return calls[a][0] > calls[b][0])
+	for k in ks:
+		var n := int(calls[k][0])
+		var y := float(calls[k][1]) / maxf(float(n), 1.0)
+		var to := int(calls[k][2]) if (calls[k] as Array).size() > 2 else 0
+		var pl := _label(String(k), fs - 2, Color(0.9, 0.92, 0.95))
+		pl.autowrap_mode = TextServer.AUTOWRAP_OFF
+		pl.clip_text = true
+		pl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		grid.add_child(pl)
+		for v in [[str(n), DIM], [_whole("%.1f" % y), GOOD if y < 3.0 else (BAD if y >= 6.0 else Color(0.9, 0.92, 0.95))], [str(to) if to > 0 else "-", MAGENTA if to > 0 else DIM]]:
+			var l := _label(v[0], fs - 2, v[1])
+			l.autowrap_mode = TextServer.AUTOWRAP_OFF
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			grid.add_child(l)
+
+
 func _calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void:
 	var cd := _card(box, name, TEAM_COL[t])
 	var grid := GridContainer.new()
@@ -2108,10 +2149,10 @@ func _calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 3)
 	cd.add_child(grid)
-	for h in ["Play", "Calls", "Yds a call"]:
+	for h in ["Offense", "Calls", "Yds a call"]:
 		var hl := _label(h, fs - 3, DIM)
 		hl.autowrap_mode = TextServer.AUTOWRAP_OFF
-		if h == "Play":
+		if h == "Offense":
 			hl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		else:
 			hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT

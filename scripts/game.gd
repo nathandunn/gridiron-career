@@ -28,6 +28,7 @@ var opened := 0                # who received the opening kick
 var log: Array = []            # one entry a snap or kick
 var stats := [{}, {}]
 var calls := [{}, {}]          # per team: play name -> [times, yards]
+var def_calls := [{}, {}]      # per team: its defensive calls -> [times, yards allowed]
 var kinds := [{"run": 0, "pass": 0}, {"run": 0, "pass": 0}]   # what each team has called on offense
 var last_call := ["", ""]
 var last_gain := [0.0, 0.0]
@@ -509,7 +510,9 @@ func _stop_vs(dn: String, run_p: float, need: float) -> float:
 func make_sim() -> PlaySim:
 	var sim := PlaySim.new()
 	var ctx := {"yl": yl, "down": down, "to_go": to_go, "ball_x": ball_x, "quarter": quarter, "clock": clock,
-		"score_diff": score[poss] - score[1 - poss]}
+		"score_diff": score[poss] - score[1 - poss],
+		# a play you called runs the way its card is drawn: only coaches' calls are flipped
+		"no_flip": calling_for(true) == "pick"}
 	var r := RandomNumberGenerator.new()
 	r.seed = rng.randi()
 	var off := offense()
@@ -1232,6 +1235,8 @@ func finish(sim: PlaySim) -> Dictionary:
 	trend[team][bk] = [int(tb[0]) + 1, float(tb[1]) + (gain if r["turnover"] == "" else -20.0)]
 	var dc: Array = calls[1 - team].get(dp.name, [0, 0.0])
 	calls[1 - team][dp.name] = [int(dc[0]) + 1, float(dc[1]) + (gain if r["turnover"] == "" else -20.0)]
+	var dd: Array = def_calls[1 - team].get(dp.name, [0, 0.0, 0])
+	def_calls[1 - team][dp.name] = [int(dd[0]) + 1, float(dd[1]) + gain, int(dd[2]) + (1 if r["turnover"] != "" else 0)]
 	if was_down == 3:
 		st["third_att"] = int(st["third_att"]) + 1
 	if was_down == 4:

@@ -2439,6 +2439,13 @@ func _steer(p: P) -> Vector2:
 		if oob:
 			s -= 6.0
 		s -= maxf(absf(end.x) - 21.0, 0.0) * 0.35
+		# a called run goes where it was called: until he is through the line, the hole his
+		# blockers are opening pulls him (a disciplined back trusts it longer; a free-lancer less)
+		if p == carrier and p.side == 0 and handed and (p.pos.y - 0.0) * dir < 1.5 and String(p.assign.get("gap", "")) != "" \
+				and float(K.get("hole_follow", 0.0)) > 0.0:
+			var hx: float = ball_x + gap_x_of(p.assign) * flip
+			var hp := Vector2(hx, 1.5 * dir)
+			s -= (p.pos + h * 2.0).distance_to(hp) * float(K.get("hole_follow", 0.0)) * (0.5 + p.d("discipline"))
 		# behind the line on an inside run, going sideways is going nowhere
 		if p.side == 0 and p.pos.y < 1.0 and not gap_wide(p.assign):
 			s -= absf(h.x) * 1.2
