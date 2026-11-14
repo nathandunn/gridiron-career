@@ -726,6 +726,8 @@ func new_game(start := true) -> void:
 	game = Game.new()
 	var seed_v := randi()
 	game.setup(Team.build(0, coaches[0], picks[0], calling[0], defenses[0]), Team.build(1, coaches[1], picks[1], calling[1], defenses[1]), qlen, seed_v)
+	if Career.loaded:
+		game.set_meta("purse_start", [Career.money(0), Career.money(1)])    # for the pay card: started, earned, spent
 	sim = null
 	_skip_drive = false
 	_seen_q = 0
@@ -995,6 +997,7 @@ func injury_choice(slot: String, what: String) -> void:
 	var r: Dictionary = tm["roster"][slot]
 	if what.begins_with("sub:"):
 		Career.swap_any(tm["roster"], tm["bench"], slot, what.substr(4))
+	hud.refresh_purse.call_deferred()
 	match what:
 		"junk":
 			for k in Robot.lost_parts(r):

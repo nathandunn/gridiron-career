@@ -831,6 +831,12 @@ static func pay_game(g: Game) -> Array:
 	save()
 	slips[1]["news"] = club_ready(1)     # the rival repairs, then spends with Best buy
 	slips[1]["purse"] = money(1)
+	# started with, earned, spent (repairs in the game; the rival's shopping after it)
+	var start: Array = g.get_meta("purse_start", [-1, -1])
+	for t in 2:
+		if int(start[t]) >= 0:
+			slips[t]["start"] = int(start[t])
+			slips[t]["spent"] = maxi(int(start[t]) + int(slips[t]["total"]) - int(slips[t]["purse"]), 0)
 	return slips
 
 

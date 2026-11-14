@@ -240,6 +240,7 @@ func _button(text: String, cb: Callable, toggle := false) -> Button:
 ## ---- scoreboard ----------------------------------------------------------------------------
 
 var _abbr := [null, null]
+var _purse_l: Label = null
 var _poss_dot := [null, null]
 
 
@@ -328,7 +329,8 @@ func _build_scoreboard() -> void:
 	_result = _label("", fs - 1, Color(1, 1, 1))
 	_progress = _label("", fs - 1, GOOD)
 	_progress.visible = false
-	for l in [_call, _result, _progress]:
+	_purse_l = _label("", fs - 2, MAGENTA)
+	for l in [_call, _result, _progress, _purse_l]:
 		var chip := PanelContainer.new()
 		var csb := flat(Color(0.03, 0.045, 0.07, 0.82), 12, LINE, 1)
 		csb.content_margin_left = 10
@@ -360,6 +362,9 @@ func show_state(g: Game) -> void:
 		_score[t].text = str(g.score[t])
 		_poss_dot[t].modulate.a = 1.0 if has else 0.0
 	_clock.text = ("FINAL (OT)" if g.in_ot() else "FINAL") if g.over else g.clock_text().to_upper()
+	# your purse, there all game (it goes up as you earn when pay is during the game)
+	if _purse_l != null:
+		_chip_text(_purse_l, ("Purse $" + _commas(Career.money(0))) if Career.loaded and not Career.exhibition() else "")
 	var badge := (Career.mode_badge().to_upper() + " · ") if Career.loaded and get_viewport().get_visible_rect().size.x >= 520.0 else ""
 	_sit.text = badge + ("" if g.over else g.situation().to_upper().replace(",", " ·"))
 
@@ -2066,9 +2071,26 @@ func _pay_cards(box: Control, names: Array) -> void:
 			b.autowrap_mode = TextServer.AUTOWRAP_OFF
 			b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			grid.add_child(b)
-		var pl := _label("Purse now $" + _commas(int(sl.get("purse", Career.money(t)))), fs - 1, MAGENTA if t == 0 else Color(0.85, 0.88, 0.92))
-		pl.add_theme_font_override("font", BODY_B)
-		v.add_child(pl)
+		# the purse's game: started with, + earned, - spent, = now
+		var ledger := GridContainer.new()
+		ledger.columns = 2
+		ledger.add_theme_constant_override("h_separation", 12)
+		v.add_child(ledger)
+		var rows: Array = []
+		if sl.has("start"):
+			rows.append(["Purse at kickoff", "$" + _commas(int(sl["start"])), Color(0.85, 0.88, 0.92)])
+			rows.append(["Earned", "+$" + _commas(int(sl["total"])), GOOD])
+			if int(sl.get("spent", 0)) > 0:
+				rows.append(["Spent (repairs%s)" % (", upgrades" if t == 1 else ""), "-$" + _commas(int(sl["spent"])), BAD])
+		rows.append(["Purse now", "$" + _commas(int(sl.get("purse", Career.money(t)))), MAGENTA if t == 0 else Color.WHITE])
+		for rr in rows:
+			var a := _label(rr[0], fs - 1, Color(0.85, 0.88, 0.92))
+			a.add_theme_font_override("font", BODY_B)
+			a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ledger.add_child(a)
+			var b := _disp(rr[1], fs + 1, rr[2], false)
+			b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			ledger.add_child(b)
 		for nline in sl.get("news", []):
 			v.add_child(_label(String(nline), fs - 3, DIM))
 
@@ -2558,7 +2580,13 @@ func open_celebration(g: Game) -> void:
 
 ## Money earned on the play just run: a gold coin chip under the scorebug, "+$250 Touchdown",
 ## that rises and fades, with a clink, and the purse total.
+func refresh_purse() -> void:
+	if _purse_l != null:
+		_chip_text(_purse_l, ("Purse $" + _commas(Career.money(0))) if Career.loaded and not Career.exhibition() else "")
+
+
 func coin_alert(items: Array) -> void:
+	refresh_purse()
 	var total := 0
 	var what: Array = []
 	for it in items:
