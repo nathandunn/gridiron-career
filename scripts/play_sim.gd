@@ -2628,8 +2628,9 @@ func _drive_defense_pre(p: P) -> void:
 		it = {"rush": "rush", "blitz": "blitz", "man": "cover_man", "zone": "drop_zone", "spy": "spy"}.get(k, "drop_zone")
 		if k == "rush" and bool(p.assign.get("contain", false)):
 			it = "contain"
-		# play action: an aggressive linebacker bites
-		if qb.mem.get("_faked", false) and t < 1.3 and p.group in ["LB", "S"] and p.mem.get("_bit", -1) == -1:
+		# play action: an aggressive linebacker in coverage bites (a blitzer is coming into the
+		# backfield anyway - he used to stop at the line and stand in front of the quarterback)
+		if qb.mem.get("_faked", false) and t < 1.3 and p.group in ["LB", "S"] and k not in ["blitz", "rush"] and p.mem.get("_bit", -1) == -1:
 			p.mem["_bit"] = 1 if rng.randf() < p.d("aggression") * 0.8 else 0
 			if p.mem["_bit"] == 1:
 				p.bitten_until = t + 0.9
