@@ -101,10 +101,44 @@ static func ensure() -> void:
 				data["money"][0] = maxi(int(data["money"][0]), STARTER_BUDGET)   # and a season starts with $2,000
 				save()
 			_give_defenses()
+			_undo_interrupted_game()
 			return
 	Robot.used_names = {}
 	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true, "parts_only": true}
 	_fresh_season()
+	save()
+
+
+## A game in progress isn't saved play by play. So at kickoff the purses and the robots are
+## noted; if the page is closed or reloaded before the final whistle, the career goes back to
+## exactly that - the game starts again from kickoff, and nothing earned, broken or bought in
+## the lost game sticks.
+static var interrupted := false
+const GAME_KEYS := ["money", "teams", "exhibition", "market"]
+
+
+static func begin_game() -> void:
+	var snap := {}
+	for k in GAME_KEYS:
+		if data.has(k):
+			snap[k] = (data[k] as Variant).duplicate(true) if (data[k] is Dictionary or data[k] is Array) else data[k]
+	data["in_game"] = snap
+	save()
+
+
+static func end_game() -> void:
+	if data.erase("in_game"):
+		save()
+
+
+static func _undo_interrupted_game() -> void:
+	if not data.has("in_game"):
+		return
+	var snap: Dictionary = data["in_game"]
+	for k in snap:
+		data[k] = snap[k]
+	data.erase("in_game")
+	interrupted = true
 	save()
 
 

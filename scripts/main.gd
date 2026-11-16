@@ -681,6 +681,9 @@ func _build_ui() -> void:
 	new_game(OS.get_cmdline_user_args().has("--autopick"))
 	if not OS.get_cmdline_user_args().has("--autopick") and not OS.get_cmdline_user_args().has("--nomenu"):
 		show_menu()
+		if Career.interrupted:
+			Career.interrupted = false
+			hud.toast("GAME RESET\nYour last game was cut short: back to kickoff, purse and robots as they were", 4.0)
 
 
 ## A phone's canvas is in device pixels: scale the 2D up so the text is readable.
@@ -728,6 +731,8 @@ func new_game(start := true) -> void:
 	game.setup(Team.build(0, coaches[0], picks[0], calling[0], defenses[0]), Team.build(1, coaches[1], picks[1], calling[1], defenses[1]), qlen, seed_v)
 	if Career.loaded:
 		game.set_meta("purse_start", [Career.money(0), Career.money(1)])    # for the pay card: started, earned, spent
+		if start and not Career.sim_mode():
+			Career.begin_game()      # a reload before the final whistle goes back to here
 	sim = null
 	_skip_drive = false
 	_seen_q = 0
@@ -1285,6 +1290,7 @@ func _next() -> void:
 		else:
 			hud.slips = Career.pay_game(g)     # the final whistle pays both sides
 			hud.season_lines = Career.finish_week(g)
+		Career.end_game()         # paid and counted: nothing to undo on a reload
 		hud.celebration_ready()
 		return
 	# a side the person calls: deal a hand of new plays and wait for the pick
