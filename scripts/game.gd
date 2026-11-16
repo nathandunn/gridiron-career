@@ -274,12 +274,13 @@ func next_snap(choice: Dictionary = {}) -> Dictionary:
 	if over:
 		return {"kind": "over"}
 	_track_ovr(false)
+	# a touchdown's try comes first - even when the clock ran out on the scoring play
+	if not try_due.is_empty():
+		return _do_try(String(choice.get("try", coach_try())))
 	if not kick_due.is_empty():
 		return _do_kickoff(String(choice.get("kickoff", coach_kick())))
 	if not return_due.is_empty():
 		return _return_snap(String(choice.get("return", coach_return())))
-	if not try_due.is_empty():
-		return _do_try(String(choice.get("try", coach_try())))
 	var oc: Coach = offense()["coach"]
 	var dc: Coach = defense().get("dcoach", defense()["coach"])
 	var od := _coach_call(oc, true, poss)
@@ -761,8 +762,9 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		drive["result"] = "return TD"
 		e["text"] = "%s: %s takes it ALL THE WAY - TOUCHDOWN! (%d yards)" % [nm, who, int(round(100.0 - catch_y))]
 		r["td"] = true
+		var tdt := _touchdown(team)
 		_tick(elapsed, true)
-		e["text"] += " " + _touchdown(team)
+		e["text"] += " " + tdt
 	else:
 		yl = clampf(spot, 1.0, 99.0)
 		down = 1
@@ -1125,8 +1127,7 @@ func _finish_xp(sim: PlaySim) -> Dictionary:
 		e["text"] = "%s's extra point is BLOCKED!" % who
 	else:
 		e["text"] = "%s's extra point is no good - %s." % [who, String(r.get("fg_how", "wide"))]
-	if not over:
-		e["text"] += " " + _kickoff(1 - kicker)
+	e["text"] += _after_try(kicker)
 	_log_play(e)
 	return e
 
@@ -1143,8 +1144,7 @@ func _finish_two(e: Dictionary, r: Dictionary, gain: float) -> Dictionary:
 		e["text"] += " The two-point try is GOOD!"
 	else:
 		e["text"] += " The two-point try fails."
-	if not over:
-		e["text"] += " " + _kickoff(1 - t)
+	e["text"] += _after_try(t)
 	_log_play(e)
 	return e
 
@@ -1266,8 +1266,9 @@ func finish(sim: PlaySim) -> Dictionary:
 		dst["td"] = int(dst["td"]) + 1
 		e["text"] += " Returned for a TOUCHDOWN!"
 		drive["result"] = "pick six"
+		var tdt := _touchdown(1 - team)
 		_tick(elapsed, true)
-		e["text"] += " " + _touchdown(1 - team)
+		e["text"] += " " + tdt
 	elif r["turnover"] != "":
 		st["turnovers"] = int(st["turnovers"]) + 1
 		if r["turnover"] == "int":
@@ -1296,8 +1297,9 @@ func finish(sim: PlaySim) -> Dictionary:
 		st["yards"] = float(st["yards"]) + gain
 		drive["yards"] = float(drive["yards"]) + gain
 		drive["result"] = "TD"
+		var tdt := _touchdown(team)
 		_tick(elapsed, true)
-		e["text"] += " " + _touchdown(team)
+		e["text"] += " " + tdt
 	else:
 		st["yards"] = float(st["yards"]) + gain
 		drive["yards"] = float(drive["yards"]) + gain
@@ -1455,6 +1457,41 @@ func _pts(t: int, n: int) -> void:
 		_say("%s win it in overtime! Final: %s %d, %s %d" % [teams[t]["name"], teams[0]["name"], score[0], teams[1]["name"], score[1]])
 
 
+var _half_kick := -1             # the second-half kickoff, waiting for a try at the end of the half
+var _reg_end_pending := false     # regulation is over but a try that matters is still to come
+
+
+## Regulation (or overtime) is done: tied -> sudden-death overtime, else the final whistle.
+func _end_regulation() -> void:
+	if quarter == 5 and score[0] == score[1]:
+		# tied after four: sudden-death overtime - a coin toss, a kickoff, next score wins
+		for t in 2:
+			line[t].append(0)
+		_kickoff(rng.randi() % 2)
+		_say("Tied at the end of regulation: OVERTIME. Sudden death - %s win the toss and receive; the next score wins." % teams[poss]["name"])
+		return
+	over = true
+	drive["result"] = drive.get("result", "") if drive.get("result", "") != "" else "end of game"
+	drives.append(drive)
+	_say("Final: %s %d, %s %d" % [teams[0]["name"], score[0], teams[1]["name"], score[1]])
+
+
+## After a try: the kickoff - the scorers kick, unless the half or regulation ran out on the
+## touchdown, in which case it's the second-half kickoff or the end of regulation.
+func _after_try(scorer: int) -> String:
+	if over:
+		return ""
+	if _reg_end_pending:
+		_reg_end_pending = false
+		_end_regulation()
+		return ""
+	if _half_kick >= 0:
+		var rcv := _half_kick
+		_half_kick = -1
+		return " Second half: " + _kickoff(rcv)
+	return " " + _kickoff(1 - scorer)
+
+
 func _tick(secs: float, _stops: bool) -> void:
 	if over:
 		return
@@ -1467,20 +1504,19 @@ func _tick(secs: float, _stops: bool) -> void:
 		quarter += 1
 		clock = qlen
 		if quarter == 3:
-			# second half: the other side receives
-			_kickoff(1 - opened)
-			_say("Second half. %s receive." % teams[poss]["name"])
-		elif quarter == 5 and score[0] == score[1]:
-			# tied after four: sudden-death overtime - a coin toss, a kickoff, next score wins
-			for t in 2:
-				line[t].append(0)
-			_kickoff(rng.randi() % 2)
-			_say("Tied at the end of regulation: OVERTIME. Sudden death - %s win the toss and receive; the next score wins." % teams[poss]["name"])
-		elif quarter > 4:
-			over = true
-			drive["result"] = drive.get("result", "") if drive.get("result", "") != "" else "end of game"
-			drives.append(drive)
-			_say("Final: %s %d, %s %d" % [teams[0]["name"], score[0], teams[1]["name"], score[1]])
+			# second half: the other side receives - after the try, if time ran out on a touchdown
+			if not try_due.is_empty():
+				_half_kick = 1 - opened
+			else:
+				_kickoff(1 - opened)
+				_say("Second half. %s receive." % teams[poss]["name"])
+		elif quarter == 5 and not try_due.is_empty() and absi(score[0] - score[1]) <= 2:
+			_reg_end_pending = true      # time is up but the try can still decide it: play it first
+		elif quarter == 5:
+			try_due = {}                 # a try that can't change who wins isn't played
+			_end_regulation()
+		elif quarter > 5:
+			_end_regulation()
 		else:
 			_say("End of quarter %d." % (quarter - 1))
 
