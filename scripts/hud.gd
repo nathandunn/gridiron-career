@@ -999,6 +999,16 @@ func _pregame_footer(box: Control, week := true) -> void:
 
 
 ## Your starters (and kickers) with a part lost or worn below half.
+## A "Roster" button up by Close: one tap from any robot's page back to his team.
+func _roster_btn(t: int) -> void:
+	if _close_btn == null or not is_instance_valid(_close_btn):
+		return
+	var rb := _button("Roster", func(): open_roster(t))
+	var head := _close_btn.get_parent()
+	head.add_child(rb)
+	head.move_child(rb, _close_btn.get_index())
+
+
 func _hurt_count() -> int:
 	var n := 0
 	var tm := Career.team(0)
@@ -3866,6 +3876,7 @@ func open_robot(id: String) -> void:
 	var box := _open("%s%s" % [Career.team(t)["name"], _purse()])
 	_pregame_footer(box)
 	_back = keep_back
+	_roster_btn(t)
 	var hero := PanelContainer.new()
 	var hsb := flat(Color(TEAM_COL[t].darkened(0.62), 1.0), 14)
 	hsb.bg_color = TEAM_COL[t].darkened(0.68)
@@ -4345,56 +4356,94 @@ func _parts_section(box: Control, r: Dictionary, id: String) -> void:
 ## Upgrade money: spend it yourself on the robot pages, or let the coach spend it.
 ## The coach's plan before he spends: each robot he would upgrade, which parts, what it does
 ## to his overall and what it costs; then buy it or go back.
-func _open_plan(t: int, purse: bool, focus: String, refresh: Callable) -> void:
-	var seed := randi() % 1000000 + 1
+func _open_plan(t: int, purse: bool, focus: String, refresh: Callable, seed := 0, dropped: Dictionary = {}) -> void:
+	if seed == 0:
+		seed = randi() % 1000000 + 1
 	var plan := Career.coach_plan(t, purse, 400, focus, seed)
 	var what := "the credit" if not purse else String(Career.FOCUS[focus]["label"])
 	var box := _open("Coach's plan: %s%s" % [what, _purse()])
 	if t == 0:
 		_pregame_footer(box)
+	_roster_btn(t)
 	var rows: Array = plan["rows"]
-	var cost := int(plan["cost"])
+	var kept: Array = []
+	for r in rows:
+		if not dropped.has(String(r["slot"])):
+			kept.append(r)
+	var cost := 0
+	var gain := 0
+	for r in kept:
+		cost += int(r["cost"])
+		gain += int(r["after"]) - int(r["before"])
 	var from_credit := mini(Career.credit(t), cost)
 	box.add_child(_label("He has $%d to spend%s. This would cost $%d%s, leaving $%d in the purse." % [int(plan["budget"]),
 		" (keeping $400 back)" if purse else "", cost, (" ($%d of it credit)" % from_credit) if from_credit > 0 else "",
 		Career.money(t) - (cost - from_credit)], fs, YELLOW))
 	if rows.is_empty():
 		box.add_child(_label("Nothing he can buy with that.", fs - 1, Color(0.85, 0.88, 0.92)))
-	var gain := 0
+	else:
+		box.add_child(_label("Untick a robot to leave him out, or buy him alone.", fs - 3, DIM))
+	var again := func(d: Dictionary) -> void: _open_plan(t, purse, focus, refresh, seed, d)
 	for r in rows:
-		gain += int(r["after"]) - int(r["before"])
+		var row_d: Dictionary = r
+		var sl := String(r["slot"])
+		var on := not dropped.has(sl)
 		var nm := String(r["name"])
 		var bits := nm.split(" ")
 		var short := ("%s. %s" % [bits[0].substr(0, 1), " ".join(bits.slice(1))]) if bits.size() > 1 else nm
 		var per := float(int(r["after"]) - int(r["before"])) * 100.0 / maxf(float(r["cost"]), 1.0)
 		var cd := _card(box)
+		if not on:
+			cd.get_parent().modulate.a = 0.45
 		var hr := HBoxContainer.new()
 		hr.add_theme_constant_override("separation", 8)
 		cd.add_child(hr)
-		var pb := _disp(String(r["slot"]), fs - 1, Color(0.45, 0.68, 1.0), false)
+		var tick := CheckBox.new()
+		tick.button_pressed = on
+		tick.focus_mode = Control.FOCUS_NONE
+		tick.toggled.connect(func(v: bool):
+			var d := dropped.duplicate()
+			if v:
+				d.erase(sl)
+			else:
+				d[sl] = true
+			again.call(d))
+		hr.add_child(tick)
+		var pb := _disp(sl, fs - 1, Color(0.45, 0.68, 1.0), false)
 		pb.custom_minimum_size.x = 40
 		hr.add_child(pb)
 		var nm2 := _label(short, fs, Color.WHITE)
 		nm2.add_theme_font_override("font", BODY_B)
 		nm2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		hr.add_child(nm2)
-		hr.add_child(_disp("%d → %d" % [int(r["before"]), int(r["after"])], fs + 3, GOOD, false))
-		hr.add_child(_disp("$%d" % int(r["cost"]), fs + 1, MAGENTA, false))
+		hr.add_child(_disp("%d → %d" % [int(r["before"]), int(r["after"])], fs + 3, GOOD if on else DIM, false))
+		hr.add_child(_disp("$%d" % int(r["cost"]), fs + 1, MAGENTA if on else DIM, false))
 		for pt in r["parts"]:
 			cd.add_child(_label(String(pt).replace(" -> ", " → "), fs - 3, DIM))
 		if not (r.get("gains", []) as Array).is_empty():
 			cd.add_child(_label(", ".join(r["gains"]) + "  ·  %.1f OVR per $100" % per, fs - 3, GOOD))
+		var one := _button("Buy just him  $%s" % _commas(int(r["cost"])), func():
+			var news := Career.buy_plan_rows(t, [row_d])
+			refresh.call()
+			toast("COACH %s" % String(news[0]).to_upper(), 2.4))
+		one.disabled = Career.credit(t) + Career.money(t) < int(r["cost"])
+		var orow := HBoxContainer.new()
+		orow.alignment = BoxContainer.ALIGNMENT_END
+		orow.add_child(one)
+		cd.add_child(orow)
 	if not rows.is_empty():
-		box.add_child(_label("In all: %d robots, %+d overall between them, $%d." % [rows.size(), gain, cost], fs - 1, CYAN))
+		box.add_child(_label("In all: %d of %d robots, %+d overall between them, $%d." % [kept.size(), rows.size(), gain, cost], fs - 1, CYAN))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 6)
 	box.add_child(row)
-	if not rows.is_empty():
-		var buy := _primary(_button("BUY IT  $%s" % _commas(cost), func():
-			var news := Career.coach_spend(t, purse, 400, focus, seed)
+	if not kept.is_empty():
+		var buy := _primary(_button(("BUY IT  $%s" if kept.size() == rows.size() else "BUY THESE  $%s") % _commas(cost), func():
+			var news := Career.buy_plan_rows(t, kept)
 			refresh.call()
-			toast("COACH %s" % String(news[0]).to_upper() if not news.is_empty() else "NOTHING TO BUY", 2.4)), fs + 2)
+			toast("COACH %s" % String(news[0]).to_upper(), 2.4)), fs + 2)
 		row.add_child(buy)
+	if not dropped.is_empty():
+		row.add_child(_button("Tick all", func(): again.call({})))
 	row.add_child(_button("Back", func(): refresh.call()))
 
 

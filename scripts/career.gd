@@ -1233,6 +1233,7 @@ static func value_upgrades(starters: Dictionary, specials: Dictionary, budget: i
 
 static func _plan_row(rows: Array, slot: String, was: Dictionary, now: Dictionary) -> void:
 	var parts: Array = []
+	var steps: Array = []
 	var cost := 0
 	for k in Robot.PARTS:
 		var a := String(Robot.ensure_parts(was)[k]["tier"])
@@ -1240,6 +1241,7 @@ static func _plan_row(rows: Array, slot: String, was: Dictionary, now: Dictionar
 		if a == b:
 			continue
 		parts.append("%s %s -> %s" % [String(Robot.PART_LABEL[k]).to_lower(), a, b])
+		steps.append({"k": k, "to": b})
 		var probe := {"parts": {k: {"tier": a, "hp": 1}}}
 		for guard in 5:
 			var nt := next_tier(probe, k)
@@ -1255,7 +1257,36 @@ static func _plan_row(rows: Array, slot: String, was: Dictionary, now: Dictionar
 		if d != 0:
 			gains.append("%s %+d" % [String(Robot.LABEL.get(rk, rk)).to_lower(), d])
 	rows.append({"slot": slot, "name": String(was.get("name", slot)), "before": Robot.overall_if(was, "now"),
-		"after": Robot.overall_if(now, "now"), "cost": cost, "parts": parts, "gains": gains})
+		"after": Robot.overall_if(now, "now"), "cost": cost, "parts": parts, "steps": steps, "gains": gains})
+
+
+## Buy some of a coach's plan: the rows kept (each a robot's parts, up to the tiers planned).
+## Credit goes first, as with any buy. Returns the news, as coach_spend does.
+static func buy_plan_rows(t: int, rows: Array) -> Array:
+	var news: Array = []
+	var spent := 0
+	var pot := credit(t) + money(t)
+	for row in rows:
+		var s := String(row["slot"])
+		var r: Dictionary = (team(t)["starters"] as Dictionary).get(s, (special(t) as Dictionary).get(s, {}))
+		if r.is_empty():
+			continue
+		for st in row.get("steps", []):
+			var k := String(st["k"])
+			var want := Robot.TIERS.find(String(st["to"]))
+			for guard in 6:
+				if Robot.TIERS.find(String(Robot.ensure_parts(r)[k]["tier"])) >= want:
+					break
+				if not buy_upgrade(t, r, k):
+					break
+			news.append("%s %s: %s %s" % [s, r["name"], Robot.ensure_parts(r)[k]["tier"], String(Robot.PART_LABEL[k]).to_lower()])
+	spent = pot - (credit(t) + money(t))
+	if credit(t) > 0 and credit(t) < 300:
+		add_money(t, credit(t))
+		data["credit"][t] = 0
+	news.push_front("spent $%d; purse now $%d" % [spent, money(t)])
+	save()
+	return news
 
 
 static func coach_spend(t: int, purse: bool, reserve := 400, focus := "", seed := 0) -> Array:
