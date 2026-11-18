@@ -982,7 +982,8 @@ func _pregame_footer(box: Control, week := true) -> void:
 	ko.pressed.connect(func():
 		if hurt > 0 and not armed[0]:
 			armed[0] = true
-			ko.text = "%d NEED REPAIR · TAP TO PLAY ANYWAY" % hurt
+			var hs := _hurt_slots()
+			ko.text = "%s NEED%s REPAIR · TAP TO PLAY ANYWAY" % [", ".join(hs.slice(0, 4)) + (" +%d" % (hs.size() - 4) if hs.size() > 4 else ""), "S" if hs.size() == 1 else ""]
 			ko.add_theme_font_size_override("font_size", fs)
 			var sb := flat(WARN, 11)
 			sb.border_color = Color(0.6, 0.38, 0.05)
@@ -1010,15 +1011,23 @@ func _roster_btn(t: int) -> void:
 
 
 func _hurt_count() -> int:
-	var n := 0
+	return _hurt_slots().size()
+
+
+## The slots of those robots (QB, K...), for the kick-off warning.
+func _hurt_slots() -> Array:
+	var out: Array = []
 	var tm := Career.team(0)
-	var who: Array = (tm["starters"] as Dictionary).values() + (Career.special(0) as Dictionary).values()
-	for r in who:
+	var d: Dictionary = (tm["starters"] as Dictionary).duplicate()
+	for s in Career.special(0):
+		d[s] = Career.special(0)[s]
+	for s in d:
+		var r = d[s]
 		if r is Dictionary and not (r as Dictionary).is_empty():
 			var cnd := Robot.condition(r)
 			if not Robot.lost_parts(r).is_empty() or float(cnd[0]) < float(cnd[1]) * 0.5:
-				n += 1
-	return n
+				out.append(s)
+	return out
 
 
 func _section(box: Control, text: String) -> void:
@@ -2878,6 +2887,9 @@ func _garage(box: Control, refresh: Callable) -> void:
 	var who: Array = []
 	for s in tm["starters"]:
 		who.append([tm["starters"][s], s])
+	for s in Career.special(0):        # the kicker and punter wear too
+		if not (Career.special(0)[s] as Dictionary).is_empty():
+			who.append([Career.special(0)[s], s])
 	for r0 in tm["bench"]:
 		who.append([r0, String(r0["group"])])
 	var hurt: Array = []
