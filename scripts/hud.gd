@@ -975,26 +975,45 @@ func _pregame_footer(box: Control, week := true) -> void:
 		var wb := _button("‹ Week", func(): open_next())
 		wb.custom_minimum_size = Vector2(96, 50)
 		f.add_child(wb)
-	# robots still hurt: the first tap asks, the second kicks off
-	var hurt := _hurt_count()
-	var armed := [false]
+	# robots still hurt: the first tap offers to fix them, or to kick off as they are
+	var hurt := [_hurt_count()]
 	var ko := _primary(_button("KICK OFF", func(): pass))
+	var wb_ref: Array = [f.get_child(0) if f.get_child_count() > 0 else null]
 	ko.pressed.connect(func():
-		if hurt > 0 and not armed[0]:
-			armed[0] = true
+		if hurt[0] > 0:
+			hurt[0] = 0
 			var hs := _hurt_slots()
-			ko.text = "%s NEED%s REPAIR · TAP TO PLAY ANYWAY" % [", ".join(hs.slice(0, 4)) + (" +%d" % (hs.size() - 4) if hs.size() > 4 else ""), "S" if hs.size() == 1 else ""]
-			ko.add_theme_font_size_override("font_size", fs)
-			var sb := flat(WARN, 11)
-			sb.border_color = Color(0.6, 0.38, 0.05)
-			sb.border_width_bottom = 4
+			var cost := _hurt_fix_cost()
+			if wb_ref[0] != null and is_instance_valid(wb_ref[0]):
+				(wb_ref[0] as Control).visible = false
+			ko.text = "Kick off without repair"
+			ko.add_theme_font_size_override("font_size", fs - 1)
+			var sb := flat(WARN.darkened(0.55), 11)
+			sb.border_color = WARN
+			sb.set_border_width_all(1)
 			for st in ["normal", "hover", "pressed", "hover_pressed"]:
 				ko.add_theme_stylebox_override(st, sb)
+			ko.add_theme_color_override("font_color", WARN)
+			ko.add_theme_color_override("font_hover_color", WARN)
+			var names := ", ".join(hs.slice(0, 3)) + (" +%d" % (hs.size() - 3) if hs.size() > 3 else "")
+			var fx := _button("REPAIR %s  $%s" % [names, _commas(cost)], func():
+				_fix_hurt()
+				open_next())
+			if Career.money(0) >= cost:
+				_primary(fx, fs)
+			else:
+				fx.disabled = true
+				fx.text = "REPAIR $%s (purse $%s)" % [_commas(cost), _commas(Career.money(0))]
+			fx.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			f.add_child(fx)
+			f.move_child(fx, ko.get_index())
 			return
 		if not Career.exhibition() and Career.season_over():
 			Career.next_season()
 		close_overlay(false)
 		main.new_game(true))
+	if OS.get_environment("ARM_KO") != "" and hurt[0] > 0:
+		ko.pressed.emit.call_deferred()
 	ko.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	f.add_child(ko)
 
@@ -1012,6 +1031,29 @@ func _roster_btn(t: int) -> void:
 
 func _hurt_count() -> int:
 	return _hurt_slots().size()
+
+
+## What fixing those robots costs (all their parts, as Fix does).
+func _hurt_fix_cost() -> int:
+	var c := 0
+	for r in _hurt_robots():
+		c += Career.fix_all_cost(r)
+	return c
+
+
+func _fix_hurt() -> void:
+	for r in _hurt_robots():
+		for k in Robot.PARTS:
+			if Career.fix_cost(r, k) > 0:
+				Career.buy_fix(0, r, k)
+
+
+func _hurt_robots() -> Array:
+	var tm := Career.team(0)
+	var out: Array = []
+	for s in _hurt_slots():
+		out.append((tm["starters"] as Dictionary).get(s, Career.special(0).get(s, {})))
+	return out
 
 
 ## The slots of those robots (QB, K...), for the kick-off warning.
