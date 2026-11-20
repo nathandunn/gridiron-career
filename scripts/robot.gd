@@ -90,6 +90,9 @@ static func unique_name(rng: RandomNumberGenerator) -> String:
 	return n2
 
 
+const START_ARMOR := 5
+
+
 static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String, mixed_parts := false) -> Dictionary:
 	var g: String = Play.SLOT_GROUP.get(slot, slot)
 	# a robot is the sum of his parts: every robot of a position starts from the same ratings
@@ -98,6 +101,11 @@ static func make(rng: RandomNumberGenerator, slot: String, number: int, id: Stri
 	var robot := {"id": id, "name": unique_name(rng),
 		"number": number, "slot": slot, "group": g, "ratings": r}
 	ensure_parts(robot)
+	# the back is hit on every carry: he comes with armour plating already bolted on (the same
+	# plating anyone can buy, +5 toughness a plate) - tougher, not unbreakable
+	if g == "RB" and START_ARMOR > 0:
+		robot["armor"] = START_ARMOR
+		reset_ratings(robot)
 	if mixed_parts:
 		# a drafted robot comes as he is: mostly Stock, some Junk, now and then something better
 		for k in PARTS:

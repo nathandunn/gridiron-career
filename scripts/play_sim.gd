@@ -179,10 +179,6 @@ const HURT := {
 const MASS := {"QB": 1.0, "RB": 1.0, "WR": 0.88, "TE": 1.15, "OL": 1.4, "DL": 1.35, "LB": 1.15, "CB": 0.88, "S": 1.0, "K": 0.85, "P": 0.85}
 const HURT_CHANCE := {"tackle": 0.3, "big_hit": 0.9, "sack": 0.7, "dive_tackle": 0.4, "pancake": 0.5,
 	"stiff_arm": 0.3, "miss": 0.25}
-## Built for contact: the back is hit on every carry, so he comes with a heavier frame - fewer
-## hits do him harm, and those that do bite less (tests/rb_wear_study.gd: without it he lost
-## ~2.7 parts a game, six times anyone else; with it about 0.6).
-const FRAME := {"RB": [0.45, 0.5]}
 const PART_ODDS := {"head": 0.18, "core": 0.1, "larm": 0.18, "rarm": 0.18, "lleg": 0.18, "rleg": 0.18}
 var fumble_forced := false
 var parts_lost: Array = []          # {idx, part} this play
@@ -199,12 +195,11 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	var tough := clampf(float(v.body.get("tough", 0.0)), -0.9, 1.2)
 	var impact := float(MASS.get(by.group, 1.0)) * (0.7 + 0.6 * float(by.body["power"])) * (2.0 + closing) \
 		/ (7.0 * sqrt(float(MASS.get(v.group, 1.0))))
-	var frame: Array = FRAME.get(v.group, [1.0, 1.0])
-	if rng.randf() > float(HURT_CHANCE.get(kind, 0.1)) * clampf(impact, 0.35, 2.2) * (1.0 - 0.35 * tough) * float(frame[0]):
+	if rng.randf() > float(HURT_CHANCE.get(kind, 0.1)) * clampf(impact, 0.35, 2.2) * (1.0 - 0.35 * tough):
 		return                       # shrugged it off
 	var parts: Dictionary = Robot.ensure_parts(v.robot)
 	var dmg := base * clampf(impact, 0.4, 2.5) * (1.0 - 0.5 * tough) * rng.randf_range(0.5, 1.6) \
-		* float(K.get("dmg_cal", 1.0)) * float(K.get("wear", 1.0)) * float(frame[1])
+		* float(K.get("dmg_cal", 1.0)) * float(K.get("wear", 1.0))
 	if kind == "big_hit" and rng.randf() < 0.08:
 		dmg *= 4.0                   # hit too hard: something gives
 	# which part takes it
