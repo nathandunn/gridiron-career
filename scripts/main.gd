@@ -221,6 +221,12 @@ func _ready() -> void:
 				game.return_due = {}
 				game.poss = 1
 				_open_picker("defense")
+			"offpick":
+				hud.close_overlay(false)
+				game.kick_due = {}
+				game.return_due = {}
+				game.poss = 0
+				_open_picker("offense")
 			"next": next_game()
 			"punt":
 				hud.close_overlay(false)

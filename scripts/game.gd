@@ -878,6 +878,26 @@ func coach_suggest(on_offense: bool, hand: Array) -> Dictionary:
 	return {"index": best, "call": want.name, "why": why, "grade": PlayStats.grade(want.name, need_yards(), not on_offense), "need": need_yards()}
 
 
+## A grade for any dealt card: the playbook play it is closest to, graded for this down and
+## distance (PlayStats keeps its numbers by playbook play). {} if none fits.
+func hand_grade(p: Play, on_offense: bool) -> Dictionary:
+	var g0 := PlayStats.grade(p.name, need_yards(), not on_offense)
+	if not g0.is_empty():
+		return g0
+	var fp := Play.features(p)
+	var best := ""
+	var best_d := INF
+	for nm in Library.plays_for("offense" if on_offense else "defense"):
+		var lp: Play = Library.play(nm)
+		if lp == null:
+			continue
+		var d := Play.feature_distance(fp, Play.features(lp))
+		if d < best_d:
+			best_d = d
+			best = nm
+	return PlayStats.grade(best, need_yards(), not on_offense) if best != "" else {}
+
+
 func _rule_text(c: Coach, on_offense: bool, line: int) -> String:
 	for rr in (c.offense_rules if on_offense else c.defense_rules):
 		if int(rr["line"]) == line:

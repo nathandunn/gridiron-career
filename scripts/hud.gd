@@ -1569,6 +1569,10 @@ func _save_generated(text: String) -> void:
 ## ---- calling your own plays ---------------------------------------------------------------
 
 ## A play card's look: a dark tile, gold-edged when it's the coach's pick.
+const GRADE_COL := {"A": Color(0.35, 0.86, 0.5), "B": Color(0.62, 0.86, 0.45), "C": Color(0.82, 0.84, 0.88),
+	"D": Color(0.96, 0.66, 0.25), "F": Color(0.95, 0.35, 0.35)}
+
+
 func _card_style(card: Button, gold: bool) -> void:
 	for st in ["normal", "hover", "pressed", "hover_pressed"]:
 		var sb := flat(SURF1 if st == "normal" else SURF2, 12, MAGENTA if gold else LINE, 2 if gold else 1)
@@ -1605,7 +1609,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 		if picked != String(coach.get("call", "")):
 			line += "  (he wanted %s)" % String(coach.get("call", ""))
 		if not gd.is_empty():
-			line += "  ·  %d%%  ·  grade %s" % [int(round(float(gd["p"]) * 100)), gd["grade"]]
+			# the card itself shows its grade; the line keeps to whose pick it is
 			var need := float(coach.get("need", 10.0))
 			why = "%s's rule: %s. The gold card is the closest to it in this hand.\n%s %d%% (±%d) to %s %d yards, #%d of %d in the playbook (best: %s %d%%, average %d%%)." % [
 				coach_name, String(coach.get("why", "-")), String(coach.get("call", "")), int(round(float(gd["p"]) * 100)), int(round(float(gd["margin"]) * 100)),
@@ -1677,7 +1681,19 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 		nmc.add_theme_constant_override("margin_left", 8)
 		nmc.add_theme_constant_override("margin_right", 8)
 		nmc.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		nmc.add_child(nl)
+		var nrow := HBoxContainer.new()
+		nrow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		nrow.add_theme_constant_override("separation", 6)
+		nl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		nrow.add_child(nl)
+		# its grade for this down and distance: the letter, and the chance it gets what you need
+		var gd2 := g.hand_grade(p, side == "offense")
+		if not gd2.is_empty():
+			var gl := _disp("%s %d%%" % [gd2["grade"], int(round(float(gd2["p"]) * 100))], fs + (2 if hero else 0),
+				GRADE_COL.get(String(gd2["grade"]), DIM), false)
+			gl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			nrow.add_child(gl)
+		nmc.add_child(nrow)
 		v.add_child(nmc)
 		var sl := _label(_play_subline(p), fs - 3, DIM)
 		sl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1719,7 +1735,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	box.add_child(row)
 	row.add_child(_button("Deal new plays", func(): main.redeal(side)))
 	row.add_child(_button("Box score", func(): show_stats(g, "live", {}, func(): open_picker(g, team, side, hand, coach))))
-	_help_head(box, "Reading the cards", "Offense: yellow is the ball carrier's path, light blue the routes, the blue line the line of scrimmage. Defense: shaded areas are zones, dashed lines man coverage, pink arrows blitzers. The % is the coach's chance this play gains what you need (or holds them under it), graded A to F against the whole playbook.")
+	_help_head(box, "Reading the cards", "Offense: yellow is the ball carrier's path, light blue the routes, the blue line the line of scrimmage. Defense: shaded areas are zones, dashed lines man coverage, pink arrows blitzers. Each card's letter and % : its chance to gain what you need (or hold them under it) on this down, graded A to F against the whole playbook (a new card is judged by the playbook play it is most like).")
 
 
 ## 4th down: the punt, as the first card in the hand.
