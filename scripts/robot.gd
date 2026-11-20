@@ -90,7 +90,7 @@ static func unique_name(rng: RandomNumberGenerator) -> String:
 	return n2
 
 
-const START_ARMOR := 5
+const START_ARMOR := 3
 
 
 static func make(rng: RandomNumberGenerator, slot: String, number: int, id: String, mixed_parts := false) -> Dictionary:
