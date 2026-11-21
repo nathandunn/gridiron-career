@@ -828,7 +828,8 @@ var _aud_hand: Array = []
 var _aud_side := ""
 var _aud_team := -1
 var _aud_ready := false
-const AUDIBLE_WINDOW := 2.6
+## How long (real seconds) the "Audible?" button stays up before the snap.
+const AUDIBLE_WINDOW := 1.0
 var _aud_look := 0.0
 
 
@@ -1396,8 +1397,9 @@ func _start_snap(snap: Dictionary) -> void:
 	if snap.has("audibles"):
 		_wait = maxf(_wait, 2.2)         # time to read the check
 	if _aud_ready:
-		# audibles on: every snap you call stops for the check (a moment to see both lined up first)
-		_aud_look = 0.7
+		# audibles on: a short window before the snap; press "Audible?" in it to check out of the call
+		_aud_look = AUDIBLE_WINDOW
+		hud.show_audible_button(true)
 
 
 func _process(delta: float) -> void:
@@ -1424,9 +1426,11 @@ func _process(delta: float) -> void:
 	match _phase:
 		"presnap":
 			if _aud_ready and _aud_look > 0.0:
+				# the snap waits out the window (real time, whatever the speed), then the chance is gone
 				_aud_look -= delta
 				if _aud_look <= 0.0:
-					audible_pressed()
+					_aud_ready = false
+					hud.show_audible_button(false)
 				return
 			_wait -= d
 			if _wait <= 0.0:
