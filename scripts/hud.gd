@@ -650,7 +650,7 @@ func _process(delta: float) -> void:
 var _bar: Control = null
 var _speed_btn: Button = null
 var _more: PanelContainer = null
-const SPEEDS := [1.0, 2.0, 4.0, 8.0]
+const SPEEDS := [1.0, 2.0, 4.0, 8.0, 0.5]   # ½x last: the old 1x pace, one tap round from 8x
 
 
 ## One of the five keys along the bottom: a glyph on a tile with its name under it.
@@ -763,7 +763,7 @@ func _toggle_more() -> void:
 
 func mark_speed(s: float) -> void:
 	if _speed_btn != null:
-		_speed_btn.text = "%dx" % int(s)
+		_speed_btn.text = "½x" if s < 1.0 else "%dx" % int(s)
 		_speed_btn.add_theme_color_override("font_color", MAGENTA if s > 1.0 else Color(0.94, 0.95, 0.97))
 
 
