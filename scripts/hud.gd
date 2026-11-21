@@ -533,7 +533,7 @@ func _banner_sound(head: String) -> void:
 
 
 func _bar_h() -> float:
-	return _bar.size.y if _bar != null and _bar.visible else 0.0
+	return maxf(_bar.size.y, _bar.get_combined_minimum_size().y) if _bar != null and _bar.visible else 0.0
 
 
 ## ---- play-by-play captions ----------------------------------------------------------------
@@ -690,6 +690,10 @@ func _build_controls() -> void:
 		v.add_child(l)
 		row.add_child(v)
 	_pause_btn = _key("II", "Pause", func(): main.toggle_pause())
+	# the bar stays up over a play-call panel; touching it there stops the game first
+	var hold := func() -> void:
+		if main._phase in main.WAITING and any_overlay() and not main.paused:
+			main.set_paused(true)
 	col.call(_pause_btn, "Pause")
 	_speed_btn = _key("1x", "Speed", func():
 		var i := 0
@@ -698,12 +702,16 @@ func _build_controls() -> void:
 				i = k
 		main.set_speed(SPEEDS[(i + 1) % SPEEDS.size()]))
 	col.call(_speed_btn, "Speed")
-	col.call(_key(">>", "Skip drive", func(): main.skip_drive()), "Skip drive")
+	col.call(_key(">>", "Skip drive", func():
+		hold.call()
+		main.skip_drive()), "Skip drive")
 	_aud_toggle = _key("A", "Audibles", func():
 		main.toggle_audibles()
 		_mark_aud())
 	col.call(_aud_toggle, "Audibles")
-	col.call(_key("...", "More", func(): _toggle_more()), "More")
+	col.call(_key("...", "More", func():
+		hold.call()
+		_toggle_more()), "More")
 	_build_more()
 	_mark_aud()
 	mark_speed(1.0)
@@ -761,6 +769,22 @@ func mark_speed(s: float) -> void:
 
 func mark_paused(p: bool) -> void:
 	_pause_btn.text = ">" if p else "II"
+	_pause_btn.add_theme_color_override("font_color", MAGENTA if p else Color(0.94, 0.95, 0.97))
+
+
+var _paused_lbl: Button = null
+
+
+## A big PAUSED over the field while play is stopped (tap it to play on).
+func show_paused(on: bool) -> void:
+	if _paused_lbl == null:
+		_paused_lbl = _primary(_button("PAUSED  ·  TAP TO PLAY", func(): main.set_paused(false)), fs + 6)
+		_root.add_child(_paused_lbl)
+	_paused_lbl.visible = on
+	if on:
+		_paused_lbl.reset_size()
+		var vp := get_viewport().get_visible_rect().size
+		_paused_lbl.position = Vector2((vp.x - _paused_lbl.size.x) * 0.5, vp.y * 0.45)
 
 
 func mark_view(v: String) -> void:
@@ -891,7 +915,14 @@ func _open(title: String) -> VBoxContainer:
 		top = _board.position.y + _board.get_combined_minimum_size().y + 8.0
 	pc.position = Vector2((vp.x - w) * 0.5, top)
 	pc.custom_minimum_size = Vector2(w, 0)
-	pc.size = Vector2(w, vp.y - top - 20.0)
+	var bottom := 20.0
+	if in_game and _bar != null:
+		# the control bar stays in reach under a play-call panel
+		bottom = _bar_h() + 18.0
+		_root.move_child(_bar, -1)
+		if _more != null:
+			_root.move_child(_more, -1)
+	pc.size = Vector2(w, vp.y - top - bottom)
 	dim.add_child(pc)
 	var outer := VBoxContainer.new()
 	pc.add_child(outer)
@@ -929,7 +960,13 @@ func _open(title: String) -> VBoxContainer:
 	box.add_theme_constant_override("separation", 8)
 	sc.add_child(box)
 	# the panel is as tall as what is in it, up to the screen; past that it scrolls
-	var refit := func() -> void: _fit_panel(pc, sc, box, vp.y - top - 20.0)
+	# by id, not by capture: a panel shut the moment it opened (pausing over it) is simply skipped
+	var ids := [pc.get_instance_id(), sc.get_instance_id(), box.get_instance_id()]
+	var h := vp.y - top - bottom
+	var refit := func() -> void:
+		var o: Array = ids.map(func(i): return instance_from_id(i))
+		if o.all(func(x): return x != null and is_instance_valid(x)):
+			_fit_panel(o[0], o[1], o[2], h)
 	box.minimum_size_changed.connect(refit)
 	refit.call_deferred()
 	main.overlay_changed(true)
@@ -1020,10 +1057,14 @@ func _pregame_footer(box: Control, week := true) -> void:
 
 ## Your starters (and kickers) with a part lost or worn below half.
 ## A "Roster" button up by Close: one tap from any robot's page back to his team.
-func _roster_btn(t: int) -> void:
+func _roster_btn(t: int, back := Callable()) -> void:
 	if _close_btn == null or not is_instance_valid(_close_btn):
 		return
-	var rb := _button("Roster", func(): open_roster(t))
+	var rb := _button("Roster", func():
+		open_roster(t)
+		if back.is_valid():
+			_back = back
+			_refresh_nav())
 	var head := _close_btn.get_parent()
 	head.add_child(rb)
 	head.move_child(rb, _close_btn.get_index())
@@ -1587,6 +1628,7 @@ func open_picker(g: Game, team: int, side: String, hand: Array, coach: Dictionar
 	# the clock and the down are on the scorebug, which stays up over this panel
 	var title: String = ("Call a play" if side == "offense" else "Call a defense") + " · " + String(Team.NAMES[team]) + " " + side
 	var box := _open(title)
+	_roster_btn(team, func(): main.resume_panel())
 	var vp := get_viewport().get_visible_rect().size
 	var inner := minf(vp.x - 16.0, 900.0) - 44.0
 	var cols := 2 if inner < 560.0 else 4
@@ -2099,8 +2141,10 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 				for k in g.calls[t]:
 					if not g.def_calls[t].has(k):
 						oc[k] = g.calls[t][k]
-				_calls_table(box, oc, "%s offense" % names[t], t)
-				_def_calls_table(box, g.def_calls[t], "%s defense" % names[t], t)
+				# cards dealt to you each have their own name: count them under the playbook play
+				# each is most like, so your table reads like the coach's
+				_calls_table(box, _like(oc, g.play_like), "%s offense" % names[t], t)
+				_def_calls_table(box, _like(g.def_calls[t], g.play_like), "%s defense" % names[t], t)
 		"drives":
 			_drives_table(box, g)
 		"rules":
@@ -2206,6 +2250,20 @@ func _standings_card(box: Control) -> void:
 
 ## A club's play calls as a table: play, times called, yards a call (green for good, red for bad).
 ## A club's defensive calls: times called, yards allowed a call (low is green), takeaways.
+func _like(calls: Dictionary, like: Dictionary) -> Dictionary:
+	var out := {}
+	for k in calls:
+		var key := ("like %s" % like[k]) if like.has(k) else String(k)
+		var a: Array = calls[k]
+		if not out.has(key):
+			out[key] = a.duplicate()
+		else:
+			var b: Array = out[key]
+			for i in mini(a.size(), b.size()):
+				b[i] = b[i] + a[i]
+	return out
+
+
 func _def_calls_table(box: Control, calls: Dictionary, name: String, t: int) -> void:
 	if calls.is_empty():
 		return

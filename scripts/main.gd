@@ -23,6 +23,7 @@ var _choice := {}                  # the person's picks for the coming snap
 const HAND := 8   # how each side picks plays: coach / random / generated
 var qlen := 300.0
 var speed := 1.0
+const SPEED_BASE := 2.0       # "1x" runs at what used to be 2x (Nathan: the old pace dragged)
 var paused := false
 var _acc := 0.0
 var _between := 0.0
@@ -227,6 +228,8 @@ func _ready() -> void:
 				game.return_due = {}
 				game.poss = 0
 				_open_picker("offense")
+				if args.has("pause"):       # pausing over the picker: it hides and says PAUSED
+					set_paused(true)
 			"next": next_game()
 			"punt":
 				hud.close_overlay(false)
@@ -826,11 +829,12 @@ var _aud_side := ""
 var _aud_team := -1
 var _aud_ready := false
 const AUDIBLE_WINDOW := 2.6
+var _aud_look := 0.0
 
 
 ## Is the person's side allowed an audible this snap (time on the clock, and they call plays)?
 func _offer_audible(snap: Dictionary) -> bool:
-	if not audibles_on() or not game.has_time():
+	if not audibles_on() or not game.has_time() or _skip_drive:
 		return false
 	var u := -1
 	for t in 2:
@@ -1131,8 +1135,22 @@ func resume_after_break() -> void:
 
 
 func toggle_pause() -> void:
-	paused = not paused
+	set_paused(not paused)
+
+
+## Paused says so on the field. Pausing over a panel the game is waiting on hides it; playing
+## on brings it back.
+func set_paused(p: bool) -> void:
+	paused = p
 	hud.mark_paused(paused)
+	if paused and _phase in WAITING and hud.any_overlay():
+		hud.close_overlay(false)
+	if not paused and _phase in WAITING and not hud.any_overlay():
+		resume_panel()
+	hud.show_paused(paused and not (_phase in WAITING))
+
+
+const WAITING := ["picking", "special", "qbreak", "injury", "pregame", "audible"]
 
 
 func set_speed(s: float) -> void:
@@ -1167,6 +1185,10 @@ func _resume_label() -> String:
 
 ## The waiting panel, back again (from the Resume button).
 func resume_panel() -> void:
+	if paused:
+		paused = false
+		hud.mark_paused(false)
+		hud.show_paused(false)
 	match _phase:
 		"picking":
 			hud.open_picker(game, _pick_team, _picking_side, _hand, _coach_hint)
@@ -1374,8 +1396,8 @@ func _start_snap(snap: Dictionary) -> void:
 	if snap.has("audibles"):
 		_wait = maxf(_wait, 2.2)         # time to read the check
 	if _aud_ready:
-		_wait = maxf(_wait, AUDIBLE_WINDOW)
-		hud.show_audible_button(true)
+		# audibles on: every snap you call stops for the check (a moment to see both lined up first)
+		_aud_look = 0.7
 
 
 func _process(delta: float) -> void:
@@ -1388,12 +1410,12 @@ func _process(delta: float) -> void:
 		_sim_end_step(delta)
 		return
 	# a panel that is waiting on you was closed: nothing happens until you come back to it
-	if _phase in ["picking", "special", "qbreak", "injury", "pregame", "audible"]:
-		hud.show_resume(not hud.any_overlay(), _resume_label())
+	if _phase in WAITING:
+		hud.show_resume(not hud.any_overlay(), ("PAUSED · " if paused else "") + _resume_label())
 		return
 	if paused or hud.any_overlay() and _phase != "over":
 		return
-	var d := delta * speed
+	var d := delta * speed * SPEED_BASE
 	if _slowmo > 0.0:
 		_slowmo -= delta
 		d *= 0.25
@@ -1401,6 +1423,11 @@ func _process(delta: float) -> void:
 		d = 1e9
 	match _phase:
 		"presnap":
+			if _aud_ready and _aud_look > 0.0:
+				_aud_look -= delta
+				if _aud_look <= 0.0:
+					audible_pressed()
+				return
 			_wait -= d
 			if _wait <= 0.0:
 				_phase = "live"

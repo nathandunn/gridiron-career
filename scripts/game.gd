@@ -28,6 +28,7 @@ var opened := 0                # who received the opening kick
 var log: Array = []            # one entry a snap or kick
 var stats := [{}, {}]
 var calls := [{}, {}]          # per team: play name -> [times, yards]
+var play_like := {}           # a dealt card's name -> the playbook play it is most like (for the review)
 var def_calls := [{}, {}]      # per team: its defensive calls -> [times, yards allowed]
 var kinds := [{"run": 0, "pass": 0}, {"run": 0, "pass": 0}]   # what each team has called on offense
 var last_call := ["", ""]
@@ -884,6 +885,12 @@ func hand_grade(p: Play, on_offense: bool) -> Dictionary:
 	var g0 := PlayStats.grade(p.name, need_yards(), not on_offense)
 	if not g0.is_empty():
 		return g0
+	var best := nearest_name(p, on_offense)
+	return PlayStats.grade(best, need_yards(), not on_offense) if best != "" else {}
+
+
+## The playbook play a card is most like (by shape: kind, routes, depth, run hole...).
+func nearest_name(p: Play, on_offense: bool) -> String:
 	var fp := Play.features(p)
 	var best := ""
 	var best_d := INF
@@ -895,7 +902,7 @@ func hand_grade(p: Play, on_offense: bool) -> Dictionary:
 		if d < best_d:
 			best_d = d
 			best = nm
-	return PlayStats.grade(best, need_yards(), not on_offense) if best != "" else {}
+	return best
 
 
 func _rule_text(c: Coach, on_offense: bool, line: int) -> String:
@@ -1248,6 +1255,11 @@ func finish(sim: PlaySim) -> Dictionary:
 	last_kind[team] = kind
 	last_call[team] = op.name
 	last_call[1 - team] = dp.name
+	for pp in [[op, true], [dp, false]]:
+		if Library.play((pp[0] as Play).name) == null and not play_like.has((pp[0] as Play).name):
+			var nn := nearest_name(pp[0], pp[1])
+			if nn != "":
+				play_like[(pp[0] as Play).name] = nn
 	var c: Array = calls[team].get(op.name, [0, 0.0])
 	calls[team][op.name] = [int(c[0]) + 1, float(c[1]) + (gain if r["turnover"] == "" else -20.0)]
 	var bk := bucket_of(op)
