@@ -611,6 +611,12 @@ func show_audible_button(on: bool) -> void:
 		_aud_btn.position = Vector2((vp.x - _aud_btn.size.x) * 0.5, vp.y * 0.62)
 
 
+## The window ticking down on the button, so it reads as the same one second at any speed.
+func audible_count(left: float) -> void:
+	if _aud_btn != null and _aud_btn.visible:
+		_aud_btn.text = "Audible?  %.1f" % maxf(left, 0.0)
+
+
 func show_resume(on: bool, text: String) -> void:
 	if _resume == null:
 		_resume = _button("", func(): main.resume_panel())
@@ -706,6 +712,8 @@ func _build_controls() -> void:
 		hold.call()
 		main.skip_drive()), "Skip drive")
 	_aud_toggle = _key("A", "Audibles", func():
+		if main.audible_key():
+			return
 		main.toggle_audibles()
 		_mark_aud())
 	col.call(_aud_toggle, "Audibles")
@@ -1897,6 +1905,8 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		var k: Dictionary = (g.teams[team].get("special", {}) as Dictionary).get("K", {})
 		var leg := Robot.eff(k, "leg") if not k.is_empty() else 60.0
 		var subs := {"deep": "%s, leg %d: as deep as he can - a touchback or a long return" % [_who_txt(k, "Your kicker"), int(leg)],
+			"deep_left": "Deep, at the left sideline: the boundary is an extra man - but a miss goes out of bounds (their 40)",
+			"deep_right": "Deep, at the right sideline: the boundary is an extra man - but a miss goes out of bounds (their 40)",
 			"squib": "Bounces to their 25-40. No long return; sometimes it squirts loose",
 			"onside": "Short and live: yours about 1 in 8, else they start near midfield"}
 		for c in Game.KICKS:
@@ -1906,10 +1916,12 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 		var ret := g._returner(team)
 		var who := _who_txt(ret, "Your returner")
 		var deep := String(rd.get("kind", "")) == "kickoff" and float(rd.get("catch", 0.0)) <= 0.0
-		var subs := {"middle": "%s takes it straight up behind the wedge" % who,
-			"left": "The wall sets up to the left; he bends it that way",
-			"right": "The wall sets up to the right; he bends it that way",
-			"fair": "Take a knee in the end zone: ball at the 25" if deep else "Fair catch: your ball where he catches it, no return"}
+		var subs := {"decide": "%s's call: knee it deep in the end zone, fair catch inside the 10 or with a man on him, else run it back" % who,
+			"middle": "Always return it: straight up behind the wedge",
+			"left": "Always return it: the wall sets up to the left",
+			"right": "Always return it: the wall sets up to the right",
+			"fair": "Take a knee in the end zone: ball at the 25" if deep else "Always fair catch: your ball where he catches it, no return",
+			"block": "Send all ten after the punter: a chance to block it, but nobody stays back to block for the return"}
 		box.add_child(_label("%s is coming: the ball comes down around the %s." % ["The kickoff" if String(rd.get("kind", "")) == "kickoff" else "The punt",
 			"end zone" if deep else g._spot_text(maxf(float(rd.get("catch", 20.0)), 1.0), team)], fs - 1, Color(0.85, 0.88, 0.92)))
 		box.move_child(box.get_child(box.get_child_count() - 1), grid.get_index())
@@ -1917,7 +1929,9 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 			box.get_child(grid.get_index() - 1).text = "%s is coming along the ground - field it on the bounce, then run it back." % ("An onside kick" if String(rd["ground"]) == "onside" else "A squib kick")
 		for c in Game.RETURNS:
 			# no fair catch on a ball along the ground, and nobody takes a knee in the end zone
-			if c == "fair" and (rd.has("ground") or deep):
+			if c == "fair" and rd.has("ground"):
+				continue
+			if c == "block" and String(rd.get("kind", "")) != "punt":
 				continue
 			var title := "Take a knee" if c == "fair" and deep else ("Fair catch" if c == "fair" else String(Game.RETURNS[c]))
 			grid.add_child(_text_card(cw, title, subs[c], c == coach_pick, func(): main.pick_made("return", c)))

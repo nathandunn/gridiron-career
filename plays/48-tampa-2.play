@@ -1,0 +1,13 @@
+play "Tampa 2"
+about "Cover 2 with the middle linebacker running to the deep hole between the safeties; corners squat in the flats."
+side defense
+kind zone
+front off
+DL: rush
+CB1: zone flat left
+CB2: zone flat right
+FS: zone deep half left
+SS: zone deep half right
+OLB1: zone hook left
+MLB: zone middle hole
+OLB2: zone hook right

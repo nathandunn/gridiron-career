@@ -34,7 +34,8 @@ const FRONTS := ["even", "press", "off", "goal line"]
 const ROUTES := ["go", "fade", "slant", "out", "in", "dig", "post", "corner", "hitch", "curl", "comeback", "flat", "seam", "drag", "cross", "wheel", "screen", "swing", "angle", "stop"]
 const GAPS := ["inside left", "inside right", "middle", "outside left", "outside right", "sweep left", "sweep right", "draw", "sneak"]
 const ZONES := ["deep third left", "deep third middle", "deep third right", "deep half left", "deep half right",
-	"deep middle", "flat left", "flat right", "hook left", "hook middle", "hook right", "curl left", "curl right", "robber"]
+	"deep middle", "flat left", "flat right", "hook left", "hook middle", "hook right", "curl left", "curl right", "robber",
+	"deep quarter 1", "deep quarter 2", "deep quarter 3", "deep quarter 4", "middle hole"]
 
 var name := ""
 var about := ""

@@ -1,0 +1,13 @@
+play "Cover 4"
+about "Quarters: four deep, three under. The safeties read the slot men and help on the outside receivers."
+side defense
+kind zone
+front off
+DL: rush
+OLB1: zone curl left
+MLB: zone hook middle
+OLB2: zone curl right
+CB1: zone deep quarter 1
+FS: zone deep quarter 2
+SS: zone deep quarter 3
+CB2: zone deep quarter 4

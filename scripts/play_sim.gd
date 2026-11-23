@@ -51,12 +51,16 @@ const DEFENSE_SPOTS := {
 }
 const ZONE_SPOT := {
 	"deep third left": [Vector2(-16, 15), 9.0], "deep third middle": [Vector2(0, 16), 9.0], "deep third right": [Vector2(16, 15), 9.0],
-	"deep half left": [Vector2(-11, 15), 11.0], "deep half right": [Vector2(11, 15), 11.0], "deep middle": [Vector2(0, 16), 12.0],
+	"deep half left": [Vector2(-12, 15), 11.0], "deep half right": [Vector2(12, 15), 11.0], "deep middle": [Vector2(0, 16), 12.0],
 	"flat left": [Vector2(-15, 4), 7.0], "flat right": [Vector2(15, 4), 7.0],
 	"hook left": [Vector2(-6, 7), 6.0], "hook middle": [Vector2(0, 8), 6.0], "hook right": [Vector2(6, 7), 6.0],
 	"curl left": [Vector2(-11, 9), 6.5], "curl right": [Vector2(11, 9), 6.5], "robber": [Vector2(0, 10), 7.0],
+	# quarters, left to right, and the Tampa 2 linebacker's deep hole between the safeties
+	"deep quarter 1": [Vector2(-17, 13), 7.0], "deep quarter 2": [Vector2(-6, 14), 7.0],
+	"deep quarter 3": [Vector2(6, 14), 7.0], "deep quarter 4": [Vector2(17, 13), 7.0], "middle hole": [Vector2(0, 13), 7.0],
 }
-const DEEP_ZONES := ["deep third left", "deep third middle", "deep third right", "deep half left", "deep half right", "deep middle"]
+const DEEP_ZONES := ["deep third left", "deep third middle", "deep third right", "deep half left", "deep half right", "deep middle",
+	"deep quarter 1", "deep quarter 2", "deep quarter 3", "deep quarter 4", "middle hole"]
 const GAP_X := {"inside left": -1.8, "inside right": 1.8, "middle": 0.0, "outside left": -4.8, "outside right": 4.8,
 	"sweep left": -7.5, "sweep right": 7.5, "draw": 0.0, "sneak": 0.0}
 
@@ -389,6 +393,20 @@ func _line_up() -> void:
 					var a: Vector2 = z[0]
 					p.zone_anchor = Vector2(clampf(ball_x * 0.5 + a.x, -SIDELINE + 3, SIDELINE - 3), minf(a.y, maxf(to_goal + 2.0, 3.0)))
 					p.zone_r = z[1]
+					var zn := String(p.assign["zone"])
+					if zn.begins_with("curl") or zn.begins_with("flat"):
+						# the outside underneath zones play off the formation: as wide as the widest
+						# receiver on that side (a curl man's job runs curl to flat)
+						var sg := signf(a.x)
+						var wide := 0.0
+						for o: P in off:
+							if o.group in ["WR", "TE"] and o.pos.x * sg > wide:
+								wide = o.pos.x * sg
+						var want := wide - (2.5 if zn.begins_with("flat") else 5.0)
+						if want > absf(p.zone_anchor.x):
+							p.zone_anchor.x = clampf(sg * want, -SIDELINE + 2, SIDELINE - 2)
+						if zn.begins_with("curl"):
+							p.zone_r = maxf(p.zone_r, 8.0)
 	# line up over the man you have, or toward your zone
 	for p: P in dfn:
 		if p.group == "DL" or def_play.align.has(p.slot):
@@ -405,8 +423,27 @@ func _line_up() -> void:
 				p.pos = Vector2(m.pos.x * 0.3 + ball_x * 0.7, 4.5)
 			else:
 				p.pos = Vector2(m.pos.x + inside * 1.0, minf(2.0 if press else depth, maxf(to_goal - 0.5, 1.0)))
+		elif String(p.assign.get("kind", "")) == "zone" and p.group == "CB" and String(p.assign.get("zone", "")).begins_with("flat"):
+			# a cover-2 corner rolls up on the outside man: jam him, then squat in the flat
+			var sg2 := signf(p.zone_anchor.x)
+			var wx2 := 0.0
+			for o: P in off:
+				if o.group in ["WR", "TE"] and o.pos.x * sg2 > wx2:
+					wx2 = o.pos.x * sg2
+			p.pos = Vector2(sg2 * maxf(wx2 - 1.0, 8.0), minf(2.0, maxf(to_goal - 0.5, 1.0)))
+		elif String(p.assign.get("kind", "")) == "zone" and p.group == "CB" and DEEP_ZONES.has(String(p.assign.get("zone", ""))):
+			# a deep-zone corner still lines up on the outside man, seven off, and bails from there
+			var sg := signf(p.zone_anchor.x) if absf(p.zone_anchor.x) > 1.0 else signf(p.pos.x)
+			var wx := 0.0
+			for o: P in off:
+				if o.group in ["WR", "TE"] and o.pos.x * sg > wx:
+					wx = o.pos.x * sg
+			p.pos = Vector2(sg * maxf(wx - 1.0, 8.0), minf(7.0, maxf(to_goal - 0.5, 1.0)))
 		elif String(p.assign.get("kind", "")) == "zone" and p.group in ["S", "CB"]:
 			p.pos = p.pos.lerp(Vector2(p.zone_anchor.x, minf(p.zone_anchor.y - 3.0, maxf(to_goal, 2.0))), 0.6)
+		elif String(p.assign.get("kind", "")) == "zone" and (String(p.assign.get("zone", "")).begins_with("curl") or String(p.assign.get("zone", "")).begins_with("flat")):
+			# outside underneath: at the apex, between the end man on the line and the receiver
+			p.pos = p.pos.lerp(Vector2(p.zone_anchor.x * 0.8, minf(5.0, maxf(to_goal - 0.5, 1.0))), 0.7)
 		p.pos.x = clampf(p.pos.x, -SIDELINE + 0.8, SIDELINE - 0.8)
 		p.hist = [p.pos]
 	for p: P in off:
@@ -543,13 +580,13 @@ func step() -> void:
 ## A kick return opens with the kick: the ball comes down from `from` onto the returner (in the
 ## quarterback's spot) after `hang` seconds while the coverage runs down and his wall waits; then
 ## he runs it back - or, on a fair catch, the play ends where he catches it.
-func start_kick(from: Vector2, hang: float, fair := false, low := false) -> void:
+func start_kick(from: Vector2, hang: float, fair := false, low := false, decide := false) -> void:
 	var qb: P = by_slot["o:RB"]        # the returner
 	snapped = true
 	carry_slot = "RB"
 	carrier = null
 	ball_state = "air"
-	air = {"from": from, "to": qb.pos, "t0": t, "T": hang, "lob": not low, "dist": from.distance_to(qb.pos), "kick": true, "fair": fair}
+	air = {"from": from, "to": qb.pos, "t0": t, "T": hang, "lob": not low, "dist": from.distance_to(qb.pos), "kick": true, "fair": fair, "decide": decide}
 	air_target = qb
 	ball_pos = from
 	var lx := 1e9
@@ -578,7 +615,7 @@ func place_kicker(at: Vector2) -> void:
 ## spot in front of him may block it (why "punt_blocked"); otherwise it goes up and the return
 ## is played as usual.
 var punt := {}
-func start_punt(hang: float, fair := false, low := false, mode := "return", side := 1.0) -> void:
+func start_punt(hang: float, fair := false, low := false, mode := "return", side := 1.0, block := false, decide := false) -> void:
 	snapped = true
 	carrier = null
 	ball_state = "punt"
@@ -586,7 +623,8 @@ func start_punt(hang: float, fair := false, low := false, mode := "return", side
 	if pp != null:
 		pp.pos = Vector2(0.0, 13.5)
 		pp.vel = Vector2.ZERO
-	punt = {"kick_t": t + 1.9, "hang": hang, "fair": fair, "low": low, "spot": Vector2(0.0, 12.6), "mode": mode, "side": side}
+	punt = {"kick_t": t + 1.9, "hang": hang, "fair": fair, "low": low, "spot": Vector2(0.0, 12.6), "mode": mode, "side": side,
+		"block": block, "decide": decide}
 	air = {"kick": true, "punting": true}
 	ball_pos = Vector2(0.0, 13.5)
 	ball_h = 0.6
@@ -602,8 +640,9 @@ func _drive_punt(p: P) -> void:
 		# the coverage holds its ground in front of the nearest rusher
 		var best: P = null
 		var bd := 4.0
+		var pick_up: Array = ["LT", "LG", "C", "RG", "RT"] if not bool(punt.get("block", false)) else ["LT", "LG", "C", "RG", "RT", "TE", "WR1", "WR2", "WR3", "QB"]
 		for o: P in off:
-			if o.slot in ["LT", "LG", "C", "RG", "RT"] and o.pos.distance_to(p.pos) < bd:
+			if o.slot in pick_up and o.pos.distance_to(p.pos) < bd:
 				bd = o.pos.distance_to(p.pos)
 				best = o
 		if best != null:
@@ -614,7 +653,11 @@ func _drive_punt(p: P) -> void:
 	if p.slot == "RB":
 		_set_want(p, Vector2.ZERO)
 		return
-	if p.slot in (["LG", "C", "RG"] if float(K.get("punt_rush5", 0.0)) <= 0.0 else ["LT", "LG", "C", "RG", "RT"]):
+	var rushers := ["LG", "C", "RG"] if float(K.get("punt_rush5", 0.0)) <= 0.0 else ["LT", "LG", "C", "RG", "RT"]
+	if bool(punt.get("block", false)):
+		# the block call: all ten come after the punter - nobody stays back to hold up the coverage
+		rushers = ["LT", "LG", "C", "RG", "RT", "TE", "WR1", "WR2", "WR3", "QB"]
+	if p.slot in rushers:
 		# the rush: at the spot, held up by any man in the way
 		var held := false
 		for d: P in dfn:
@@ -639,6 +682,9 @@ func _kick_punt() -> void:
 			bd = d
 			best = o
 	var reach := float(K.get("punt_block_r", 1.6))
+	if bool(punt.get("block", false)):
+		# ten coming, the punter hurries and kicks it lower: the ball is there to be got at
+		reach = float(K.get("punt_block_r_all", 4.6))
 	var p_block := 0.0
 	if best != null and bd < reach:
 		p_block = (1.0 - bd / reach) * 0.7 * (0.6 + 0.6 * float(best.body.get("agility", 0.5)))
@@ -665,7 +711,9 @@ func _kick_punt() -> void:
 		_fx("kick", pp, null, land)
 		punt = {}
 		return
-	start_kick(from, float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]))
+	var blk := bool(punt.get("block", false))
+	start_kick(from, float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]), bool(punt.get("decide", false)) or blk)
+	air["after_block"] = blk
 	punt = {}
 
 
@@ -1602,9 +1650,12 @@ func _zone_threat(p: P) -> P:
 			continue
 		var fut := _predict(r, 0.5)
 		var d := fut.distance_to(p.zone_anchor)
-		if d > p.zone_r * (1.0 + 0.6 * (1.0 - p.d("discipline"))):
+		if d > p.zone_r * float(K.get("zone_reach", 1.35)) * (1.0 + 0.6 * (1.0 - p.d("discipline"))):
 			continue
 		var s := -d + (fut.y * 0.6 if deep else 0.0)
+		if not deep and String(p.assign["zone"]).begins_with("curl"):
+			# curl-to-flat: whoever comes out to the flat is his first - the deep curl can wait
+			s -= maxf(fut.y, 0.0) * 0.6
 		if s > bs:
 			bs = s
 			best = r
@@ -2743,8 +2794,21 @@ func _cover_zone(p: P) -> void:
 			aim.x = lerpf(anchor.x, fut.x, w)
 			# (a step or two over the top of him - not five yards, which gives him everything underneath)
 			aim.y = maxf(anchor.y - 2.0 * (1.0 - p.d("discipline")), fut.y + 1.0 + 1.0 * p.d("discipline"))
+			if p.group == "CB":
+				# a deep-third corner keeps a cushion on his man rather than running to a spot:
+				# he gives ground as the man comes, and sits on anything short in front of him
+				var cush := float(K.get("zone_cushion", 3.5)) + 1.5 * (1.0 - p.d("aggression"))
+				aim = Vector2(lerpf(anchor.x, fut.x, 0.8), clampf(fut.y + cush, 4.0, maxf(anchor.y, fut.y + 1.5)))
 		else:
-			aim = aim + Vector2(0, 0.8)
+			# pattern match: a man in my area is mine until he leaves it - I play him almost like
+			# man, underneath and inside him (between him and the quarterback), not from my spot
+			var wm := float(K.get("zone_match", 0.85))
+			var qp: P = by_slot.get("o:QB")
+			var qpos := qp.pos if qp != null else Vector2(ball_x, -5.0)
+			aim = anchor.lerp(fut, wm) + (qpos - fut).normalized() * 1.0 + Vector2(0, 0.4)
+			# underneath men wall off and pass the deep man on; they don't run with him
+			# (a cover-2 corner sinks with a vertical outside man until the safety gets there)
+			aim.y = minf(aim.y, anchor.y + (9.0 if p.group == "CB" else 4.0))
 	var frac := 0.85 if p.pos.distance_to(aim) > 4.0 else 1.0
 	_plant_if_past(p, aim)
 	_toward(p, aim, frac, 0.5)
@@ -3484,7 +3548,17 @@ func _arrive() -> void:
 		handoff_t = t
 		_say("fielded by the returner")
 		_fx("catch", rr, null, rr.pos)
-		if air.get("fair", false):
+		var fair_now: bool = air.get("fair", false)
+		if not fair_now and air.get("decide", false):
+			# his own call as it comes down: a man on him already - wave it, take the catch
+			# after an all-out block try nobody is back to hold up the coverage: he waves it sooner
+			var gap := float(K.get("fair_gap", 2.0)) * (2.2 if bool(air.get("after_block", false)) else 1.0)
+			for e: P in dfn:
+				if not e.down and e.pos.distance_to(rr.pos) < gap:
+					fair_now = true
+					_say("he waves for the fair catch")
+					break
+		if fair_now:
 			_end("fair", rr.pos)
 		return
 	var to: Vector2 = air["to"]

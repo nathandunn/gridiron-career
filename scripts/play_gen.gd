@@ -241,7 +241,7 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 	if rng.randf() < 0.45:
 		jobs["DE1"] = "rush contain"
 		jobs["DE2"] = "rush contain"
-	var families := ["cover1", "cover1", "cover2", "cover2man", "cover3", "cover3", "cover0", "firezone"]
+	var families := ["cover1", "cover1", "cover2", "cover2man", "cover3", "cover3", "cover0", "firezone", "cover4", "tampa2", "cornerfire"]
 	var fam: String = families[rng.randi() % families.size()]
 	var lbs := _shuffle(rng, ["OLB1", "MLB", "OLB2"])
 	var about := ""
@@ -312,6 +312,35 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 			# a lineman drops out into the flat in place of a blitzer
 			jobs["DE1" if rng.randf() < 0.5 else "DE2"] = "zone flat left" if rng.randf() < 0.5 else "zone flat right"
 			about = "Fire zone: linebackers blitz, a lineman drops, three deep behind it"
+		"cover4":
+			jobs["CB1"] = "zone deep quarter 1"
+			jobs["FS"] = "zone deep quarter 2"
+			jobs["SS"] = "zone deep quarter 3"
+			jobs["CB2"] = "zone deep quarter 4"
+			jobs["OLB1"] = "zone curl left"
+			jobs["MLB"] = "zone hook middle"
+			jobs["OLB2"] = "zone curl right"
+			about = "Cover 4: quarters, four deep and three under"
+		"tampa2":
+			jobs["CB1"] = "zone flat left"
+			jobs["CB2"] = "zone flat right"
+			jobs["FS"] = "zone deep half left"
+			jobs["SS"] = "zone deep half right"
+			jobs["OLB1"] = "zone hook left"
+			jobs["MLB"] = "zone middle hole"
+			jobs["OLB2"] = "zone hook right"
+			about = "Tampa 2: two deep, the middle linebacker runs the deep hole"
+		"cornerfire":
+			kind = "blitz"
+			var c := "CB1" if rng.randf() < 0.5 else "CB2"
+			jobs[c] = "blitz"
+			jobs["SS"] = "zone deep third left" if c == "CB1" else "zone deep third right"
+			jobs["CB2" if c == "CB1" else "CB1"] = "zone deep third right" if c == "CB1" else "zone deep third left"
+			jobs["FS"] = "zone deep third middle"
+			jobs["OLB1"] = "zone curl left"
+			jobs["MLB"] = "zone hook middle"
+			jobs["OLB2"] = "zone curl right"
+			about = "Corner fire: a corner blitzes, a safety rotates to his deep third"
 	var front := "press" if (kind == "man" or kind == "blitz") and rng.randf() < 0.6 else ("even" if rng.randf() < 0.3 else "off")
 	lines.append("kind " + kind)
 	lines.append("front " + front)
@@ -328,8 +357,9 @@ static func defense(rng: RandomNumberGenerator) -> Dictionary:
 ## returner) waits `depth` yards back where it will come down. On a punt his ten line up on the
 ## line against the punting team; on a kickoff they stand in three lines between him and the
 ## kicking team. The kicking side's eleven cover from the line. {off, def} Plays.
-static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, call := "middle", kind := "punt") -> Dictionary:
-	var lines: Array[String] = ["formation shotgun", "RB at 0 %s" % _f(-depth)]
+static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, call := "middle", kind := "punt", land_x := 0.0) -> Dictionary:
+	# land_x: where across the field the ball comes down (a kick aimed at a sideline)
+	var lines: Array[String] = ["formation shotgun", "RB at %s %s" % [_f(land_x), _f(-depth)]]
 	var lane := 0.0
 	match call:
 		"left":
@@ -367,17 +397,25 @@ static func kick_return(rng: RandomNumberGenerator, depth := 40.0, gap := 1.0, c
 		wall["WR1"] = Vector2(-6.0, -depth * 0.78)
 		wall["WR2"] = Vector2(6.0, -depth * 0.78)
 	for s in wall:
-		lines.append("%s at %s %s" % [s, _f(wall[s].x + (lane * 0.3 if kind != "punt" else 0.0) + rng.randf_range(-1.0, 1.0)), _f(wall[s].y)])
+		var wy: float = wall[s].y
+		var wx: float = wall[s].x + (lane * 0.3 if kind != "punt" else 0.0) + rng.randf_range(-1.0, 1.0)
+		if kind == "kickoff" and land_x != 0.0:
+			# the wall slides over toward where it is coming down, more so the nearer to him
+			wx = clampf(wx + land_x * clampf(-wy / depth, 0.3, 0.9), -22.0, 22.0)
+		lines.append("%s at %s %s" % [s, _f(wx), _f(wy)])
 	lines.append("kind run")
 	for s in wall:
 		lines.append("%s: block" % s)
-	lines.append("RB: run at %s" % _f(lane))
+	lines.append("RB: run at %s" % _f(lane + (land_x * 0.5 if kind == "kickoff" else 0.0)))
 	var off := _finish("Return", "offense", "%s return up the %s" % ["Punt" if kind == "punt" else "Kick", "middle" if absf(lane) < 3.0 else ("left" if lane < 0 else "right")], lines)
 	var dl: Array[String] = ["kind blitz", "front off"]
 	var n := Play.DEFENSE_SLOTS.size()
 	for i in n:
 		var s: String = Play.DEFENSE_SLOTS[i]
 		var x := -21.0 + 42.0 * float(i) / float(n - 1) + rng.randf_range(-0.6, 0.6)
+		if land_x != 0.0:
+			# kicking it to a side: the coverage lines up squeezed toward it, the far side thin
+			x = clampf(x * 0.55 + land_x * 0.6, -22.0, 22.0)
 		dl.append("%s: blitz" % s)
 		dl.append("%s at %s %s" % [s, _f(x), _f(gap + rng.randf_range(0.0, 0.6))])
 	var dfn := _finish("Coverage", "defense", "Kick coverage", dl)

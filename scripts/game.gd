@@ -176,8 +176,9 @@ func _kickoff(receiver: int) -> String:
 	return text
 
 
-const KICKS := {"deep": "Deep kick", "squib": "Squib kick", "onside": "Onside kick"}
-const RETURNS := {"middle": "Return up the middle", "left": "Return left", "right": "Return right", "fair": "Fair catch"}
+const KICKS := {"deep": "Deep kick", "deep_left": "Deep kick left", "deep_right": "Deep kick right", "squib": "Squib kick", "onside": "Onside kick"}
+const RETURNS := {"decide": "Returner decides", "middle": "Return middle", "left": "Return left", "right": "Return right",
+	"fair": "Fair catch", "block": "Block the punt"}
 const PUNTS := {"punt": "Punt", "coffin": "Coffin corner", "pooch": "Pooch punt"}
 
 
@@ -187,17 +188,19 @@ func coach_kick() -> String:
 	var diff: int = score[kicker] - score[1 - kicker]
 	if quarter == 4 and clock < 180.0 and diff < 0 and diff >= -14:
 		return "onside"
-	return "deep"
+	var r := rng.randf()
+	return "deep" if r < 0.7 else ("deep_left" if r < 0.85 else "deep_right")
 
 
-## What the returning side's coach calls.
+## What the returning side's coach calls: mostly he leaves it to the returner; now and then on
+## a punt he sends everyone after the kick.
 func coach_return() -> String:
 	var rd := return_due
-	if String(rd.get("kind", "")) == "punt" and float(rd.get("catch", 50.0)) < 10.0:
-		return "fair"
 	if bool(rd.get("pooch", false)):
 		return "fair"
-	return ["middle", "middle", "left", "right"][rng.randi() % 4]
+	if String(rd.get("kind", "")) == "punt" and rng.randf() < 0.1:
+		return "block"
+	return "decide"
 
 
 func _do_kickoff(kind: String) -> Dictionary:
@@ -228,11 +231,24 @@ func _do_kickoff(kind: String) -> Dictionary:
 			text = "%s squibs it along the ground." % k
 			_new_drive()
 		_:
-			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback
+			# deep: further with a big leg; caught deep in the end zone, a knee is a touchback.
+			# Deep left or right: toward a sideline, so the returner has the boundary for an extra
+			# man - a little shorter, and an inaccurate kicker can put it out of bounds (their 40)
+			var aside := 0.0 if kind == "deep" else (-1.0 if kind == "deep_left" else 1.0)
 			var c := clampf(roundf(rng.randfn(3.0 - (leg - 60.0) * 0.2, 5.0)), -8.0, 15.0)
+			var acc := Robot.eff(_specialist(kicker, "K"), "accuracy") if not _specialist(kicker, "K").is_empty() else 60.0
+			if aside != 0.0 and rng.randf() < clampf(0.07 - (acc - 60.0) * 0.002, 0.01, 0.15):
+				text = "%s kicks it deep %s - and OUT OF BOUNDS. %s ball at their 40." % [k, "left" if aside < 0.0 else "right", who]
+				yl = 40.0
+				_new_drive()
+				var eo := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
+				_say(text)
+				_log_play(eo)
+				return eo
 			yl = maxf(c, 1.0)
-			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 4.4}
-			text = "%s kicks it deep." % k
+			return_due = {"kind": "kickoff", "kicker": kicker, "catch": c, "from_los": 65.0 - c, "back": 0.5, "hang": 4.4,
+				"x": aside * rng.randf_range(11.0, 15.0)}
+			text = "%s kicks it deep%s." % [k, "" if aside == 0.0 else (" left" if aside < 0.0 else " right")]
 			_new_drive()
 	var e := {"kind": "kickoff", "text": text, "call": KICKS.get(kind, kind)}
 	_say(text)
@@ -514,7 +530,7 @@ func make_sim() -> PlaySim:
 	var ctx := {"yl": yl, "down": down, "to_go": to_go, "ball_x": ball_x, "quarter": quarter, "clock": clock,
 		"score_diff": score[poss] - score[1 - poss],
 		# a play you called runs the way its card is drawn: only coaches' calls are flipped
-		"no_flip": calling_for(true) == "pick"}
+		"no_flip": calling_for(true) == "pick" or pending.has("return")}
 	var r := RandomNumberGenerator.new()
 	r.seed = rng.randi()
 	var off := offense()
@@ -553,11 +569,11 @@ func make_sim() -> PlaySim:
 	elif pending.has("return") and String(pending["return"].get("kind", "")) == "punt":
 		# a punt is played from the snap: the punter fourteen yards deep, the rush can block it
 		var pd: Dictionary = pending["return"]
-		sim.start_punt(float(pd.get("hang", 3.5)), bool(pd.get("fair", false)), bool(pd.get("low", false)), String(pd.get("mode", "return")), float(pd.get("side", 1.0)))
+		sim.start_punt(float(pd.get("hang", 3.5)), bool(pd.get("fair", false)), bool(pd.get("low", false)), String(pd.get("mode", "return")), float(pd.get("side", 1.0)), bool(pd.get("block", false)), bool(pd.get("decide", false)))
 	elif pending.has("return"):
 		var rd: Dictionary = pending["return"]
 		sim.place_kicker(Vector2(0.0, float(rd["from_y"]) + 1.2))
-		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)))
+		sim.start_kick(Vector2(0.0, float(rd["from_y"])), float(rd.get("hang", 3.5)), bool(rd.get("fair", false)), bool(rd.get("low", false)), bool(rd.get("decide", false)))
 	return sim
 
 
@@ -619,15 +635,28 @@ var return_due := {}       # set by a kickoff or punt that is fielded: the next 
 func _return_snap(call := "middle") -> Dictionary:
 	var rd := return_due
 	return_due = {}
-	if call == "fair" and (rd.has("ground") or (String(rd["kind"]) == "kickoff" and float(rd["catch"]) <= 0.0)):
-		call = "middle"            # no fair catch on a ball along the ground, and no knee in the end zone
+	var punt_k := String(rd["kind"]) == "punt"
+	if call == "block" and not punt_k:
+		call = "decide"
+	if call == "fair" and rd.has("ground"):
+		call = "middle"            # no fair catch on a ball along the ground
+	if call == "decide":
+		# the returner's own call: a knee deep in the end zone; inside his ten on a punt, a fair
+		# catch; otherwise he runs it back - unless the coverage is on him as it comes down
+		if not punt_k and float(rd["catch"]) <= -3.0 and not rd.has("ground"):
+			call = "fair"
+		elif punt_k and float(rd["catch"]) < 8.0:
+			call = "fair"
+		else:
+			rd["decide"] = true
+	rd["block"] = call == "block"
 	rd["call"] = call
 	rd["fair"] = call == "fair"
 	var catch_y := float(rd["catch"])
 	var depth := float(rd["from_los"])
 	var los := catch_y + depth
 	rd["from_y"] = minf(float(rd.get("back", 0.5)), 99.5 - los)
-	var kr := PlayGen.kick_return(rng, depth, 1.0, call, "punt" if String(rd["kind"]) == "punt" else ("onside" if String(rd.get("ground", "")) == "onside" else "kickoff"))
+	var kr := PlayGen.kick_return(rng, depth, 1.0, call, "punt" if String(rd["kind"]) == "punt" else ("onside" if String(rd.get("ground", "")) == "onside" else "kickoff"), float(rd.get("x", 0.0)))
 	yl = los
 	down = 1
 	to_go = 10.0
@@ -744,6 +773,8 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		who += " fields it on the bounce and"
 	if String(rd.get("call", "middle")) in ["left", "right"]:
 		nm += " (%s)" % rd["call"]
+	elif bool(rd.get("block", false)):
+		nm += " (after the block try)"
 	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
 	st["returns"] = int(st.get("returns", 0)) + 1
 	var e := {"kind": "play", "team": team, "off": nm, "def": "Coverage", "gain": ret_yds, "why": r["why"], "text": "",

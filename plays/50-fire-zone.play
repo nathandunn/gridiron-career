@@ -1,0 +1,16 @@
+play "Fire Zone"
+about "Two linebackers blitz, an end drops into the hook; three deep, three under behind five rushers."
+side defense
+kind blitz
+front even
+DE2: rush
+DT1: rush
+DT2: rush
+DE1: zone curl left
+OLB1: blitz
+MLB: blitz
+OLB2: zone hook middle
+SS: zone curl right
+CB1: zone deep third left
+FS: zone deep third middle
+CB2: zone deep third right

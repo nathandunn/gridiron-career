@@ -1,0 +1,13 @@
+play "Cover 2 Man"
+about "Man underneath, trailing every receiver, with two safeties over the top."
+side defense
+kind man
+front press
+DL: rush
+CB1: man WR1
+CB2: man WR2
+OLB1: man TE
+MLB: man RB
+OLB2: man WR3
+FS: zone deep half left
+SS: zone deep half right

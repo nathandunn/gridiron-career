@@ -285,7 +285,7 @@ func _ready() -> void:
 				game.kick_due = {"receiver": 1}
 				_open_special("kickoff", 0)
 			"retpick":
-				game.return_due = {"kind": "kickoff", "catch": -2.0}
+				game.return_due = {"kind": "kickoff", "catch": -2.0} if not args.has("punt") else {"kind": "punt", "catch": 22.0, "mode": "return"}
 				game.poss = 0
 				_open_special("return", 0)
 			"lab":
@@ -586,7 +586,7 @@ func pay_live_on() -> bool:
 	var cf := ConfigFile.new()
 	if cf.load(GFX_CFG) == OK and cf.has_section_key("pay", "live"):
 		return bool(cf.get_value("pay", "live"))
-	return true
+	return false      # default: the purse is paid after the game
 
 
 func set_pay_live(on: bool) -> void:
@@ -834,8 +834,8 @@ var _aud_look := 0.0
 
 
 ## Is the person's side allowed an audible this snap (time on the clock, and they call plays)?
-func _offer_audible(snap: Dictionary) -> bool:
-	if not audibles_on() or not game.has_time() or _skip_drive:
+func _offer_audible(snap: Dictionary, force := false) -> bool:
+	if (not audibles_on() and not force) or not game.has_time() or _skip_drive:
 		return false
 	var u := -1
 	for t in 2:
@@ -848,6 +848,22 @@ func _offer_audible(snap: Dictionary) -> bool:
 	_aud_snap = snap
 	_aud_hand = PlayGen.hand(game.rng, _aud_side, 3, game.to_go)
 	return not OS.get_cmdline_user_args().has("--autopick")
+
+
+var _last_snap := {}
+
+
+## The A key: before the snap it stops the play and opens the audible screen (whether or not
+## audibles are on); any other time it turns audibles on or off. True if it opened the screen.
+func audible_key() -> bool:
+	if _phase == "presnap" and not _last_snap.is_empty() and String(_last_snap.get("kind", "")) == "play" \
+			and not _last_snap.has("return") and not _last_snap.has("fg"):
+		if not _aud_ready:
+			_aud_ready = _offer_audible(_last_snap, true)
+		if _aud_ready:
+			audible_pressed()
+			return true
+	return false
 
 
 ## The "Audible?" button during the pre-snap pause: stop and show the audible screen.
@@ -1354,6 +1370,7 @@ func _next() -> void:
 	var poss_before := game.poss
 	var snap := game.next_snap(_choice)
 	_choice = {}
+	_last_snap = snap
 	_aud_ready = snap["kind"] == "play" and not snap.has("return") and not snap.has("fg") and _offer_audible(snap)
 	if snap["kind"] != "play":
 		hud.show_call("")
@@ -1428,6 +1445,7 @@ func _process(delta: float) -> void:
 			if _aud_ready and _aud_look > 0.0:
 				# the snap waits out the window (real time, whatever the speed), then the chance is gone
 				_aud_look -= delta
+				hud.audible_count(_aud_look)
 				if _aud_look <= 0.0:
 					_aud_ready = false
 					hud.show_audible_button(false)
