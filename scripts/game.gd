@@ -899,14 +899,32 @@ func coach_suggest(on_offense: bool, hand: Array) -> Dictionary:
 	for rr in (c.offense_rules if on_offense else c.defense_rules):
 		if int(rr["line"]) == int(d.get("line", -1)):
 			why = String(rr["text"])
+	# his rules pick what kind of play he wants (a run, a deep shot, a blitz...); from the cards
+	# of that kind he takes the one that grades best here - the shape only breaks ties, and if
+	# no card is of that kind, the nearest in shape
+	# only a rule of his that asks for a kind of play holds him to it; his usual mix (or "call the
+	# best play") just takes the best card in the hand
+	var strict := why != "nothing special: his usual mix" and not why.to_lower().contains("best")
 	var fw := Play.features(want)
 	var best := -1
-	var best_d := INF
+	var best_s := -INF
+	var close := -1
+	var close_d := INF
 	for i in hand.size():
-		var dist := Play.feature_distance(fw, Play.features(hand[i]["play"]))
-		if dist < best_d:
-			best_d = dist
+		var hp: Play = hand[i]["play"]
+		var dist := Play.feature_distance(fw, Play.features(hp))
+		if dist < close_d:
+			close_d = dist
+			close = i
+		if strict and hp.kind != want.kind:
+			continue
+		var gd := hand_grade(hp, on_offense)
+		var sc := (float(gd.get("p", 0.0)) if not gd.is_empty() else 0.0) - dist * 0.001
+		if sc > best_s:
+			best_s = sc
 			best = i
+	if best < 0:
+		best = close
 	return {"index": best, "call": want.name, "why": why, "grade": PlayStats.grade(want.name, need_yards(), not on_offense), "need": need_yards()}
 
 
