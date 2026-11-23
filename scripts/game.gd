@@ -645,8 +645,11 @@ func _return_snap(call := "middle") -> Dictionary:
 		# catch; otherwise he runs it back - unless the coverage is on him as it comes down
 		if not punt_k and float(rd["catch"]) <= -3.0 and not rd.has("ground"):
 			call = "fair"
-		elif punt_k and float(rd["catch"]) < 8.0:
+		elif punt_k and float(rd["catch"]) < 6.0:
+			# coming down inside his six it will likely bounce into the end zone: he lets it go
+			# for the touchback (the coverage may yet down it short of the goal line)
 			call = "fair"
+			rd["mode"] = "down"
 		else:
 			rd["decide"] = true
 	rd["block"] = call == "block"

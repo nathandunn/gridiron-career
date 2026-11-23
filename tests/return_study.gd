@@ -24,7 +24,7 @@ func _init() -> void:
 					else:
 						g.kick_due = {}
 						g.poss = 1
-						g.yl = 35.0
+						g.yl = float(OS.get_environment("YL")) if OS.get_environment("YL") != "" else 35.0
 						g.down = 4
 						g._punt("punt")
 						if String(g.return_due.get("mode", "return")) != "return":

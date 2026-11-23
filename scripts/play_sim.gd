@@ -714,6 +714,7 @@ func _kick_punt() -> void:
 	var blk := bool(punt.get("block", false))
 	start_kick(from, float(punt["hang"]), bool(punt["fair"]), bool(punt["low"]), bool(punt.get("decide", false)) or blk)
 	air["after_block"] = blk
+	air["punted"] = true
 	punt = {}
 
 
@@ -3485,7 +3486,7 @@ func _ball() -> void:
 				_end("punt_out", Vector2(signf(ball_pos.x) * SIDELINE, ball_pos.y))
 			else:
 				# it bounces on toward the goal line before the coverage gets a hand on it
-				var spot := ball_pos + Vector2(0, -rng.randf_range(0.0, 5.0))
+				var spot := ball_pos + Vector2(0, -rng.randf_range(2.0, 10.0))
 				ball_pos = spot
 				_end("punt_downed", spot)
 		return
@@ -3553,8 +3554,13 @@ func _arrive() -> void:
 			# his own call as it comes down: a man on him already - wave it, take the catch
 			# after an all-out block try nobody is back to hold up the coverage: he waves it sooner
 			var gap := float(K.get("fair_gap", 2.0)) * (2.2 if bool(air.get("after_block", false)) else 1.0)
+			# on a punt he reads the coverage as it comes down: if a man will be on him about as
+			# soon as he has it, he waves - no point catching it just to be flattened
+			var reach_t := float(K.get("fair_read_t", 1.0)) if bool(air.get("punted", false)) else 0.0
 			for e: P in dfn:
-				if not e.down and e.pos.distance_to(rr.pos) < gap:
+				var de := e.pos.distance_to(rr.pos)
+				var closing := e.vel.dot((rr.pos - e.pos).normalized())
+				if not e.down and (de < gap or (reach_t > 0.0 and closing > 1.0 and de / maxf(closing, 1.0) < reach_t)):
 					fair_now = true
 					_say("he waves for the fair catch")
 					break
