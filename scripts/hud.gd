@@ -2110,6 +2110,9 @@ func show_stats(g: Game, mode: String, snap: Dictionary = {}, back := Callable()
 		row.add_child(mb)
 	if row.get_child_count() == 0:
 		row.queue_free()
+	if mode == "quarter" and Career.loaded and _needs_fixing():
+		# a quarter break is the time to mend: anyone worn or missing a part, fix him here
+		_garage(box, func(): show_stats(g, mode, snap, back), "Repairs at the break")
 	# the tabs
 	var tab_list: Array = []
 	if mode == "final":
@@ -3011,7 +3014,16 @@ func open_next() -> void:
 
 
 ## Repairs: Fix everybody first (grey when the purse won't cover it), then each damaged robot.
-func _garage(box: Control, refresh: Callable) -> void:
+func _needs_fixing() -> bool:
+	var tm := Career.team(0)
+	var who: Array = (tm["starters"] as Dictionary).values() + (Career.special(0) as Dictionary).values() + (tm["bench"] as Array)
+	for r in who:
+		if r is Dictionary and not (r as Dictionary).is_empty() and (Career.fix_all_cost(r) > 0 or Career.restore_all_cost(r) > 0):
+			return true
+	return false
+
+
+func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 	var tm := Career.team(0)
 	var all_cost := 0
 	var who: Array = []
@@ -3031,7 +3043,7 @@ func _garage(box: Control, refresh: Callable) -> void:
 			hurt.append([w[0], w[1], c, rc])
 			all_cost += c
 			all_restore += rc
-	var gc := _card(box, "1 · Repairs", WARN if not hurt.is_empty() else GOOD, "Damage carries from game to game: a worn part plays weaker and comes off at 0, and the ! over a robot means a part is under half. Fix = where it's at: worn parts back to full at their tier (junk patched, still junk), lost parts replaced with stock. Restore = to original: a lost part, or a junk spare bolted on in a game, back as the tier he had (a Mk III arm comes back a Mk III). Restore costs more." if not hurt.is_empty() else "")
+	var gc := _card(box, head, WARN if not hurt.is_empty() else GOOD, "Damage carries from game to game: a worn part plays weaker and comes off at 0, and the ! over a robot means a part is under half. Fix = where it's at: worn parts back to full at their tier (junk patched, still junk), lost parts replaced with stock. Restore = to original: a lost part, or a junk spare bolted on in a game, back as the tier he had (a Mk III arm comes back a Mk III). Restore costs more." if not hurt.is_empty() else "")
 	if hurt.is_empty():
 		var ok := _label("All fit. Nothing to fix.", fs - 1, GOOD)
 		ok.add_theme_font_override("font", BODY_B)

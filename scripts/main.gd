@@ -147,6 +147,7 @@ func _ready() -> void:
 			"batch": run_batch(int(args.get("n", "3")))
 			"toast": hud.toast(String(args.get("text", "TURNOVER ON DOWNS\nBlue ball")).replace("|", "\n"), 5.0)
 			"stats": hud._stats_tab = String(args.get("tab", "team")); hud.show_stats(game, "live")
+			"qbreak": hud.show_stats(game, "quarter", {"q": 2})
 			"roster": hud.open_roster(0)
 			"plan": hud._open_plan(0, true, String(args.get("focus", "db")), func(): hud.open_roster(0))
 			"closepick": hud.close_overlay()
