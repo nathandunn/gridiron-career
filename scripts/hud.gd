@@ -1913,7 +1913,7 @@ func open_special(g: Game, team: int, kind: String, coach_pick: String) -> void:
 			grid.add_child(_text_card(cw, Game.KICKS[c], subs[c], c == coach_pick, func(): main.pick_made("kickoff", c)))
 	else:
 		var rd: Dictionary = g.return_due
-		var ret := g._returner(team)
+		var ret := g._returner(team, String(rd.get("kind", "")))
 		var who := _who_txt(ret, "Your returner")
 		var deep := String(rd.get("kind", "")) == "kickoff" and float(rd.get("catch", 0.0)) <= 0.0
 		var subs := {"decide": "%s's call: knee it deep in the end zone, fair catch inside the 10 or with a man on him, else run it back" % who,
@@ -3149,6 +3149,62 @@ func _plan_card(box: Control) -> void:
 	var cb := _button("Change", func(): open_teams(true))
 	cb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hr.add_child(cb)
+	if Career.loaded and not Career.exhibition():
+		for kind in ["kick", "punt"]:
+			_returner_pick(pc, kind)
+
+
+## Pick who returns kicks / punts: anyone healthy who can carry it (starters first, then the bench).
+func _returner_pick(box: Control, kind: String) -> void:
+	var tm := Career.team(0)
+	var cands: Array = []
+	for s in tm["starters"]:
+		var r: Dictionary = tm["starters"][s]
+		if String(r.get("group", "")) in ["RB", "WR", "CB", "S", "TE"]:
+			cands.append([r, s])
+	for b in tm["bench"]:
+		if String(b.get("group", "")) in ["RB", "WR", "CB", "S", "TE"]:
+			cands.append([b, "bench %s" % b["group"]])
+	var val := func(r: Dictionary) -> float:
+		return Robot.eff(r, "speed") + 0.4 * (Robot.eff(r, "hands") if Robot.keys(r).has("hands") else 50.0)
+	cands.sort_custom(func(a, b): return val.call(a[0]) > val.call(b[0]))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	box.add_child(row)
+	var l := _label("Kick returns" if kind == "kick" else "Punt returns", fs - 2, DIM)
+	l.custom_minimum_size.x = 104
+	row.add_child(l)
+	var ob := OptionButton.new()
+	ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ob.add_theme_font_size_override("font_size", fs - 2)
+	# the coach's man, the way the game picks him: a fast pair of hands, receivers first
+	var coach_nm := ""
+	var cbv := -1.0
+	for s in tm["starters"]:
+		var r: Dictionary = tm["starters"][s]
+		if String(r.get("group", "")) in ["RB", "WR", "CB"] and Robot.can_play(r):
+			var cv: float = val.call(r) + (25.0 if String(r["group"]) == "WR" else 0.0)
+			if cv > cbv:
+				cbv = cv
+				var nn := String(r["name"]).split(" ")
+				coach_nm = "%s. %s" % [nn[0].substr(0, 1), " ".join(nn.slice(1))]
+	ob.add_item("Coach's choice (%s)" % coach_nm if coach_nm != "" else "Coach's choice")
+	ob.set_item_metadata(0, "")
+	var cur := String((tm.get("returners", {}) as Dictionary).get(kind, ""))
+	for c in cands:
+		var r: Dictionary = c[0]
+		var nm := String(r["name"]).split(" ")
+		var hurt := "" if Robot.can_play(r) else "  (broken)"
+		ob.add_item("%s. %s (%s)  spd %d%s" % [nm[0].substr(0, 1), " ".join(nm.slice(1)), c[1], int(Robot.eff(r, "speed")), hurt])
+		ob.set_item_metadata(ob.item_count - 1, String(r["id"]))
+		if String(r["id"]) == cur:
+			ob.select(ob.item_count - 1)
+	ob.item_selected.connect(func(i: int):
+		var rr: Dictionary = tm.get("returners", {})
+		rr[kind] = String(ob.get_item_metadata(i))
+		tm["returners"] = rr
+		Career.save())
+	row.add_child(ob)
 
 
 func _market(box: Control, refresh: Callable) -> void:

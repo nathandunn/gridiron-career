@@ -150,7 +150,18 @@ func _return_stat(team: int, rob: Dictionary, kick: bool, yds: float, td: bool) 
 			_add(team, sl, p + "td")
 
 
-func _returner(t: int) -> Dictionary:
+## Who fields it: the man you named for kick or punt returns (if he can play), else the
+## coach's choice - the fastest pair of sure hands among the starters.
+func _returner(t: int, kind := "") -> Dictionary:
+	var want := String((teams[t].get("returners", {}) as Dictionary).get("kick" if kind == "kickoff" else "punt", "")) if kind != "" else ""
+	if want != "":
+		for r0 in (teams[t].get("roster", {}) as Dictionary).values() + (teams[t].get("bench", []) as Array):
+			if String(r0.get("id", "")) == want and Robot.can_play(r0):
+				return r0
+	return best_returner(t)
+
+
+func best_returner(t: int) -> Dictionary:
 	var best := {}
 	var bs := -1.0
 	var roster: Dictionary = teams[t].get("roster", {})
@@ -169,7 +180,7 @@ func _returner(t: int) -> Dictionary:
 
 ## How much better the returner is than the coverage (about -1..1).
 func _return_edge(receiver: int) -> float:
-	var ret := _returner(receiver)
+	var ret := _returner(receiver, String(return_due.get("kind", "")))
 	var rv := (Robot.eff(ret, "speed") - 60.0) / 40.0 if not ret.is_empty() else 0.0
 	var cov := 0.0
 	var n := 0
@@ -565,7 +576,7 @@ func make_sim() -> PlaySim:
 	if pending.has("return"):
 		# special teams: the returner and a return team, and the coverage, drawn from the bench
 		# and the starters who play special teams (not the quarterback or the linemen first)
-		var ret := _returner(poss)
+		var ret := _returner(poss, String((pending["return"] as Dictionary).get("kind", "")))
 		if off.has("roster") and not ret.is_empty():
 			off = off.duplicate()
 			off["roster"] = _special_unit(poss, "return", ret)
@@ -787,7 +798,7 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 			st["tb"] = int(st.get("tb", 0)) + 1
 		else:
 			st["fc"] = int(st.get("fc", 0)) + 1
-			var fsl := _slot_of(team, _returner(team))
+			var fsl := _slot_of(team, _returner(team, String(rd["kind"])))
 			if fsl != "":
 				_add(team, fsl, "fc")
 		yl = at
@@ -795,13 +806,13 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		to_go = 10.0
 		ball_x = 0.0
 		var e0 := {"kind": "play", "team": team, "off": "Return", "def": "Coverage", "gain": 0.0, "why": "fair", "return": true,
-			"text": "%s: %s, %s ball at the %s." % [what, _who(_returner(team), teams[team]["name"]), teams[team]["name"], _spot_text(yl, team)], "down": 1, "to_go": 10.0, "yl": at}
+			"text": "%s: %s, %s ball at the %s." % [what, _who(_returner(team, String(rd["kind"])), teams[team]["name"]), teams[team]["name"], _spot_text(yl, team)], "down": 1, "to_go": 10.0, "yl": at}
 		_tick(float(r["t"]), true)
 		e0["down_event"] = ""
 		_log_play(e0)
 		pending = {}
 		return e0
-	var who := _who(_returner(team), teams[team]["name"])
+	var who := _who(_returner(team, String(rd["kind"])), teams[team]["name"])
 	var nm := "Kick return" if String(rd["kind"]) == "kickoff" else "Punt return"
 	if rd.has("ground"):
 		# whoever fell on the bouncing ball runs it back
@@ -816,7 +827,7 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		nm += " (after the block try)"
 	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
 	st["returns"] = int(st.get("returns", 0)) + 1
-	var ret_rob := _returner(team)
+	var ret_rob := _returner(team, String(rd["kind"]))
 	if rd.has("ground"):
 		var fs2 := String((r["stat"] as Dictionary).get("fielder", ""))
 		if fs2 != "" and sim.by_slot.has("o:" + fs2):
