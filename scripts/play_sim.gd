@@ -2752,7 +2752,7 @@ func _cover_man(p: P) -> void:
 	var inside := signf(ball_x - seen.x) * 0.6
 	if m.pos.y > 12.0:
 		cushion = 0.6 + 0.8 * (1.0 - p.d("aggression"))
-	var aim := seen + seen_v * 0.25 + Vector2(inside, cushion)
+	var aim := seen + seen_v * 0.1 + Vector2(inside, cushion)
 	# off coverage: give ground, never come up to meet a man who is still coming at you
 	# (only to a man still running at speed: one slowing into his break is about to stop or
 	# come back, and backpedalling on carries the corner right past it)
@@ -2763,12 +2763,34 @@ func _cover_man(p: P) -> void:
 		# was a beat ago, so a sharp cut gains the receiver a step
 		var k0 := maxi(m.hist.size() - 1 - n - 3, 0)
 		var lag_v: Vector2 = (seen - (m.hist[k0] as Vector2)) / maxf(float(m.hist.size() - 1 - n - k0) * DT, DT)
-		aim = seen + lag_v * 0.45 + Vector2(inside * 0.6, 0.6)
+		# trail technique: on his hip, a half step behind - he follows the man, he doesn't
+		# guess where the man is going and run there first
+		aim = seen + lag_v * float(K.get("trail_lead", 0.12)) + Vector2(inside * 0.6, -0.4)
+		_peek(p)
 	if m.slot == "RB" and m.route.is_empty() and not handed:
 		# back stays in to block: sit on him / spy
 		aim = Vector2(m.pos.x, maxf(m.pos.y + 4.0, 3.0))
 	_plant_if_past(p, aim)
 	_toward(p, aim, 1.0, 0.3)
+
+
+## A trailing corner peeks back at the quarterback now and then. A smart one peeks more and
+## at the right moments (as the man breaks); while he looks he is a touch slower - and if the
+## ball goes up while he's looking, he sees it at once. Back turned, he finds it late.
+func _peek(p: P) -> void:
+	var iq := clampf((float(p.body.get("iq", 1.0)) - 0.6) / 0.8, 0.0, 1.0)
+	var until := float(p.mem.get("_peek_until", -1.0))
+	if t < until:
+		var qb: P = by_slot.get("o:QB")
+		if qb != null:
+			p.face = (qb.pos - p.pos).normalized()
+		p.vel *= 0.985
+		return
+	var next := float(p.mem.get("_peek_next", 0.0))
+	var breaking := p.cover != null and p.cover.vel.length() < 4.5     # his man is settling or cutting
+	if t >= next or (breaking and iq > 0.5 and t >= next - 0.4):
+		p.mem["_peek_until"] = t + 0.25 + 0.1 * iq
+		p.mem["_peek_next"] = t + lerpf(1.6, 0.7, iq) + rng.randf_range(0.0, 0.3)
 
 
 ## A defender carrying on past where he wants to be (his man cut, or stopped) plants and
@@ -2863,8 +2885,15 @@ func _forcing(p: P) -> bool:
 ## How long a defender takes to pick up a thrown ball and break on it: quicker with vision and
 ## IQ, quickest for one already jumping the route or playing the ball.
 func _ball_react(p: P) -> float:
-	if p.intent in ["play_ball", "jump_route"] or (p.cover != null and p.cover == air_target):
-		return 0.05            # jumping it, or on the very man it's thrown to: he reacts with him
+	if p.intent in ["play_ball", "jump_route"]:
+		return 0.05            # jumping it: he's already going
+	if p.cover != null and p.cover == air_target:
+		# on the very man it's thrown to: looking back as it went up, he has it at once; back
+		# turned, he reads it off his man's eyes and hands - quicker the smarter he is
+		if float(air["t0"]) <= float(p.mem.get("_peek_until", -1.0)) or p.pos.y < p.cover.pos.y - 1.0:
+			return 0.05
+		var iq := clampf((float(p.body.get("iq", 1.0)) - 0.6) / 0.8, 0.0, 1.0)
+		return clampf(float(K.get("trail_react", 0.32)) - 0.2 * iq, 0.08, 0.4)
 	return clampf(float(K.get("air_react", 0.3)) - 0.25 * p.d("vision"), 0.08, 0.5)
 
 
@@ -3427,7 +3456,7 @@ func _move_all() -> void:
 				acc *= float(K.get("plant", 1.6)) * (0.75 + 0.5 * float(p.body.get("agility", 0.5)))
 			p.vel = p.vel.move_toward(want, acc * DT * (2.5 if want.length() < p.vel.length() - 0.5 else 1.0))
 		p.pos += p.vel * DT
-		if p.vel.length() > 0.5:
+		if p.vel.length() > 0.5 and t >= float(p.mem.get("_peek_until", -1.0)):
 			p.face = p.face.slerp(p.vel.normalized(), 0.2)
 	# a blocker stays square in front of his man
 	for e: P in players:
