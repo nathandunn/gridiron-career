@@ -969,11 +969,13 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	for t in 2:
 		if game.score[t] > int(score_before[t]):
 			scorer_team = t
-	_call_result(e, r, who, other, scored, scorer_team)
+	# who brought him down: on the other side from the man with the ball
+	var tk := String(st.get("tackler_who", _name(1 - ball_t, String(st.get("tackler", ""))))) if st.has("tackler") and not r.get("sack", false) else ""
+	_call_result(e, r, who, other, scored, scorer_team, tk)
 
 
 ## The announcer's last word on the play, and the crowd.
-func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scored: int, poss_scored := -1) -> void:
+func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scored: int, poss_scored := -1, tackler := "") -> void:
 	if _skip_drive:
 		return
 	var gain := int(round(float(e.get("gain", 0.0))))
@@ -994,6 +996,8 @@ func _call_result(e: Dictionary, r: Dictionary, who: String, other: String, scor
 		big = false
 	else:
 		line = ("Gain of %d." % gain) if gain > 0 else (("Loss of %d." % -gain) if gain < 0 else "No gain.")
+		if tackler != "":
+			line += " Brought down by %s." % tackler
 		big = false
 		if String(e.get("down_event", "")) == "first_down":
 			line += " First down, %s!" % who

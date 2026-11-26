@@ -859,6 +859,8 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		to_go = minf(10.0, 100.0 - yl)
 		ball_x = clampf(float(r["x"]), -HASH, HASH)
 		e["text"] = "%s: %s brings it %s %d yards to the %s." % [nm, who, "back" if ret_yds >= 0.0 else "BACKWARDS", int(round(absf(ret_yds))), _spot_text(yl, team)]
+		if (r["stat"] as Dictionary).has("tackler_who"):
+			e["text"] = String(e["text"]).trim_suffix(".") + " (tackled by %s)." % String(r["stat"]["tackler_who"])
 		if ret_yds >= 20.0:
 			st["explosive"] = int(st["explosive"]) + 1
 		_tick(elapsed, true)
@@ -1710,6 +1712,9 @@ func _describe(sim: PlaySim, op: Play, dp: Play, gain: float) -> String:
 				s = "Complete to %s, %+d" % [who, yd]
 			else:
 				s = "%s runs, %+d" % [who, yd]
+			var tk := String((r["stat"] as Dictionary).get("tackler", ""))
+			if tk != "" and r["turnover"] == "" and String(r["why"]) == "tackle":
+				s += " (tackled by %s)" % String((r["stat"] as Dictionary).get("tackler_who", tk))
 	return "%s vs %s: %s" % [op.name, dp.name, s]
 
 

@@ -3847,6 +3847,8 @@ func _contacts() -> void:
 				fall -= 0.4
 			var spot := c.pos + Vector2(0, dir * maxf(fall, 0.0))
 			stat["tackler"] = e.slot
+			if not e.robot.is_empty():
+				stat["tackler_who"] = "%s #%d %s" % [e.slot, int(e.robot.get("number", 0)), e.robot.get("name", "")]
 			var is_sack := c.slot == "QB" and c.side == 0 and not handed and not thrown and c.pos.y < 0.0 and String(c.assign.get("kind", "")) == "pass"
 			_fx("sack" if is_sack else ("dive_tackle" if dive else ("big_hit" if e.manner.get("hit_hard", false) or (e.vel - c.vel).length() > 11.5 else "tackle")), e, c)
 			if fumble_forced or rng.randf() < pf:
