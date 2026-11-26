@@ -696,6 +696,9 @@ func _build_ui() -> void:
 	new_game(OS.get_cmdline_user_args().has("--autopick"))
 	if not OS.get_cmdline_user_args().has("--autopick") and not OS.get_cmdline_user_args().has("--nomenu"):
 		show_menu()
+		if Career.wiped != "":
+			hud.toast("NEW CAREER\n" + Career.wiped, 5.0)
+			Career.wiped = ""
 		if Career.interrupted:
 			Career.interrupted = false
 			hud.toast("GAME RESET\nYour last game was cut short: back to kickoff, purse and robots as they were", 4.0)

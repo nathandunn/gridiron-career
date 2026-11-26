@@ -2409,7 +2409,7 @@ func _line_score(box: Control, names: Array, line: Array, score: Array) -> void:
 
 ## Passing, rushing, receiving and defense for one side. `per` divides (games in a batch).
 func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, track: Dictionary = {}) -> void:
-	var v := func(slot: String, k: String) -> float: return float(ps[slot][k]) / float(per)
+	var v := func(slot: String, k: String) -> float: return float((ps[slot] as Dictionary).get(k, 0.0)) / float(per)
 	var fmt := func(x: float) -> String: return str(int(round(x))) if per == 1 else "%.1f" % x
 	_tbl_narrow = get_viewport().get_visible_rect().size.x < 520.0
 	var who := func(slot: String) -> String:
@@ -2435,6 +2435,9 @@ func _player_tables(box: Control, ps: Dictionary, per: int, team: Dictionary, tr
 			func(s): return [fmt.call(v.call(s, "car")), fmt.call(v.call(s, "ryd")), "%.1f" % (float(ps[s]["ryd"]) / maxf(float(ps[s]["car"]), 1.0)), fmt.call(v.call(s, "rtd")), str(int(round(float(ps[s]["rlong"]))))], "ryd"],
 		["Receiving", ["REC/TGT", "YDS", "AVG", "TD", "LNG"], func(s): return v.call(s, "tgt") > 0,
 			func(s): return ["%s/%s" % [fmt.call(v.call(s, "rec")), fmt.call(v.call(s, "tgt"))], fmt.call(v.call(s, "recyd")), "%.1f" % (float(ps[s]["recyd"]) / maxf(float(ps[s]["rec"]), 1.0)), fmt.call(v.call(s, "rectd")), str(int(round(float(ps[s]["reclong"]))))], "recyd"],
+		["Returns", ["KR", "YDS", "PR", "YDS", "FC", "LNG", "TD"], func(s): return v.call(s, "kr") + v.call(s, "pr") + v.call(s, "fc") > 0,
+			func(s): return [fmt.call(v.call(s, "kr")), fmt.call(v.call(s, "kryd")), fmt.call(v.call(s, "pr")), fmt.call(v.call(s, "pryd")), fmt.call(v.call(s, "fc")),
+				str(int(round(maxf(float(ps[s].get("krlong", 0.0)), float(ps[s].get("prlong", 0.0)))))), fmt.call(v.call(s, "krtd") + v.call(s, "prtd"))], "kryd"],
 		["Defense", ["TKL", "SK", "INT", "PBU", "BAT", "FF"], func(s): return Play.DEFENSE_SLOTS.has(s) and (v.call(s, "tkl") + v.call(s, "sack") + v.call(s, "dint") + v.call(s, "pbu") + v.call(s, "ff")) > 0,
 			func(s): return [fmt.call(v.call(s, "tkl")), fmt.call(v.call(s, "sack")), fmt.call(v.call(s, "dint")), fmt.call(v.call(s, "pbu")), fmt.call(v.call(s, "bat")), fmt.call(v.call(s, "ff"))], "tkl"],
 	]
@@ -3266,7 +3269,15 @@ func _box_score(box: Control, stats: Array, per: Array, names: Array) -> void:
 	rows.append(["Turnovers", "%.1f" % f.call(0, "turnovers"), "%.1f" % f.call(1, "turnovers")])
 	rows.append(["  interceptions thrown", "%.1f" % f.call(0, "ints"), "%.1f" % f.call(1, "ints")])
 	rows.append(["  fumbles lost", "%.1f" % f.call(0, "fumbles"), "%.1f" % f.call(1, "fumbles")])
-	rows.append(["Returns (yds)", "%.1f (%.0f)" % [f.call(0, "returns"), f.call(0, "ret_yds")], "%.1f (%.0f)" % [f.call(1, "returns"), f.call(1, "ret_yds")]])
+	var ret := func(t: int, p: String) -> String:
+		var n := float(stats[t].get(p, 0))
+		if n <= 0.0:
+			return "-"
+		return "%s-%s (%.1f, lng %d)" % [_whole("%.1f" % (n / float(per[t]))), _whole("%.0f" % (float(stats[t].get(p + "_yds", 0.0)) / float(per[t]))),
+			float(stats[t].get(p + "_yds", 0.0)) / n, int(stats[t].get(p + "_long", 0.0))]
+	rows.append(["Kick returns", ret.call(0, "kr"), ret.call(1, "kr")])
+	rows.append(["Punt returns", ret.call(0, "pr"), ret.call(1, "pr")])
+	rows.append(["Fair catches / touchbacks", "%s / %s" % [_whole("%.1f" % f.call(0, "fc")), _whole("%.1f" % f.call(0, "tb"))], "%s / %s" % [_whole("%.1f" % f.call(1, "fc")), _whole("%.1f" % f.call(1, "tb"))]])
 	rows.append(["3rd down", _rate(stats[0], "third_conv", "third_att"), _rate(stats[1], "third_conv", "third_att")])
 	rows.append(["Big plays (20+)", "%.1f" % f.call(0, "explosive"), "%.1f" % f.call(1, "explosive")])
 	rows.append(["Passes broken up (batted)", "%.1f (%.1f)" % [f.call(0, "pbu"), f.call(0, "bats")], "%.1f (%.1f)" % [f.call(1, "pbu"), f.call(1, "bats")]])

@@ -68,15 +68,48 @@ static func _parts_only() -> void:
 	save()
 
 
+## The save's schema. A save keeps across game updates as long as this number is the same:
+## new fields get filled in by the migrations below, nothing is lost. Raise it only when a
+## change can't be carried over (a field changes meaning, a constraint the old data breaks) -
+## then older saves are put aside (career.old.json) and a fresh career starts, with a banner.
+const SCHEMA := 2
+static var wiped := ""        # why the save on this device couldn't be kept ("" if it was)
+const PREV_PATH := "user://career.prev.json"
+const OLD_PATH := "user://career.old.json"
+
+
+static func _read(path: String) -> Variant:
+	if not FileAccess.file_exists(path):
+		return null
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return null
+	return JSON.parse_string(f.get_as_text())
+
+
+static func _put_aside(why: String) -> void:
+	if FileAccess.file_exists(PATH):
+		DirAccess.copy_absolute(PATH, OLD_PATH)
+	wiped = why
+
+
 static func ensure() -> void:
 	if loaded:
 		return
 	loaded = true
 	if FileAccess.file_exists(PATH):
-		var f := FileAccess.open(PATH, FileAccess.READ)
-		var parsed: Variant = JSON.parse_string(f.get_as_text())
+		var parsed: Variant = _read(PATH)
+		if not (parsed is Dictionary and (parsed as Dictionary).has("teams")):
+			# unreadable (a write cut off?): the save before it is kept for just this
+			parsed = _read(PREV_PATH)
+			if not (parsed is Dictionary and (parsed as Dictionary).has("teams")):
+				_put_aside("Your save couldn't be read, so a new career has started (the old file is kept).")
+		elif int((parsed as Dictionary).get("schema", SCHEMA)) != SCHEMA:
+			_put_aside("This version of the game can't use your old save, so a new career has started.")
+			parsed = null
 		if parsed is Dictionary and (parsed as Dictionary).has("teams"):
 			data = parsed
+			data["schema"] = SCHEMA
 			# there is one purse: any upgrade credit left from before goes into it
 			if data.has("credit"):
 				for t in 2:
@@ -104,7 +137,7 @@ static func ensure() -> void:
 			_undo_interrupted_game()
 			return
 	Robot.used_names = {}
-	data = {"version": 1, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true, "parts_only": true}
+	data = {"version": 1, "schema": SCHEMA, "fair": false, "teams": [new_team(0, -1, false), new_team(1, -1, false)], "starter_upgrades": true, "mode": "season", "pos_ratings": true, "parts_only": true}
 	_fresh_season()
 	save()
 
@@ -143,6 +176,9 @@ static func _undo_interrupted_game() -> void:
 
 
 static func save() -> void:
+	data["schema"] = SCHEMA
+	if FileAccess.file_exists(PATH):
+		DirAccess.copy_absolute(PATH, PREV_PATH)     # the last good save, in case this write is cut off
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(data))

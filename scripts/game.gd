@@ -123,6 +123,33 @@ func _leg(t: int, s: String) -> float:
 	return Robot.eff(r, "leg") if not r.is_empty() else 60.0
 
 
+## The roster slot of a robot of team t ("" if he isn't a starter).
+func _slot_of(t: int, rob: Dictionary) -> String:
+	var roster: Dictionary = teams[t].get("roster", {})
+	for s in roster:
+		if roster[s] == rob or (not rob.is_empty() and String((roster[s] as Dictionary).get("id", "-")) == String(rob.get("id", "+"))):
+			return s
+	return ""
+
+
+## Return numbers, for the team and the man: kr/pr count, yards, longest, touchdowns.
+func _return_stat(team: int, rob: Dictionary, kick: bool, yds: float, td: bool) -> void:
+	var st: Dictionary = stats[team]
+	var p := "kr" if kick else "pr"
+	st[p] = int(st.get(p, 0)) + 1
+	st[p + "_yds"] = float(st.get(p + "_yds", 0.0)) + yds
+	st[p + "_long"] = maxf(float(st.get(p + "_long", 0.0)), yds)
+	if td:
+		st[p + "_td"] = int(st.get(p + "_td", 0)) + 1
+	var sl := _slot_of(team, rob)
+	if sl != "":
+		_add(team, sl, p)
+		_add(team, sl, p + "yd", yds)
+		_long(team, sl, p + "long", yds)
+		if td:
+			_add(team, sl, p + "td")
+
+
 func _returner(t: int) -> Dictionary:
 	var best := {}
 	var bs := -1.0
@@ -720,6 +747,8 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		to_go = 10.0
 		ball_x = 0.0 if tb else clampf(float(r["x"]), -HASH, HASH)
 		var what := "Touchback" if tb else ("Out of bounds" if String(r["why"]) == "punt_out" else "Downed")
+		if tb:
+			st["tb"] = int(st.get("tb", 0)) + 1
 		var eo := {"kind": "play", "team": team, "off": "Punt", "def": "Coverage", "gain": 0.0, "why": String(r["why"]), "return": true,
 			"down": 1, "to_go": 10.0, "yl": yl, "text": "%s: %s ball %s." % [what, teams[team]["name"], _spot_text(yl, team)]}
 		_log_play(eo)
@@ -754,6 +783,13 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		var kick := String(rd["kind"]) == "kickoff"
 		var at := (25.0 if kick else 20.0) if catch_y <= 0.0 or spot <= 0.0 else catch_y
 		var what := ("Touchback" if catch_y <= 0.0 or spot <= 0.0 else "Fair catch")
+		if what == "Touchback":
+			st["tb"] = int(st.get("tb", 0)) + 1
+		else:
+			st["fc"] = int(st.get("fc", 0)) + 1
+			var fsl := _slot_of(team, _returner(team))
+			if fsl != "":
+				_add(team, fsl, "fc")
 		yl = at
 		down = 1
 		to_go = 10.0
@@ -780,6 +816,12 @@ func _finish_return(sim: PlaySim) -> Dictionary:
 		nm += " (after the block try)"
 	st["ret_yds"] = float(st.get("ret_yds", 0.0)) + ret_yds
 	st["returns"] = int(st.get("returns", 0)) + 1
+	var ret_rob := _returner(team)
+	if rd.has("ground"):
+		var fs2 := String((r["stat"] as Dictionary).get("fielder", ""))
+		if fs2 != "" and sim.by_slot.has("o:" + fs2):
+			ret_rob = sim.by_slot["o:" + fs2].robot
+	_return_stat(team, ret_rob, String(rd["kind"]) == "kickoff", ret_yds, r["turnover"] == "" and (bool(r["td"]) or spot >= 100.0))
 	var e := {"kind": "play", "team": team, "off": nm, "def": "Coverage", "gain": ret_yds, "why": r["why"], "text": "",
 		"down": 1, "to_go": 10.0, "yl": catch_y, "return": true}
 	down_event = ""
@@ -1442,7 +1484,8 @@ func _advance_down(gain: float, goal_to_go := false) -> void:
 
 ## The player box score.
 const PSTAT_KEYS := ["cmp", "att", "pyd", "ptd", "int", "sk", "skyd", "car", "ryd", "rtd", "rlong",
-	"tgt", "rec", "recyd", "rectd", "reclong", "tkl", "sack", "dint", "pbu", "bat", "ff", "fr", "mt", "dtd", "fum"]
+	"tgt", "rec", "recyd", "rectd", "reclong", "tkl", "sack", "dint", "pbu", "bat", "ff", "fr", "mt", "dtd", "fum",
+	"kr", "kryd", "krtd", "krlong", "pr", "pryd", "prtd", "prlong", "fc"]
 
 
 func _ps(t: int, slot: String) -> Dictionary:
