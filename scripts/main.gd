@@ -340,7 +340,6 @@ func _ready() -> void:
 				Robot.ensure_parts(Career.roster(0)["QB"])["larm"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["lleg"]["hp"] = 0
 				Robot.ensure_parts(Career.roster(0)["RB"])["head"]["hp"] = 0
-				game.broken.append({"team": 0, "slot": "QB", "part": "larm"})
 				hud.open_injuries(_broken_mine())
 			"robotclick":
 				# open a robot page from the roster, scroll down, tap a button: the page must stay put
@@ -730,7 +729,7 @@ func reopen_panel() -> Callable:
 ## your robots, the rival) until Kick off.
 func new_game(start := true) -> void:
 	_broke_seen = 0
-	just_broke = {}
+	_broke_bench = {}
 	hud.slips = []
 	hud.season_lines = []
 	hud.game_stars = {}
@@ -1016,41 +1015,45 @@ var played_on := {}        # robot id -> parts signature you chose to play on wi
 
 
 var _broke_seen := 0
-var just_broke := {}       # slot -> what he lost this play when it was put right at once (a QB's arm)
+var _broke_bench := {}     # id -> true: bench robots who broke playing on special teams
 
 
-## The robot at a slot of mine: a starter, or the kicker / punter.
+## The robot at a slot of mine: a starter, the kicker / punter, or "B:<id>" for a bench robot.
 func my_bot(slot: String) -> Dictionary:
+	if slot.begins_with("B:"):
+		for b in game.teams[0].get("bench", []):
+			if String(b.get("id", "")) == slot.substr(2):
+				return b
+		return {}
 	var ros: Dictionary = game.teams[0].get("roster", {})
 	if ros.has(slot):
 		return ros[slot]
 	return (game.teams[0].get("special", {}) as Dictionary).get(slot, {})
 
 
+## Everyone of mine with a part off - always my call what happens (nothing is put on for me).
 func _broken_mine() -> Array:
 	var out: Array = []
 	if game == null or not game.teams[0].has("roster") or bool(game.teams[0].get("fair", false)):
 		return out
-	var ros: Dictionary = game.teams[0]["roster"]
-	# whatever broke on my side since I last looked - even a part put right at once still gets
-	# the screen, so I can sit him if I like
+	# a bench robot can break on special teams: note him, he gets the screen too
 	while _broke_seen < game.broken.size():
 		var b: Dictionary = game.broken[_broke_seen]
 		_broke_seen += 1
-		if int(b.get("team", -1)) == 0:
-			just_broke[String(b["slot"])] = String(Robot.PART_LABEL.get(String(b["part"]), b["part"])).to_lower()
-	var qb_line := Career.qb_arms(ros)       # a QB's lost arm is replaced at once
-	if qb_line != "":
-		hud.caption(qb_line)
+		if int(b.get("team", -1)) == 0 and String(b.get("id", "")) != "":
+			_broke_bench[String(b["id"])] = true
 	var slots: Array = Play.OFFENSE_SLOTS + Play.DEFENSE_SLOTS + ["K", "P"]
+	for id in _broke_bench.keys():
+		if not my_bot("B:" + id).is_empty():
+			slots.append("B:" + id)
+		else:
+			_broke_bench.erase(id)
 	for s2 in slots:
 		var r := my_bot(s2)
 		if r.is_empty():
 			continue
 		var lost := Robot.lost_parts(r)
 		if lost.is_empty():
-			if just_broke.has(s2):
-				out.append(s2)
 			continue
 		if String(played_on.get(String(r["id"]), "")) == ",".join(lost) and Robot.can_play(r):
 			continue
@@ -1062,7 +1065,6 @@ func _broken_mine() -> Array:
 func injury_choice(slot: String, what: String) -> void:
 	var tm: Dictionary = game.teams[0]
 	var r := my_bot(slot)
-	just_broke.erase(slot)
 	if what.begins_with("sub:"):
 		Career.swap_any(tm["roster"] if (tm["roster"] as Dictionary).has(slot) else tm["special"], tm["bench"], slot, what.substr(4))
 	hud.refresh_purse.call_deferred()
@@ -1534,7 +1536,6 @@ func _process(delta: float) -> void:
 					if OS.get_cmdline_user_args().has("--autopick"):
 						# test hook: the coach decides for you
 						for s3 in _broken_mine():
-							just_broke.erase(s3)
 							if (game.teams[0]["roster"] as Dictionary).has(s3) and not Robot.lost_parts(my_bot(s3)).is_empty():
 								Career.coach_fix(game.teams[0]["roster"], game.teams[0].get("bench", []), s3)
 							elif not Robot.lost_parts(my_bot(s3)).is_empty():

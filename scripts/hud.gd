@@ -4322,26 +4322,6 @@ func open_injuries(slots: Array) -> void:
 	for s in slots:
 		var r: Dictionary = main.my_bot(s)
 		var lost := Robot.lost_parts(r)
-		if lost.is_empty():
-			# broke and was put right at once (a quarterback's arm): sit him, or keep him in
-			var cd0 := _card(box, "", WARN)
-			var hr0 := HBoxContainer.new()
-			hr0.add_theme_constant_override("separation", 8)
-			cd0.add_child(hr0)
-			var pb0 := _disp(s, fs, Color(0.45, 0.68, 1.0), false)
-			pb0.custom_minimum_size.x = 40
-			hr0.add_child(pb0)
-			var nv0 := VBoxContainer.new()
-			nv0.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			hr0.add_child(nv0)
-			var nl0 := _label("#%d %s" % [int(r["number"]), r["name"]], fs, Color.WHITE)
-			nl0.add_theme_font_override("font", BODY_B)
-			nv0.add_child(nl0)
-			nv0.add_child(_label("Lost his %s - a new stock one went on at once" % String(main.just_broke.get(s, "part")), fs - 2, WARN))
-			hr0.add_child(_disp("OVR %d" % Robot.overall_if(r, "now"), fs + 2, Color.WHITE, false))
-			choice.call(cd0, "Keep him in", Robot.overall_if(r, "now"), func(): main.injury_choice(s, "play_on"), true, true)
-			_bench_subs(cd0, tm, s, choice)
-			continue
 		var names: Array = lost.map(func(k): return String(Robot.PART_LABEL[k]).to_lower())
 		var junk_cost := 0
 		var stock_cost := 0
@@ -4361,7 +4341,7 @@ func open_injuries(slots: Array) -> void:
 		var hr := HBoxContainer.new()
 		hr.add_theme_constant_override("separation", 8)
 		cd.add_child(hr)
-		var pb := _disp(s, fs, Color(0.45, 0.68, 1.0), false)
+		var pb := _disp("BN" if s.begins_with("B:") else s, fs, Color(0.45, 0.68, 1.0), false)
 		pb.custom_minimum_size.x = 40
 		hr.add_child(pb)
 		var nv := VBoxContainer.new()
@@ -4410,6 +4390,8 @@ func open_injuries(slots: Array) -> void:
 
 
 func _bench_subs(cd: Control, tm: Dictionary, s: String, choice: Callable) -> void:
+	if s.begins_with("B:"):
+		return
 	var subs: Array = []
 	for b: Dictionary in tm.get("bench", []):
 		if Robot.can_play(b) and Career.fits(b, s):
