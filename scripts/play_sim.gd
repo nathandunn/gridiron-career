@@ -3939,6 +3939,12 @@ func _end(why: String, spot: Vector2) -> void:
 	if over:
 		return
 	over = true
+	# names for the men in the stat line, so the booth can say who
+	for pr in [["pbu_by", "d:", "pbu_who"], ["target", "o:", "target_who"]]:
+		if stat.has(pr[0]) and by_slot.has(String(pr[1]) + String(stat[pr[0]])):
+			var q: P = by_slot[String(pr[1]) + String(stat[pr[0]])]
+			if not q.robot.is_empty():
+				stat[pr[2]] = "%s #%d %s" % [q.slot, int(q.robot.get("number", 0)), q.robot.get("name", "")]
 	if ball_state != "dead":
 		ball_state = "dead"
 	var c := carrier

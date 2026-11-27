@@ -931,6 +931,9 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 	var gain := int(round(float(e.get("gain", 0.0))))
 	var yds := ("%d yards" % absi(gain)) if absi(gain) > 1 else ("%d yard" % absi(gain))
 	var thrown := bool(r.get("pass", false)) and not bool(r.get("incomplete", false)) and String(r.get("carrier", "")) != "QB"
+	# who brought him down (on the other side from the man with the ball), and who broke it up
+	var tk := String(st.get("tackler_who", _name(1 - ball_t, String(st.get("tackler", ""))))) if st.has("tackler") and not r.get("sack", false) else ""
+	var by := (" · tackled by " + tk) if tk != "" else ""
 	if r.has("fg"):
 		var kick := _name(off, "K")
 		if e.get("xp", false):
@@ -961,16 +964,27 @@ func _announce(e: Dictionary, poss_before: int, score_before: Array) -> void:
 		hud.toast("SACK!\n%s%s" % [_name(dfn, String(st.get("tackler", ""))) if st.has("tackler") else "", (" · " + yds + " lost") if gain < 0 else ""], 1.6)
 	elif gain >= 20:
 		# a big one gets the big banner (and the crowd), first down or not
-		hud.toast("BIG PLAY! +%d\n%s%s%s" % [gain, ball, (" from " + _name(off, "QB")) if thrown else "",
-			" · first down" if String(e.get("down_event", "")) == "first_down" else ""], 2.2)
+		hud.toast("BIG PLAY! +%d\n%s%s%s%s" % [gain, ball, (" from " + _name(off, "QB")) if thrown else "",
+			" · first down" if String(e.get("down_event", "")) == "first_down" else "", by], 2.2)
 	elif String(e.get("down_event", "")) == "first_down":
-		hud.toast("FIRST DOWN!\n%s · %s" % [ball, yds] if ball != "" else "FIRST DOWN!\n%s" % who, 1.4)
+		hud.toast(("FIRST DOWN!\n%s · %s%s" % [ball, yds, by]) if ball != "" else "FIRST DOWN!\n%s" % who, 1.6)
+	elif bool(r.get("incomplete", false)) and not r.has("two"):
+		# every play says who: the pass that fell, for whom, and who got a hand on it
+		var tgt := String(st.get("target_who", _name(off, String(st.get("target", "")))))
+		var pbu := String(st.get("pbu_who", _name(dfn, String(st.get("pbu_by", ""))))) if st.has("pbu_by") else ""
+		var how := String(r.get("why", "incomplete"))
+		hud.toast("%s\n%s%s" % ["BROKEN UP" if how == "broken up" else ("BATTED DOWN" if how == "batted down" else "INCOMPLETE"),
+			("for " + tgt) if tgt != "" else "", ((" · by " if tgt != "" else "by ") + pbu) if pbu != "" else ""], 1.4)
+	elif ball != "" and r.get("turnover", "") == "" and String(e.get("kind", "play")) == "play":
+		# an ordinary gain or loss: the man with it and the man who stopped him
+		var g_txt := ("GAIN OF %d" % gain) if gain > 0 else (("LOSS OF %d" % -gain) if gain < 0 else "NO GAIN")
+		if e.get("return", false):
+			g_txt = "FAIR CATCH" if String(e.get("why", "")) == "fair" else (("RETURN OF %d" % gain) if gain > 0 else "NO RETURN")
+		hud.toast("%s\n%s%s" % [g_txt, ball, by], 1.3)
 	var scorer_team := -1
 	for t in 2:
 		if game.score[t] > int(score_before[t]):
 			scorer_team = t
-	# who brought him down: on the other side from the man with the ball
-	var tk := String(st.get("tackler_who", _name(1 - ball_t, String(st.get("tackler", ""))))) if st.has("tackler") and not r.get("sack", false) else ""
 	_call_result(e, r, who, other, scored, scorer_team, tk)
 
 
