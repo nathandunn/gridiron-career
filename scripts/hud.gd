@@ -467,7 +467,8 @@ func toast(text: String, secs := 1.6) -> void:
 		print("BANNER ", text.replace("\n", " | "))
 	var lines := text.split("\n")
 	var head := String(lines[0])
-	var rest := " · ".join(lines.slice(1)) if lines.size() > 1 else ""
+	# every line after the tag is a line of the message (who had it / who stopped him)
+	var rest := "\n".join(lines.slice(1)) if lines.size() > 1 else ""
 	var vp := get_viewport().get_visible_rect().size
 	_ban_tag_l.text = head.to_upper() if head.length() <= 28 else head
 	var big := head.length() <= 28
@@ -482,6 +483,10 @@ func toast(text: String, secs := 1.6) -> void:
 	tsb.content_margin_bottom = 6
 	_ban_tag.add_theme_stylebox_override("panel", tsb)
 	_ban_msg_l.text = rest
+	# two lines (who had it / who stopped him): no clipping to one line, a touch smaller
+	var two := rest.contains("\n")
+	_ban_msg_l.clip_text = not two
+	_ban_msg_l.add_theme_font_size_override("font_size", fs - 2 if two else fs)
 	_ban_msg.visible = rest != ""
 	_ban_tag.size_flags_horizontal = Control.SIZE_EXPAND_FILL if rest == "" else Control.SIZE_FILL
 	_ban_tag_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER if rest == "" else HORIZONTAL_ALIGNMENT_LEFT
