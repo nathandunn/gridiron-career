@@ -189,6 +189,9 @@ var parts_lost: Array = []          # {idx, part} this play
 var hurt_ids: Array = []            # robots that took damage this play
 
 
+var plates_off: Array = []     # idx of each man who lost an armour plate this play
+
+
 func _hurt(v: P, by: P, base: float, kind: String) -> void:
 	if v.robot.is_empty() or float(K.get("wear", 1.0)) <= 0.0:
 		return                       # equal bodies (headless, Fair bodies) or wear switched off
@@ -221,6 +224,13 @@ func _hurt(v: P, by: P, base: float, kind: String) -> void:
 		dmg *= 1.3
 	part["hp"] = maxf(float(part["hp"]) - dmg, 0.0)
 	hurt_ids.append(String(v.robot.get("id", "")))
+	# a hard enough hit can tear a plate of armour off him (it has to be bolted back on)
+	if int(v.robot.get("armor", 0)) > 0 and rng.randf() < float(K.get("plate_off", 0.06)) * clampf(impact, 0.4, 2.0):
+		v.robot["armor"] = int(v.robot["armor"]) - 1
+		v.robot["armor_off"] = int(v.robot.get("armor_off", 0)) + 1
+		Robot.reset_ratings(v.robot)
+		plates_off.append(v.idx)
+		_say("%s loses a plate of armour" % v.slot)
 	if float(part["hp"]) > 0.0:
 		return
 	# it came off

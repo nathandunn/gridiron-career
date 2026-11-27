@@ -375,6 +375,11 @@ func _ready() -> void:
 							for c2 in ch.get_children():
 								print("    ", c2.get_class(), " ", (c2 as Control).get_combined_minimum_size().x, " ", c2.get("text") if c2.get("text") != null else "")
 			"robot":
+				if args.has("plates"):
+					var pr: Dictionary = Career.roster(0)["RB"]
+					pr["armor"] = int(pr.get("armor", 0)) - 2
+					pr["armor_off"] = 2
+					Robot.reset_ratings(pr)
 				var rr: Dictionary = Career.roster(0)[String(args.get("slot", "QB"))]
 				if args.has("upall"):        # check: upgrades show in his overall and ratings
 					Career.add_money(0, 50000)

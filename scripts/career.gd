@@ -720,7 +720,7 @@ static func restore_cost(robot: Dictionary, k: String) -> int:
 
 
 static func restore_all_cost(robot: Dictionary) -> int:
-	var c := 0
+	var c := plates_cost(robot)
 	for k in Robot.PARTS:
 		c += restore_cost(robot, k)
 	return c
@@ -762,10 +762,44 @@ static func buy_restore(t: int, robot: Dictionary, k: String) -> bool:
 
 
 static func fix_all_cost(robot: Dictionary) -> int:
-	var c := 0
+	var c := plates_cost(robot)
 	for k in Robot.PARTS:
 		c += fix_cost(robot, k)
 	return c
+
+
+## Armour torn off in games: each plate bolted back on at 70% of a new plate's price.
+static func plates_cost(robot: Dictionary) -> int:
+	var n := int(robot.get("armor_off", 0))
+	return int(ceilf(0.7 * float(armor_price(robot)))) * n if n > 0 else 0
+
+
+static func refit_plates(t: int, robot: Dictionary) -> bool:
+	var c := plates_cost(robot)
+	if c <= 0:
+		return true
+	if not spend(t, c):
+		return false
+	robot["armor"] = int(robot.get("armor", 0)) + int(robot.get("armor_off", 0))
+	robot["armor_off"] = 0
+	Robot.reset_ratings(robot)
+	save()
+	return true
+
+
+## Fix all of him: every worn or lost part (stock), and any plates torn off.
+static func fix_robot(t: int, robot: Dictionary) -> void:
+	for k in Robot.PARTS:
+		if fix_cost(robot, k) > 0:
+			buy_fix(t, robot, k)
+	refit_plates(t, robot)
+
+
+static func restore_robot(t: int, robot: Dictionary) -> void:
+	for k in Robot.PARTS:
+		if restore_cost(robot, k) > 0:
+			buy_restore(t, robot, k)
+	refit_plates(t, robot)
 
 
 static func repair_all_cost(robot: Dictionary) -> int:
@@ -941,6 +975,8 @@ static func coach_repairs(t: int) -> Array:
 				n += 1
 			elif fix_cost(r, k) > 0 and buy_fix(t, r, k):
 				n += 1
+		if plates_cost(r) > 0 and refit_plates(t, r):
+			n += 1
 	return ["%s repairs %d parts." % [tm["name"], n]] if n > 0 else []
 
 

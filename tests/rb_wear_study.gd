@@ -5,6 +5,7 @@ func _init() -> void:
 	var n := 16
 	var off := {}
 	var cond := {}
+	var plates := {}
 	for s in n:
 		var red := Team.build(0, "Balanced")
 		var blue := Team.build(1, "Air Raid")
@@ -17,6 +18,9 @@ func _init() -> void:
 			off[b["slot"]] = int(off.get(b["slot"], 0)) + 1
 		for tm2 in [red, blue]:
 			for sl in tm2["roster"]:
+				var po := int(tm2["roster"][sl].get("armor_off", 0))
+				if po > 0:
+					plates[sl] = int(plates.get(sl, 0)) + po
 				var c := Robot.condition(tm2["roster"][sl])
 				if not cond.has(sl): cond[sl] = [0.0, 0]
 				cond[sl][0] += float(c[0]) / float(c[1]); cond[sl][1] += 1
@@ -24,4 +28,5 @@ func _init() -> void:
 	keys.sort_custom(func(a, b): return cond[a][0] / cond[a][1] < cond[b][0] / cond[b][1])
 	for k in keys.slice(0, 10):
 		print("%-4s cond %3d%%  parts off/game %.2f" % [k, int(100.0 * cond[k][0] / cond[k][1]), float(off.get(k, 0)) / (2.0 * n)])
+	print("plates off per game: ", plates.keys().map(func(k): return "%s %.2f" % [k, plates[k] / (2.0 * n)]))
 	quit()

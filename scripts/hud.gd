@@ -1092,9 +1092,7 @@ func _hurt_fix_cost() -> int:
 
 func _fix_hurt() -> void:
 	for r in _hurt_robots():
-		for k in Robot.PARTS:
-			if Career.fix_cost(r, k) > 0:
-				Career.buy_fix(0, r, k)
+		Career.fix_robot(0, r)
 
 
 func _hurt_robots() -> Array:
@@ -3054,9 +3052,7 @@ func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 	else:
 		var fa := _button("Fix everybody  $%s" % _commas(all_cost), func():
 			for w in who:
-				for k in Robot.PARTS:
-					if Career.fix_cost(w[0], k) > 0:
-						Career.buy_fix(0, w[0], k)
+				Career.fix_robot(0, w[0])
 			refresh.call())
 		if Career.money(0) >= all_cost:
 			_primary(fa, fs + 2)
@@ -3067,9 +3063,7 @@ func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 		if all_restore != all_cost:
 			var ra := _button("Restore everybody to original  $%s" % _commas(all_restore), func():
 				for w in who:
-					for k in Robot.PARTS:
-						if Career.restore_cost(w[0], k) > 0:
-							Career.buy_restore(0, w[0], k)
+					Career.restore_robot(0, w[0])
 				refresh.call())
 			ra.disabled = Career.money(0) < all_restore
 			gc.add_child(ra)
@@ -3095,6 +3089,9 @@ func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 				else "Condition %d%%" % int(roundf(100.0 * float(cnd[0]) / maxf(float(cnd[1]), 1.0)))
 			if not spares.is_empty():
 				dt += "  ·  junk " + ", ".join(spares.map(func(k): return String(Robot.PART_LABEL[k]).to_lower()))
+			var po := int(r.get("armor_off", 0))
+			if po > 0:
+				dt += "  ·  %d armour plate%s off" % [po, "" if po == 1 else "s"]
 			var dl := _label(dt, fs - 3, BAD if not lost.is_empty() else WARN)
 			dl.tooltip_text = _damage_text(r)
 			v.add_child(dl)
@@ -3109,9 +3106,7 @@ func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 					var rr: Dictionary = Career.find(rid).get("robot", {})
 					if rr.is_empty():
 						return
-					for k in Robot.PARTS:
-						if Career.fix_cost(rr, k) > 0:
-							Career.buy_fix(0, rr, k)
+					Career.fix_robot(0, rr)
 					refresh.call())
 				fix.disabled = Career.money(0) < c2
 				bv.add_child(fix)
@@ -3121,9 +3116,7 @@ func _garage(box: Control, refresh: Callable, head := "1 · Repairs") -> void:
 					var rr: Dictionary = Career.find(rid).get("robot", {})
 					if rr.is_empty():
 						return
-					for k in Robot.PARTS:
-						if Career.restore_cost(rr, k) > 0:
-							Career.buy_restore(0, rr, k)
+					Career.restore_robot(0, rr)
 					refresh.call())
 				rs.disabled = Career.money(0) < r2
 				rs.add_theme_color_override("font_color", MAGENTA)
@@ -4195,6 +4188,17 @@ func open_robot(id: String) -> void:
 			var arow := HFlowContainer.new()
 			arow.add_child(ab)
 			box.add_child(arow)
+		if k == "toughness" and int(r.get("armor_off", 0)) > 0:
+			# plates torn off in games: bolt them back on
+			var t2 := maxi(Career.team_of(r), 0)
+			var pc := Career.plates_cost(r)
+			var po := int(r["armor_off"])
+			var rb := _button("Bolt back %d plate%s torn off ($%d)" % [po, "" if po == 1 else "s", pc], func(): Career.refit_plates(t2, r); open_robot(id))
+			rb.disabled = Career.money(t2) < pc
+			_primary(rb, fs)
+			var prow := HFlowContainer.new()
+			prow.add_child(rb)
+			box.add_child(prow)
 	_parts_section(box, r, id)
 	# this game
 	if slot != "" and main.game != null:
